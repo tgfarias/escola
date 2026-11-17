@@ -7,6 +7,7 @@ import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveStaff } from "./modules/auth/service";
 import { ordersRoutes } from "./modules/orders/routes";
+import { webhookRoutes } from "./modules/webhooks/routes";
 import { walletRoutes } from "./modules/wallet/routes";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
@@ -15,6 +16,7 @@ import { authenticate, type GuardianScope, type SessionClaims, type StaffRole } 
 export type RouteAuth =
   | "public"
   | "internal"
+  | "webhook"
   | { kind: "guardian" | "staff" | "kitchen"; scope?: GuardianScope; roles?: StaffRole[] };
 
 declare module "fastify" {
@@ -92,6 +94,14 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
     if (internalAuth && !internalPrefix) {
       throw new Error(`route ${String(route.method)} ${route.url} uses auth "internal" and must live under /internal/`);
     }
+    const webhookPrefix = route.url.startsWith("/webhooks/");
+    const webhookAuth = route.config.auth === "webhook";
+    if (webhookPrefix && !webhookAuth) {
+      throw new Error(`route ${String(route.method)} ${route.url} is under /webhooks/ and must use auth "webhook"`);
+    }
+    if (webhookAuth && !webhookPrefix) {
+      throw new Error(`route ${String(route.method)} ${route.url} uses auth "webhook" and must live under /webhooks/`);
+    }
   });
 
   app.addHook("onSend", async (req, reply) => {
@@ -143,5 +153,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(catalogRoutes);
   app.register(walletRoutes);
   app.register(ordersRoutes);
+  app.register(webhookRoutes);
   return app;
 }

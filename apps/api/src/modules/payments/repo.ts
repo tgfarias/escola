@@ -66,3 +66,25 @@ export async function markPaid(trx: Trx, paymentId: string, paidAt: Date): Promi
     .executeTakeFirst();
   return row !== undefined;
 }
+
+export async function paymentByCharge(trx: Trx, provider: string, chargeId: string) {
+  return trx
+    .selectFrom("payments")
+    .select(["id", "amountCents"])
+    .where("provider", "=", provider)
+    .where("providerChargeId", "=", chargeId)
+    .executeTakeFirst();
+}
+
+export async function recordEvent(
+  trx: Trx,
+  row: { provider: string; providerEventId: string; schoolId: string; paymentId: string | null; raw: string },
+): Promise<boolean> {
+  const inserted = await trx
+    .insertInto("paymentEvents")
+    .values({ id: uuidv7(), ...row })
+    .onConflict((oc) => oc.columns(["provider", "providerEventId"]).doNothing())
+    .returning("id")
+    .executeTakeFirst();
+  return inserted !== undefined;
+}

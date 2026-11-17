@@ -114,6 +114,24 @@ describe("buildApp", () => {
     await expect(register()).rejects.toThrow(/\/api\/v1\/sneaky/);
   });
 
+  it("refuses a /webhooks/ route that is not declared webhook", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.post("/webhooks/x", { config: { auth: "public" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/must use auth "webhook"/);
+  });
+
+  it("refuses a webhook route outside /webhooks/", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.post("/api/v1/x", { config: { auth: "webhook" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/must live under \/webhooks\//);
+  });
+
   it("fails closed for session-based auth until sessions exist", async () => {
     const app = buildApp();
     app.get("/api/v1/mine", { config: { auth: { kind: "guardian" } } }, async () => ({ ok: true }));
