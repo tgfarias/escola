@@ -1,6 +1,7 @@
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { ZodError } from "zod";
+import { config } from "./platform/config";
 import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
 import { loadActiveStaff } from "./modules/auth/service";
@@ -20,6 +21,23 @@ declare module "fastify" {
   interface FastifyRequest {
     rawBody?: string;
   }
+}
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * CSRF defense for session routes that change state: a browser sends `Origin` on cross-origin requests,
+ * and `Sec-Fetch-Site` where it omits `Origin`. Requests with neither (non-browser clients) pass.
+ */
+function assertSameOrigin(req: FastifyRequest): void {
+  if (SAFE_METHODS.has(req.method)) return;
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    if (origin !== new URL(config().appBaseUrl).origin) throw new DomainError("origin_rejected");
+    return;
+  }
+  const site = req.headers["sec-fetch-site"];
+  if (site !== undefined && site !== "same-origin") throw new DomainError("origin_rejected");
 }
 
 /** Validates the session cookie; for staff, re-reads `active` and the role so a change applies immediately. */
@@ -80,7 +98,10 @@ export function buildApp(): FastifyInstance {
   app.addHook("preHandler", async (req) => {
     const auth = req.routeOptions.config.auth;
     if (auth === "internal") verifyInternalRequest(req);
-    else if (typeof auth === "object") req.session = await authenticateWithDatabase(req, auth);
+    else if (typeof auth === "object") {
+      assertSameOrigin(req);
+      req.session = await authenticateWithDatabase(req, auth);
+    }
   });
 
   app.setNotFoundHandler((_req, reply) =>

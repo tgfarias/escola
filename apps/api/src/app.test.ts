@@ -1,7 +1,9 @@
+import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildApp } from "./app";
 import { DomainError } from "./platform/errors";
+import { SESSION_COOKIE, signToken } from "./platform/session";
 
 describe("buildApp", () => {
   it("answers the health check", async () => {
@@ -143,5 +145,93 @@ describe("buildApp", () => {
     });
     expect(res.statusCode).toBe(415);
     expect(res.json().error.code).toBe("request_rejected");
+  });
+
+  describe("origin check on session routes that change state", () => {
+    function originApp() {
+      const app = buildApp();
+      app.post("/api/v1/act", { config: { auth: { kind: "guardian" } } }, async () => ({ ok: true }));
+      app.get("/api/v1/act", { config: { auth: { kind: "guardian" } } }, async () => ({ ok: true }));
+      app.post("/api/v1/open", { config: { auth: "public" } }, async () => ({ ok: true }));
+      return app;
+    }
+    const guardianCookie = async () => ({
+      [SESSION_COOKIE]: await signToken(
+        "session",
+        { kind: "guardian", sub: uuidv7(), schoolId: uuidv7(), scope: "order" },
+        60,
+      ),
+    });
+
+    it("rejects a foreign Origin even with a valid session", async () => {
+      const res = await originApp().inject({
+        method: "POST",
+        url: "/api/v1/act",
+        headers: { origin: "https://evil.test" },
+        cookies: await guardianCookie(),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe("origin_rejected");
+    });
+
+    it("accepts the configured app origin", async () => {
+      const res = await originApp().inject({
+        method: "POST",
+        url: "/api/v1/act",
+        headers: { origin: "https://app.test" },
+        cookies: await guardianCookie(),
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("rejects a cross-site Sec-Fetch-Site without Origin", async () => {
+      const res = await originApp().inject({
+        method: "POST",
+        url: "/api/v1/act",
+        headers: { "sec-fetch-site": "cross-site" },
+        cookies: await guardianCookie(),
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe("origin_rejected");
+    });
+
+    it("accepts a request with neither header", async () => {
+      const res = await originApp().inject({ method: "POST", url: "/api/v1/act", cookies: await guardianCookie() });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("does not apply to GET", async () => {
+      const res = await originApp().inject({
+        method: "GET",
+        url: "/api/v1/act",
+        headers: { origin: "https://evil.test" },
+        cookies: await guardianCookie(),
+      });
+      expect(res.statusCode).toBe(200);
+    });
+
+    it("does not apply to public routes", async () => {
+      const res = await originApp().inject({
+        method: "POST",
+        url: "/api/v1/open",
+        headers: { origin: "https://evil.test" },
+      });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
+  it("rejects a text/plain body on a JSON route", async () => {
+    const app = buildApp();
+    app.post("/api/v1/echo", { config: { auth: "public" } }, async (req) =>
+      z.object({ a: z.string() }).parse(req.body),
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/echo",
+      headers: { "content-type": "text/plain" },
+      payload: '{"a":"x"}',
+    });
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.statusCode).toBeLessThan(500);
   });
 });

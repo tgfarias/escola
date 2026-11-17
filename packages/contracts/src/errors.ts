@@ -4,6 +4,7 @@ export const errorCodes = [
   "validation_failed",
   "unauthenticated",
   "insufficient_scope",
+  "origin_rejected",
   "not_found",
   "invalid_token",
   "otp_invalid",
