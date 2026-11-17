@@ -159,4 +159,28 @@ describe("efi getCharge and parseWebhook", () => {
       { eventId: "E2", kind: "ignored", chargeId: TXID },
     ]);
   });
+
+  it("ignores a malformed txid without calling Efí", async () => {
+    const bad = ["../token", "abc", `${TXID}/devolucao`, "a".repeat(36), "txid com espaco 0123456789abc"];
+    expect(await hook({ pix: bad.map((txid, i) => ({ endToEndId: `E${i}`, txid })) })).toEqual(
+      bad.map((_, i) => ({ eventId: `E${i}`, kind: "ignored", chargeId: null })),
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects a concluded charge whose pix time is not a valid date", async () => {
+    routes[`GET /v2/cob/${TXID}`] = () => ({
+      status: 200,
+      body: { ...paidCob, pix: [{ ...paidCob.pix[0], horario: "not-a-date" }] },
+    });
+    await expect(efiProvider.getCharge(TXID, REF)).rejects.toThrow("efi returned an unexpected charge body");
+    await expect(hook({ pix: [{ endToEndId: "E123", txid: TXID }] })).rejects.toThrow("efi returned an unexpected charge body");
+  });
+
+  it("uses the endToEndId from Efí's charge, not the notification's, as the event id", async () => {
+    routes[`GET /v2/cob/${TXID}`] = () => ({ status: 200, body: paidCob });
+    expect(await hook({ pix: [{ endToEndId: "E-FORGED", txid: TXID }] })).toEqual([
+      { eventId: "E123", kind: "charge_paid", chargeId: TXID, amountCents: 1350, paidAt: new Date("2030-03-04T10:00:00.000Z") },
+    ]);
+  });
 });

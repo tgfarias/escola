@@ -13,13 +13,16 @@ const Cob = z.object({
   status: z.string(),
   valor: z.object({ original: z.string() }),
   pixCopiaECola: z.string().optional(),
-  pix: z.array(z.object({ endToEndId: z.string(), valor: z.string(), horario: z.string() })).optional(),
+  pix: z.array(z.object({ endToEndId: z.string(), valor: z.string(), horario: z.string().datetime({ offset: true }) })).optional(),
 });
 type Cob = z.infer<typeof Cob>;
 
 const Notification = z.object({
   pix: z.array(z.object({ endToEndId: z.string().min(1), txid: z.string().optional() })).optional(),
 });
+
+/** Formato de txid do Bacen: só ele chega a um caminho da API da Efí. */
+const TXID = /^[A-Za-z0-9]{26,35}$/;
 
 const is2xx = (status: number) => status >= 200 && status < 300;
 
@@ -46,6 +49,12 @@ function parseCob(body: unknown): Cob {
   const parsed = Cob.safeParse(body);
   if (!parsed.success) throw new Error("efi returned an unexpected charge body");
   return parsed.data;
+}
+
+async function fetchCob(txid: string, accountRef: string | null): Promise<Cob> {
+  const res = await efiCall(credentialsFor(accountRef), "GET", `/v2/cob/${txid}`);
+  if (!is2xx(res.status)) throw new Error(`efi cob lookup failed: ${res.status}`);
+  return parseCob(res.body);
 }
 
 export const efiProvider: PaymentProvider = {
@@ -78,9 +87,7 @@ export const efiProvider: PaymentProvider = {
   },
 
   async getCharge(chargeId: string, accountRef: string | null): Promise<Charge> {
-    const res = await efiCall(credentialsFor(accountRef), "GET", `/v2/cob/${chargeId}`);
-    if (!is2xx(res.status)) throw new Error(`efi cob lookup failed: ${res.status}`);
-    return toCharge(parseCob(res.body));
+    return toCharge(await fetchCob(chargeId, accountRef));
   },
 
   /** A Efí não assina a notificação: exige o token da URL e confirma cada cobrança consultando a própria Efí. */
@@ -94,14 +101,21 @@ export const efiProvider: PaymentProvider = {
     }
     const events: WebhookEvent[] = [];
     for (const item of parsed.pix ?? []) {
-      if (!item.txid) {
+      if (!item.txid || !TXID.test(item.txid)) {
         events.push({ eventId: item.endToEndId, kind: "ignored", chargeId: null });
         continue;
       }
-      const charge = await efiProvider.getCharge(item.txid, accountRef);
+      const cob = await fetchCob(item.txid, accountRef);
+      const charge = toCharge(cob);
       events.push(
         charge.status === "paid" && charge.paidAt
-          ? { eventId: item.endToEndId, kind: "charge_paid", chargeId: item.txid, amountCents: charge.amountCents, paidAt: charge.paidAt }
+          ? {
+              eventId: cob.pix?.[0]?.endToEndId ?? item.endToEndId,
+              kind: "charge_paid",
+              chargeId: item.txid,
+              amountCents: charge.amountCents,
+              paidAt: charge.paidAt,
+            }
           : { eventId: item.endToEndId, kind: "ignored", chargeId: item.txid },
       );
     }
