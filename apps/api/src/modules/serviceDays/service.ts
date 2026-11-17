@@ -52,6 +52,7 @@ export async function closeServiceDay(
 ): Promise<ManifestResponse> {
   if (options.reconcile !== false) await payments.reconcileServiceDay(schoolId, serviceDate, options.log);
   return withTenant(schoolId, async (trx) => {
+    // Travas na ordem service_days → checkouts → payments → wallets (expireCheckout segue a mesma).
     const day = await catalog.lockServiceDayByDate(trx, serviceDate, "update");
     if (!day) throw new DomainError("not_found");
     if (day.status === "closed") return response(trx, day.id, day.closedAt!);

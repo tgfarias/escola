@@ -37,6 +37,11 @@ export async function setWalletApplied(trx: Trx, checkoutId: string, walletAppli
   await trx.updateTable("checkouts").set({ walletAppliedCents }).where("id", "=", checkoutId).execute();
 }
 
+/** Trava só a linha de `checkouts` (sem join, para não travar `service_days` também). */
+export async function lockCheckout(trx: Trx, checkoutId: string) {
+  return trx.selectFrom("checkouts").select(["id", "status"]).where("id", "=", checkoutId).forUpdate().executeTakeFirst();
+}
+
 /** `UPDATE … WHERE status IN (from)`: sem linha devolvida, outro processo já fez a transição. */
 export async function transitionCheckout(trx: Trx, checkoutId: string, from: string[], to: string) {
   return trx

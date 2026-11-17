@@ -116,10 +116,14 @@ describe("closeServiceDay", () => {
       const confirm = (p: (typeof pending)[number]) => withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.paymentId, paidAt }));
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
       const half = pending.length / 2;
-      const started: Promise<unknown>[] = pending.slice(0, half).map(confirm);
+      const firstBatch = pending.slice(0, half).map(confirm);
+      const started: Promise<unknown>[] = [...firstBatch];
       await sleep(20);
       const closing = closeServiceDay(schoolId, day.serviceDate, { log, reconcile: false });
       started.push(closing);
+      // New FOR SHARE lockers can join the first batch's share locks ahead of the waiting FOR UPDATE, so the
+      // second batch starts once those are released: it then races the close holding (or taking) the day lock.
+      await Promise.allSettled(firstBatch);
       await sleep(20);
       started.push(...pending.slice(half).map(confirm));
       const settled = await Promise.allSettled(started);

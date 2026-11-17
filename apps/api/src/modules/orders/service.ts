@@ -106,6 +106,15 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
   return { checkoutId };
 }
 
+/**
+ * Ordem única de travas: service_days → checkouts → payments → wallets. Quem confirma, cancela, expira ou fecha
+ * o dia trava o checkout antes de mexer no pagamento; inverter a ordem causa deadlock com confirmPayment.
+ */
+export async function lockCheckout(trx: Trx, checkoutId: string): Promise<{ status: CheckoutStatus } | undefined> {
+  const row = await repo.lockCheckout(trx, checkoutId);
+  return row && { status: row.status as CheckoutStatus };
+}
+
 /** `pending_payment → paid` e pedidos `pending → confirmed`. Chamada pelo checkout pago com saldo e por confirmPayment. */
 export async function confirmCheckout(trx: Trx, schoolId: string, checkoutId: string): Promise<boolean> {
   const checkout = await repo.transitionCheckout(trx, checkoutId, ["pending_payment"], "paid");
@@ -242,10 +251,10 @@ export async function cancelCheckout(session: SessionClaims, checkoutId: string)
   await withTenant(schoolId, async (trx) => {
     const [first] = await repo.checkoutHeaders(trx, [checkoutId]);
     if (!first || first.guardianId !== session.sub) throw new DomainError("not_found");
+    // Travas na ordem service_days → checkouts → payments → wallets.
     const day = await catalog.lockServiceDayById(trx, first.serviceDayId, "share");
-    // Relido depois da trava: um webhook pode ter confirmado o pagamento entre as duas leituras.
-    const [current] = await repo.checkoutHeaders(trx, [checkoutId]);
-    const status = current!.status;
+    // Relido sob a trava: um webhook pode ter confirmado o pagamento entre as duas leituras.
+    const { status } = (await lockCheckout(trx, checkoutId))!;
     if (status === "cancelled" || status === "expired") return;
     if (status === "late_credited") throw new DomainError("checkout_not_cancellable");
     if (day.status !== "open" || !day.beforeCutoff) throw new DomainError("cutoff_passed");

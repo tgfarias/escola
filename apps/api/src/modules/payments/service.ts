@@ -71,7 +71,9 @@ export async function confirmPayment(
 ): Promise<ConfirmOutcome> {
   const payment = await repo.paymentContext(trx, input.paymentId);
   if (!payment) throw new Error(`payment ${input.paymentId} not found`);
+  // Travas na ordem service_days → checkouts → payments → wallets, a mesma do cancelamento e do fechamento.
   const day = await catalog.lockServiceDayById(trx, payment.serviceDayId, "share");
+  await orders.lockCheckout(trx, payment.checkoutId);
   if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
 
   const onTime = day.status === "open" && input.paidAt.getTime() <= day.cutoffAt.getTime();
