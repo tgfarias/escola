@@ -40,12 +40,12 @@ Cloud Run: apps/api (Fastify)
         ▲                         │ eventos (outbox, HMAC)
         │ REST interno (HMAC)     ▼
       n8n (VPS, Docker) ──► API do WhatsApp
-Gateway de pagamento ──► POST /webhooks/payments/:provider (direto no Cloud Run)
+Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (direto no Cloud Run)
 ```
 
 - Rotas `/api/**` são acessadas pelo navegador via Hosting.
 - Rotas `/internal/v1/**` e `/webhooks/**` são acessadas pela URL do Cloud Run, sem passar pelo Hosting.
-- Toda resposta de `/api/**` leva `Cache-Control: private, no-store`, exceto o cardápio do dia.
+- Toda resposta de `/api/**` leva `Cache-Control: private, no-store`.
 
 ## 4. Autenticação e multi-tenant
 
@@ -80,7 +80,13 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider (direto no Clou
 - Todas as tabelas com `school_id` têm RLS: `USING (school_id = current_setting('app.school_id')::uuid)`.
 - O papel de banco da aplicação não tem `BYPASSRLS` nem é dono das tabelas. Migrações usam outro papel.
 - Chaves estrangeiras entre tabelas de tenant são compostas `(school_id, id)`.
-- Jobs que percorrem várias escolas iteram escola a escola, cada uma em seu `withTenant`. A única consulta sem tenant é a que lista escolas e dias vencidos, feita por um papel de leitura restrito a `schools` e `service_days`.
+- Jobs que percorrem várias escolas iteram escola a escola, cada uma em seu `withTenant`.
+- Antes de existir sessão, o tenant ainda é desconhecido. Só quatro funções `SECURITY DEFINER` consultam sem tenant, cada uma devolvendo o mínimo necessário para então abrir o `withTenant`:
+  - `resolve_magic_link(token_hash)` → `school_id`, `magic_link_id`;
+  - `resolve_pairing_code(code_hash)` → `school_id`, `device_id`;
+  - `resolve_staff_email(email)` → `school_id`, `staff_user_id`;
+  - `list_due_actions(now)` → escolas e datas com lembrete ou fechamento vencido.
+- O webhook de pagamento não precisa de resolução: cada subconta é configurada com a URL `/webhooks/payments/:provider/:school_id` e um token próprio, validado contra o segredo daquela escola.
 - Objetos no Cloud Storage ficam em `schools/<school_id>/…`; o download é sempre por URL assinada de 5 min emitida após checar a sessão.
 
 ### 4.5 LGPD
@@ -108,7 +114,7 @@ Dois filhos na mesma escola: um link, um checkout com dois `orders`, uma cobran�
 
 | Entidade | Estados |
 |---|---|
-| `checkouts` | `pending_payment` → `paid`; `pending_payment` → `expired`; `pending_payment` → `late_credited`; `paid` → `cancelled` |
+| `checkouts` | `pending_payment` → `paid`; `pending_payment` → `expired`; `pending_payment` → `late_credited`; `expired` → `late_credited`; `paid` → `cancelled` |
 | `orders` | `pending` → `confirmed` → `delivered`; `pending` → `expired`; `pending` → `expired_late`; `confirmed` → `cancelled` |
 | `payments` | `pending` → `paid`; `pending` → `expired`; `paid` → `refunded` |
 
@@ -139,7 +145,7 @@ Toda transição é um `UPDATE … WHERE status = '<estado anterior>'`; zero lin
 
 ### 5.5 Webhook e conciliação
 
-- `POST /webhooks/payments/:provider`: valida o token/assinatura do provedor, grava o evento bruto, processa na mesma transação e responde 200. Erro de processamento responde 500 para o gateway reenviar.
+- `POST /webhooks/payments/:provider/:school_id`: valida o token/assinatura do provedor contra o segredo daquela escola, grava o evento bruto, processa na mesma transação e responde 200. Erro de processamento responde 500 para o gateway reenviar.
 - O valor e o identificador da cobrança no evento são conferidos com `payments`; divergência gera alerta e não confirma.
 - Job de conciliação (Cloud Scheduler, a cada 5 min e imediatamente antes de cada fechamento): consulta no gateway as cobranças `pending` e aplica a mesma função de confirmação do webhook.
 
@@ -151,7 +157,7 @@ Função única `confirmPayment(payment, paid_at)`, dentro de uma transação:
 
 - trava `service_days` (`FOR SHARE`);
 - se `status = 'open'` e `paid_at <= cutoff_at`: `payments → paid`, `checkouts → paid`, `orders → confirmed`, evento `payment.confirmed`;
-- caso contrário: `payments → paid`, `checkouts → late_credited`, `orders → expired_late`, lançamento de crédito `late_payment_credit` pelo valor pago, reversão do `checkout_hold`, evento `payment.late_credited`.
+- caso contrário: `payments → paid`, `checkouts → late_credited` (a partir de `pending_payment` ou de `expired`), `orders → expired_late`, lançamento de crédito `late_payment_credit` pelo valor pago, reversão do `checkout_hold` se ainda não revertido (a unicidade do ledger garante que o `hold_release` ocorre uma vez só), evento `payment.late_credited`.
 
 `paid_at` é o horário de pagamento informado pelo gateway, não o de chegada do webhook.
 
@@ -183,7 +189,7 @@ Interface `PaymentProvider` (`createCharge`, `getCharge`, `refund`, `parseWebhoo
 - Pico esperado: poucos milhares de requisições em minutos. O limite real é conexão de banco.
 - `max instances × pool por instância` menor que `max_connections` do Cloud SQL, com folga para migrações e jobs (referência inicial: 5 instâncias × 5 conexões).
 - 1 instância mínima entre 06h00 e 08h30; concorrência 80 por instância.
-- `GET /api/v1/service-days/:date/menu` é cacheável na CDN por 60 s, com a escola no caminho da URL pública do cardápio.
+- Sem cache de CDN para a API: o volume não justifica e toda resposta é privada.
 
 ## 6. Contratos Node ↔ n8n
 
@@ -372,6 +378,7 @@ erDiagram
     time default_cutoff_time
     text kitchen_phone
     text payment_account_ref
+    text payment_webhook_secret_ref
     int platform_fee_bps }
   classes { uuid id PK
     uuid school_id FK
@@ -401,6 +408,8 @@ erDiagram
     text kind
     uuid guardian_id FK
     text secret_hash
+    text pairing_code_hash
+    timestamptz pairing_expires_at
     timestamptz revoked_at }
   magic_links { uuid id PK
     uuid school_id FK

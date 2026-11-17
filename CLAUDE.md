@@ -51,10 +51,10 @@ db/migrations/            NNNN_descricao.sql
 ### Multi-tenant
 
 1. Todo acesso ao banco acontece dentro de `withTenant(schoolId, async (trx) => …)`. Não use o pool diretamente fora de `apps/api/src/db`.
-2. `school_id` vem da sessão, do magic link ou do caminho de uma rota interna autenticada por HMAC. Nunca do corpo, da query string ou de um header enviado pelo navegador.
+2. `school_id` vem da sessão, de uma função `resolve_*` (magic link, pareamento, e-mail de equipe) ou do caminho de uma rota autenticada por segredo (rotas internas com HMAC, webhook do gateway com o token da escola). Nunca do corpo, da query string ou de um header enviado pelo navegador.
 3. Toda tabela nova tem `school_id uuid NOT NULL`, política RLS, `UNIQUE (school_id, id)` e FKs compostas `(school_id, …)`. A migração que cria a tabela cria a política.
 4. Toda tabela nova ganha um caso no teste de RLS (tenant A não vê tenant B).
-5. Não use nem crie papel de banco com `BYPASSRLS` para a aplicação.
+5. Não use nem crie papel de banco com `BYPASSRLS` para a aplicação. As únicas consultas sem tenant são as quatro funções `SECURITY DEFINER` listadas na spec (seção 4.4); não crie outras sem perguntar.
 
 ### Dinheiro
 
@@ -91,7 +91,7 @@ db/migrations/            NNNN_descricao.sql
 24. O token do magic link vai no fragmento da URL e só é guardado como SHA-256. Nenhuma rota `GET` consome token ou altera estado.
 25. O cookie de sessão se chama `__session` (o Firebase Hosting descarta qualquer outro). `HttpOnly; Secure; SameSite=Lax`.
 26. Toda rota declara o `kind` e o `scope` que exige. Rota sem declaração é erro de build/teste.
-27. Respostas de `/api/**` levam `Cache-Control: private, no-store`, exceto o cardápio.
+27. Respostas de `/api/**` levam `Cache-Control: private, no-store`.
 
 ### LGPD
 
