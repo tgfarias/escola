@@ -1,3 +1,4 @@
+import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
 import { withTenant } from "../../db/index";
@@ -24,9 +25,10 @@ async function setup() {
     .where("type", "=", "auth.otp_requested")
     .executeTakeFirstOrThrow();
   const code = (event.data as { code: string }).code;
-  return { schoolId, challengeId, code };
+  return { schoolId, challengeId, code, expected: subject(seed) };
 }
 
+const subject = (seed: { guardianId: string }) => ({ subjectKind: "guardian" as const, subjectId: seed.guardianId });
 const wrong = (code: string) => (code === "000000" ? "000001" : "000000");
 
 describe("otp", () => {
@@ -43,22 +45,22 @@ describe("otp", () => {
   });
 
   it("accepts the right code once", async () => {
-    const { schoolId, challengeId, code } = await setup();
-    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code))).toBe("ok");
-    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code))).toBe("expired");
+    const { schoolId, challengeId, code, expected } = await setup();
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code, expected))).toBe("ok");
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code, expected))).toBe("expired");
   });
 
   it("counts wrong attempts and locks after five", async () => {
-    const { schoolId, challengeId, code } = await setup();
+    const { schoolId, challengeId, code, expected } = await setup();
     for (let i = 0; i < 5; i++) {
-      expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, wrong(code)))).toBe("invalid");
+      expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, wrong(code), expected))).toBe("invalid");
     }
-    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code))).toBe("too_many_attempts");
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code, expected))).toBe("too_many_attempts");
   });
 
   it("commits the attempt increment after a wrong code", async () => {
-    const { schoolId, challengeId, code } = await setup();
-    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, wrong(code)))).toBe("invalid");
+    const { schoolId, challengeId, code, expected } = await setup();
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, wrong(code), expected))).toBe("invalid");
     const row = await adminDb()
       .selectFrom("otpChallenges")
       .select("attempts")
@@ -68,13 +70,25 @@ describe("otp", () => {
   });
 
   it("rejects an expired challenge", async () => {
-    const { schoolId, challengeId, code } = await setup();
+    const { schoolId, challengeId, code, expected } = await setup();
     await adminDb()
       .updateTable("otpChallenges")
       .set({ expiresAt: new Date(Date.now() - 1000) })
       .where("id", "=", challengeId)
       .execute();
-    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code))).toBe("expired");
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code, expected))).toBe("expired");
+  });
+
+  it("rejects a challenge checked for another subject without counting an attempt", async () => {
+    const { schoolId, challengeId, code } = await setup();
+    const other = { subjectKind: "guardian" as const, subjectId: uuidv7() };
+    expect(await withTenant(schoolId, (trx) => checkCode(trx, challengeId, code, other))).toBe("expired");
+    const row = await adminDb()
+      .selectFrom("otpChallenges")
+      .select("attempts")
+      .where("id", "=", challengeId)
+      .executeTakeFirstOrThrow();
+    expect(row.attempts).toBe(0);
   });
 
   it("maps results to domain errors", () => {

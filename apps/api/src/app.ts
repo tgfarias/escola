@@ -2,6 +2,7 @@ import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { DomainError } from "./platform/errors";
+import { authRoutes } from "./modules/auth/routes";
 import { verifyInternalRequest } from "./platform/hmac";
 import { authenticate } from "./platform/session";
 
@@ -97,5 +98,6 @@ export function buildApp(): FastifyInstance {
 
   app.get("/healthz", { config: { auth: "public" } }, async () => ({ ok: true }));
 
+  app.register(authRoutes);
   return app;
 }

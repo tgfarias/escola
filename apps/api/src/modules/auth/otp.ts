@@ -53,9 +53,17 @@ export async function createChallenge(
 }
 
 /** Não lança por código errado: o chamador precisa commitar o incremento de tentativas. */
-export async function checkCode(trx: Trx, challengeId: string, code: string): Promise<OtpResult> {
+export async function checkCode(
+  trx: Trx,
+  challengeId: string,
+  code: string,
+  expected: { subjectKind: "guardian" | "staff"; subjectId: string },
+): Promise<OtpResult> {
   const challenge = await repo.lockChallenge(trx, challengeId);
   if (!challenge || challenge.consumedAt || challenge.expired) return "expired";
+  if (challenge.subjectKind !== expected.subjectKind || challenge.subjectId !== expected.subjectId) {
+    return "expired";
+  }
   if (challenge.attempts >= MAX_ATTEMPTS) return "too_many_attempts";
   await repo.incrementAttempts(trx, challengeId);
   if (!hashesMatch(hashOtp(challengeId, code), challenge.codeHash)) return "invalid";

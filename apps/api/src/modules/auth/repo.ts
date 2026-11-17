@@ -48,7 +48,7 @@ export async function insertChallenge(
 export async function lockChallenge(trx: Trx, id: string) {
   return trx
     .selectFrom("otpChallenges")
-    .select(["id", "codeHash", "attempts", "consumedAt"])
+    .select(["id", "codeHash", "attempts", "consumedAt", "subjectKind", "subjectId"])
     .select(sql<boolean>`${sql.ref("expiresAt")} <= now()`.as("expired"))
     .where("id", "=", id)
     .forUpdate()
@@ -69,4 +69,75 @@ export async function consumeChallenge(trx: Trx, id: string): Promise<void> {
     .set({ consumedAt: sql<Date>`now()` })
     .where("id", "=", id)
     .execute();
+}
+
+export async function getValidMagicLink(trx: Trx, id: string) {
+  return trx
+    .selectFrom("magicLinks")
+    .select(["id", "guardianId", "scope"])
+    .where("id", "=", id)
+    .where(sql<boolean>`${sql.ref("expiresAt")} > now()`)
+    .executeTakeFirst();
+}
+
+/** Trava o responsável para serializar o registro do primeiro aparelho. */
+export async function lockGuardian(trx: Trx, guardianId: string) {
+  return trx
+    .selectFrom("guardians")
+    .select(["id", "firstName", "phoneE164"])
+    .where("id", "=", guardianId)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
+}
+
+/** Todos os aparelhos já registrados, inclusive os revogados (que contam como "já teve aparelho"). */
+export async function listGuardianDevices(
+  trx: Trx,
+  guardianId: string,
+): Promise<{ secretHash: string; revoked: boolean }[]> {
+  const rows = await trx
+    .selectFrom("devices")
+    .select(["secretHash", "revokedAt"])
+    .where("guardianId", "=", guardianId)
+    .where("kind", "=", "guardian")
+    .execute();
+  return rows
+    .filter((r): r is typeof r & { secretHash: string } => r.secretHash !== null)
+    .map((r) => ({ secretHash: r.secretHash, revoked: r.revokedAt !== null }));
+}
+
+/** Registra o aparelho; se ele existia revogado, reativa (só é chamado após OTP ou no primeiro aparelho). */
+export async function insertGuardianDevice(
+  trx: Trx,
+  row: { id: string; schoolId: string; guardianId: string; secretHash: string },
+): Promise<void> {
+  await trx
+    .insertInto("devices")
+    .values({ ...row, kind: "guardian" })
+    .onConflict((oc) =>
+      oc
+        .columns(["schoolId", "guardianId", "secretHash"])
+        .where("kind", "=", "guardian")
+        .doUpdateSet({ revokedAt: null }),
+    )
+    .execute();
+}
+
+export async function getGuardianWithStudents(trx: Trx, guardianId: string) {
+  const guardian = await trx
+    .selectFrom("guardians")
+    .select(["id", "firstName"])
+    .where("id", "=", guardianId)
+    .executeTakeFirst();
+  if (!guardian) return undefined;
+  const students = await trx
+    .selectFrom("guardianStudents")
+    .innerJoin("students", "students.id", "guardianStudents.studentId")
+    .innerJoin("classes", "classes.id", "students.classId")
+    .select(["students.id", "students.firstName", "classes.name as className"])
+    .where("guardianStudents.guardianId", "=", guardianId)
+    .where("students.active", "=", true)
+    .orderBy("students.firstName")
+    .execute();
+  return { guardian, students };
 }
