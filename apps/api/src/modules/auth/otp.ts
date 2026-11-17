@@ -92,7 +92,7 @@ const OtpTokenPayload = z.discriminatedUnion("subjectKind", [
     schoolId: z.string().uuid(),
     challengeId: z.string().uuid(),
     subjectId: z.string().uuid(),
-    deviceHash: z.string(),
+    deviceHash: z.string().regex(/^[0-9a-f]{64}$/),
     scope: z.enum(["order", "documents"]),
     inert: z.boolean(),
   }),

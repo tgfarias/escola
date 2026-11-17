@@ -154,6 +154,26 @@ describe("student import", () => {
     expect(list[0]!.guardians).toMatchObject([{ firstName: "Ana", phone: "+5511999990001" }]);
   });
 
+  it("stores only the first word of the guardian and student names", async () => {
+    const schoolId = await createSchool();
+    const csv = "codigo_aluno,primeiro_nome,turma,responsavel_nome,responsavel_telefone\nA001,Léo Henrique,Infantil 3A,Ana Maria Souza,(11) 99999-0001";
+    const res = await importCsv(await staffCookie(schoolId), csv);
+    expect(res.json()).toMatchObject({ applied: true });
+    const guardian = await adminDb().selectFrom("guardians").select("firstName").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(guardian.firstName).toBe("Ana");
+    const student = await adminDb().selectFrom("students").select("firstName").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(student.firstName).toBe("Léo");
+  });
+
+  it("rejects a CSV over the 900,000-character limit with validation_failed, not 413", async () => {
+    const schoolId = await createSchool();
+    const csv = `${CSV}\n${"é".repeat(950_000)}`;
+    expect(Buffer.byteLength(JSON.stringify({ csv }))).toBeGreaterThan(1024 * 1024);
+    const res = await importCsv(await staffCookie(schoolId), csv);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("validation_failed");
+  });
+
   describe("staff session re-checked against the database", () => {
     it("rejects a session whose staff user was deactivated and writes nothing", async () => {
       const schoolId = await createSchool();

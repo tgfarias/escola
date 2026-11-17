@@ -7,12 +7,12 @@ import { authRoutes } from "./modules/auth/routes";
 import { loadActiveStaff } from "./modules/auth/service";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
-import { authenticate, type SessionClaims } from "./platform/session";
+import { authenticate, type GuardianScope, type SessionClaims, type StaffRole } from "./platform/session";
 
 export type RouteAuth =
   | "public"
   | "internal"
-  | { kind: "guardian" | "staff" | "kitchen"; scope?: string; roles?: string[] };
+  | { kind: "guardian" | "staff" | "kitchen"; scope?: GuardianScope; roles?: StaffRole[] };
 
 declare module "fastify" {
   interface FastifyContextConfig {

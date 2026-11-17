@@ -16,7 +16,7 @@ await client.connect();
 try {
   const schoolId = uuidv7();
   await client.query("BEGIN");
-  await client.query("INSERT INTO schools (id, name) VALUES ($1, $2)", [schoolId, name]);
+  await client.query("INSERT INTO schools (id, name) VALUES ($1, $2)", [schoolId, name.trim()]);
   await client.query(
     "INSERT INTO staff_users (id, school_id, email, role) VALUES ($1, $2, lower($3), 'admin')",
     [uuidv7(), schoolId, email],

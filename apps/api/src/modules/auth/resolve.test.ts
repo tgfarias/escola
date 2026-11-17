@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { getDb } from "../../db/index";
@@ -5,6 +6,23 @@ import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
 import { resolveMagicLink, resolveStaffEmail } from "./repo";
 
 describe("tenant resolution", () => {
+  it("pins the search_path of the resolve functions", async () => {
+    const { rows } = await sql<{ proname: string; proconfig: string[] }>`
+      SELECT proname, proconfig FROM pg_proc
+      WHERE proname IN ('resolve_magic_link', 'resolve_staff_email') ORDER BY proname`.execute(adminDb());
+    expect(rows).toEqual([
+      { proname: "resolve_magic_link", proconfig: ["search_path=pg_catalog, public, pg_temp"] },
+      { proname: "resolve_staff_email", proconfig: ["search_path=pg_catalog, public, pg_temp"] },
+    ]);
+  });
+
+  it("indexes recent challenges by subject", async () => {
+    const { rows } = await sql<{ indexdef: string }>`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'otp_challenges_subject_recent'`.execute(adminDb());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indexdef).toContain("(school_id, subject_kind, subject_id, created_at)");
+  });
+
   it("resolves a magic link hash to its school", async () => {
     const schoolId = await createSchool();
     const seed = await seedTenant(schoolId);

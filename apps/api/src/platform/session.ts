@@ -59,7 +59,7 @@ export async function verifyToken(
   token: string,
 ): Promise<Record<string, unknown>> {
   try {
-    const { payload } = await jwtVerify(token, key(), { algorithms: ["HS256"] });
+    const { payload } = await jwtVerify(token, key(), { algorithms: ["HS256"], requiredClaims: ["exp"] });
     if (payload.purpose !== purpose) throw new Error("wrong purpose");
     return payload;
   } catch {

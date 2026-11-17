@@ -1,7 +1,7 @@
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { buildApp } from "./app";
+import { buildApp, type RouteAuth } from "./app";
 import { DomainError } from "./platform/errors";
 import { SESSION_COOKIE, signToken } from "./platform/session";
 
@@ -85,6 +85,15 @@ describe("buildApp", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().raw).toBe(payload);
+  });
+
+  it("types the scope and roles of route auth", () => {
+    // @ts-expect-error "admn" is not a staff role
+    const badRole: RouteAuth = { kind: "staff", roles: ["admn"] };
+    // @ts-expect-error "orders" is not a guardian scope
+    const badScope: RouteAuth = { kind: "guardian", scope: "orders" };
+    const good: RouteAuth = { kind: "staff", roles: ["admin", "secretaria", "cozinha"] };
+    expect([badRole, badScope, good]).toHaveLength(3);
   });
 
   it("refuses an /internal/ route that is not declared internal", async () => {

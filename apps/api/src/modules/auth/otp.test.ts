@@ -236,6 +236,21 @@ describe("otp", () => {
     await expect(readOtpToken(token)).rejects.toThrow("otp_expired");
   });
 
+  it("rejects a guardian token whose device hash is not a hex SHA-256", async () => {
+    const guardian = {
+      subjectKind: "guardian" as const,
+      schoolId: uuidv7(),
+      challengeId: uuidv7(),
+      subjectId: uuidv7(),
+      scope: "order" as const,
+      inert: false,
+    };
+    const good = await signOtpToken({ ...guardian, deviceHash: "ab".repeat(32) });
+    expect(await readOtpToken(good)).toMatchObject({ deviceHash: "ab".repeat(32) });
+    const bad = await signOtpToken({ ...guardian, deviceHash: "h".repeat(64) });
+    await expect(readOtpToken(bad)).rejects.toThrow("otp_expired");
+  });
+
   it("gives real and inert staff tokens the same length", async () => {
     const real = await signOtpToken({ ...inertPayload(), inert: false });
     const inert = await signOtpToken(inertPayload());

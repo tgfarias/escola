@@ -24,14 +24,19 @@ export function normalizePhoneBR(raw: string): string | null {
   return null;
 }
 
+/** First word of a trimmed name: only the first name is stored (LGPD; WhatsApp messages use first names only). */
+function firstWord(name: string): string {
+  return name.trim().split(/\s+/)[0]!;
+}
+
 export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: CsvError[] } {
-  let records: Record<string, string>[];
+  let records: { record: Record<string, string>; info: { lines: number } }[];
   try {
-    records = parse(csv, { columns: true, skip_empty_lines: true, trim: true, bom: true });
+    records = parse(csv, { columns: true, skip_empty_lines: true, trim: true, bom: true, info: true });
   } catch {
     return { rows: [], errors: [{ line: 1, message: "arquivo CSV inválido" }] };
   }
-  const header = records[0] ? Object.keys(records[0]) : [];
+  const header = records[0] ? Object.keys(records[0].record) : [];
   const missing = COLUMNS.filter((c) => !header.includes(c));
   if (missing.length > 0) {
     return { rows: [], errors: [{ line: 1, message: `coluna ausente: ${missing.join(", ")}` }] };
@@ -40,8 +45,9 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
   const rows: StudentRow[] = [];
   const errors: CsvError[] = [];
   const firstSeen = new Map<string, StudentRow>();
-  records.forEach((record, index) => {
-    const line = index + 2;
+  // info.lines is the physical line where the record ends (blank lines and quoted newlines included).
+  records.forEach(({ record, info }) => {
+    const line = info.lines;
     const empty = COLUMNS.find((c) => !record[c]);
     if (empty) {
       errors.push({ line, message: `${empty} vazio` });
@@ -55,9 +61,9 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
     const row: StudentRow = {
       line,
       externalCode: record.codigo_aluno!,
-      firstName: record.primeiro_nome!,
+      firstName: firstWord(record.primeiro_nome!),
       className: record.turma!,
-      guardianFirstName: record.responsavel_nome!,
+      guardianFirstName: firstWord(record.responsavel_nome!),
       guardianPhone: phone,
     };
     const first = firstSeen.get(row.externalCode);

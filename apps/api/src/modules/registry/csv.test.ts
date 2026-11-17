@@ -39,6 +39,24 @@ describe("parseStudentsCsv", () => {
     ]);
   });
 
+  it("reports the physical line when a blank line separates data rows", () => {
+    const { errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,11999990001\n\nA002,Bia,Infantil 3A,Ana,123\n`);
+    expect(errors).toEqual([{ line: 4, message: "telefone inválido" }]);
+  });
+
+  it("reports the physical line after a quoted field containing a newline", () => {
+    const { errors } = parseStudentsCsv(
+      `${HEADER}\nA001,Léo,"Infantil\n3A",Ana,11999990001\nA002,Bia,Infantil 3A,Ana,123\n`,
+    );
+    expect(errors).toEqual([{ line: 4, message: "telefone inválido" }]);
+  });
+
+  it("keeps only the first word of the student and guardian names", () => {
+    const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,  Léo  Henrique ,Infantil 3A,Ana Maria Souza,11999990001\n`);
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ firstName: "Léo", guardianFirstName: "Ana" });
+  });
+
   it("reports a missing column in the header", () => {
     const { errors } = parseStudentsCsv("codigo_aluno,primeiro_nome\nA001,Léo\n");
     expect(errors).toEqual([

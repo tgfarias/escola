@@ -66,6 +66,16 @@ describe("session guard", () => {
     expect(res.json().error.code).toBe("unauthenticated");
   });
 
+  it("rejects a validly signed token without exp", async () => {
+    const token = await new SignJWT({ ...guardian, purpose: "session" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .sign(new TextEncoder().encode(process.env.SESSION_SECRET!));
+    const res = await app().inject({ method: "GET", url: "/api/v1/g", cookies: { [SESSION_COOKIE]: token } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("unauthenticated");
+  });
+
   it("rejects a validly signed token with an unknown kind", async () => {
     const token = await signToken("session", { kind: "kitchen", sub: uuidv7(), schoolId: uuidv7() }, 60);
     const res = await app().inject({ method: "GET", url: "/api/v1/g", cookies: { [SESSION_COOKIE]: token } });
