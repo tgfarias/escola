@@ -120,4 +120,54 @@ describe("admin area", () => {
     fireEvent.click(screen.getByRole("button", { name: "Importar" }));
     await screen.findByText("Você não tem acesso a esta área.");
   });
+
+  async function toCodeStep(verify?: Reply) {
+    const fetchMock = mockApi({
+      "/api/admin/v1/auth/otp/request": { status: 200, body: { otpToken: "otp-token" } },
+      ...(verify ? { "/api/admin/v1/auth/otp/verify": verify } : {}),
+    });
+    renderAt("/admin/login");
+    fireEvent.change(screen.getByLabelText("E-mail"), { target: { value: "  ana@escola.test  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar código" }));
+    await screen.findByLabelText("Código de 6 dígitos");
+    return fetchMock;
+  }
+
+  it("shows a staff-specific message when the code expired", async () => {
+    await toCodeStep({ status: 401, body: { error: { code: "otp_expired", message: "x" } } });
+    fireEvent.change(screen.getByLabelText("Código de 6 dígitos"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await screen.findByText("Este código expirou. Peça um novo código.");
+    expect(screen.queryByText(/Abra o link/)).toBeNull();
+  });
+
+  it("shows a staff-specific message after too many attempts", async () => {
+    await toCodeStep({ status: 429, body: { error: { code: "otp_too_many_attempts", message: "x" } } });
+    fireEvent.change(screen.getByLabelText("Código de 6 dígitos"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await screen.findByText("Muitas tentativas. Aguarde alguns minutos e peça um novo código.");
+  });
+
+  it("lets staff go back to the e-mail step keeping the e-mail", async () => {
+    await toCodeStep();
+    fireEvent.click(screen.getByRole("button", { name: "Usar outro e-mail" }));
+    expect(((await screen.findByLabelText("E-mail")) as HTMLInputElement).value).toBe("ana@escola.test");
+  });
+
+  it("sends staff to the login when the import answers 401", async () => {
+    mockApi({
+      "/api/admin/v1/me": ME,
+      "/api/admin/v1/import/students": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } },
+    });
+    renderAt("/admin");
+    fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
+    await screen.findByLabelText("E-mail");
+  });
+
+  it("sends the e-mail trimmed", async () => {
+    const fetchMock = await toCodeStep();
+    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/admin/v1/auth/otp/request")!;
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ email: "ana@escola.test" });
+  });
 });

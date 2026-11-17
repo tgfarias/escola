@@ -11,3 +11,13 @@ const MESSAGES: Record<string, string> = {
 export function errorMessage(code: string): string {
   return MESSAGES[code] ?? "Algo deu errado. Tente de novo em instantes.";
 }
+
+const STAFF_MESSAGES: Record<string, string> = {
+  otp_expired: "Este código expirou. Peça um novo código.",
+  otp_too_many_attempts: "Muitas tentativas. Aguarde alguns minutos e peça um novo código.",
+  unauthenticated: "Sua sessão expirou. Entre novamente.",
+};
+
+export function staffErrorMessage(code: string): string {
+  return STAFF_MESSAGES[code] ?? errorMessage(code);
+}

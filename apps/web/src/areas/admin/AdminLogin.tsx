@@ -2,7 +2,7 @@ import { StaffOtpRequestResponse, StaffOtpVerifyResponse } from "@app-lanche/con
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
-import { errorMessage } from "../../ui/messages";
+import { staffErrorMessage } from "../../ui/messages";
 
 export function AdminLogin() {
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ export function AdminLogin() {
     try {
       await action();
     } catch (err) {
-      setError(errorMessage(err instanceof ApiError ? err.code : "internal_error"));
+      setError(staffErrorMessage(err instanceof ApiError ? err.code : "internal_error"));
     } finally {
       setBusy(false);
     }
@@ -29,7 +29,7 @@ export function AdminLogin() {
     void run(async () => {
       const res = await apiFetch("/api/admin/v1/auth/otp/request", StaffOtpRequestResponse, {
         method: "POST",
-        body: { email },
+        body: { email: email.trim() },
       });
       setOtpToken(res.otpToken);
     });
@@ -40,7 +40,7 @@ export function AdminLogin() {
     void run(async () => {
       await apiFetch("/api/admin/v1/auth/otp/verify", StaffOtpVerifyResponse, {
         method: "POST",
-        body: { otpToken, code },
+        body: { otpToken, code: code.trim() },
       });
       navigate("/admin", { replace: true });
     });
@@ -78,6 +78,16 @@ export function AdminLogin() {
         />
         {error && <p role="alert">{error}</p>}
         <button type="submit" disabled={busy}>Entrar</button>
+        <button
+          type="button"
+          onClick={() => {
+            setOtpToken(null);
+            setCode("");
+            setError(null);
+          }}
+        >
+          Usar outro e-mail
+        </button>
       </form>
     </main>
   );

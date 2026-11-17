@@ -2,7 +2,7 @@ import { ImportStudentsResponse, StaffMeResponse } from "@app-lanche/contracts";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
-import { errorMessage } from "../../ui/messages";
+import { staffErrorMessage } from "../../ui/messages";
 
 export function AdminHome() {
   const navigate = useNavigate();
@@ -17,7 +17,7 @@ export function AdminHome() {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         navigate("/admin/login", { replace: true });
       } else {
-        setError(errorMessage(err instanceof ApiError ? err.code : "internal_error"));
+        setError(staffErrorMessage(err instanceof ApiError ? err.code : "internal_error"));
       }
     });
   }, [navigate]);
@@ -40,7 +40,11 @@ export function AdminHome() {
         }),
       );
     } catch (err) {
-      setError(errorMessage(err instanceof ApiError ? err.code : "internal_error"));
+      if (err instanceof ApiError && err.status === 401) {
+        navigate("/admin/login", { replace: true });
+        return;
+      }
+      setError(staffErrorMessage(err instanceof ApiError ? err.code : "internal_error"));
     } finally {
       setBusy(false);
     }
