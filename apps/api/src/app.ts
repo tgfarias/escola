@@ -1,11 +1,12 @@
 import cookie from "@fastify/cookie";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
+import { loadActiveStaff } from "./modules/auth/service";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
-import { authenticate } from "./platform/session";
+import { authenticate, type SessionClaims } from "./platform/session";
 
 export type RouteAuth =
   | "public"
@@ -19,6 +20,20 @@ declare module "fastify" {
   interface FastifyRequest {
     rawBody?: string;
   }
+}
+
+/** Validates the session cookie; for staff, re-reads `active` and the role so a change applies immediately. */
+async function authenticateWithDatabase(
+  req: FastifyRequest,
+  auth: Exclude<RouteAuth, string>,
+): Promise<SessionClaims> {
+  const claims = await authenticate(req, auth);
+  if (claims.kind !== "staff") return claims;
+  const staff = await loadActiveStaff(claims.schoolId, claims.sub);
+  if (!staff) throw new DomainError("unauthenticated");
+  const refreshed: SessionClaims = { ...claims, role: staff.role };
+  if (auth.roles && !auth.roles.includes(refreshed.role)) throw new DomainError("insufficient_scope");
+  return refreshed;
 }
 
 export function buildApp(): FastifyInstance {
@@ -65,7 +80,7 @@ export function buildApp(): FastifyInstance {
   app.addHook("preHandler", async (req) => {
     const auth = req.routeOptions.config.auth;
     if (auth === "internal") verifyInternalRequest(req);
-    else if (typeof auth === "object") req.session = await authenticate(req, auth);
+    else if (typeof auth === "object") req.session = await authenticateWithDatabase(req, auth);
   });
 
   app.setNotFoundHandler((_req, reply) =>

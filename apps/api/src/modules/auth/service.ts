@@ -161,6 +161,12 @@ export async function verifyStaffOtp(input: {
   };
 }
 
+/** The staff user's current role, or undefined when the user is gone or deactivated. */
+export async function loadActiveStaff(schoolId: string, staffUserId: string): Promise<{ role: StaffRole } | undefined> {
+  const row = await withTenant(schoolId, (trx) => repo.getActiveStaffRole(trx, staffUserId));
+  return row ? { role: row.role as StaffRole } : undefined;
+}
+
 export async function getStaffMe(session: SessionClaims): Promise<StaffMeResponse> {
   const staff = await withTenant(session.schoolId, (trx) => repo.getStaffUser(trx, session.sub));
   if (!staff) throw new DomainError("unauthenticated");

@@ -1,6 +1,7 @@
 import { SignJWT } from "jose";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
+import { adminDb, createSchool, seedTenant } from "../../test/helpers";
 import { buildApp } from "../app";
 import { SESSION_COOKIE, issueSession, signToken, type SessionClaims } from "./session";
 
@@ -88,8 +89,22 @@ describe("session guard", () => {
   });
 
   it("rejects a staff role outside the allowed list", async () => {
-    const res = await app().inject({ method: "GET", url: "/api/admin/v1/s", cookies: await cookieFor(staff) });
+    // The role is re-read from the database, so the staff user must exist.
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    await adminDb().updateTable("staffUsers").set({ role: "secretaria" }).where("id", "=", seed.staffUserId).execute();
+    const claims: SessionClaims = { ...staff, sub: seed.staffUserId, schoolId };
+    const res = await app().inject({ method: "GET", url: "/api/admin/v1/s", cookies: await cookieFor(claims) });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("lets an allowed staff role through with the database role", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const claims: SessionClaims = { ...staff, sub: seed.staffUserId, schoolId };
+    const res = await app().inject({ method: "GET", url: "/api/admin/v1/s", cookies: await cookieFor(claims) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ kind: "staff", sub: seed.staffUserId, role: "admin" });
   });
 
   it("sets the cookie with the required attributes", async () => {

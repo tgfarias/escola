@@ -95,8 +95,6 @@ export async function authenticate(
   if (claims.kind === "guardian" && auth.scope && claims.scope !== auth.scope) {
     throw new DomainError("insufficient_scope");
   }
-  if (claims.kind === "staff" && auth.roles && !auth.roles.includes(claims.role)) {
-    throw new DomainError("insufficient_scope");
-  }
+  // Staff roles are checked by the caller against the role re-read from the database.
   return claims;
 }

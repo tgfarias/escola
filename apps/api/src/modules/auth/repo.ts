@@ -169,6 +169,16 @@ export async function getStaffUser(trx: Trx, id: string) {
     .executeTakeFirst();
 }
 
+/** Papel atual de um usuário ativo da equipe; relido a cada requisição de equipe. */
+export async function getActiveStaffRole(trx: Trx, id: string) {
+  return trx
+    .selectFrom("staffUsers")
+    .select("role")
+    .where("id", "=", id)
+    .where("active", "=", true)
+    .executeTakeFirst();
+}
+
 /** Trava o usuário da equipe para serializar a contagem de desafios emitidos. */
 export async function lockStaffUser(trx: Trx, id: string) {
   return trx

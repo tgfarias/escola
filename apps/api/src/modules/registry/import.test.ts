@@ -153,4 +153,49 @@ describe("student import", () => {
     expect(list[1]!.guardians.map((g) => g.firstName).sort()).toEqual(["Ana", "Rui"]);
     expect(list[0]!.guardians).toMatchObject([{ firstName: "Ana", phone: "+5511999990001" }]);
   });
+
+  describe("staff session re-checked against the database", () => {
+    it("rejects a session whose staff user was deactivated and writes nothing", async () => {
+      const schoolId = await createSchool();
+      const cookies = await staffCookie(schoolId, "admin");
+      await adminDb().updateTable("staffUsers").set({ active: false }).where("schoolId", "=", schoolId).execute();
+      const res = await importCsv(cookies, CSV);
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe("unauthenticated");
+      expect(await counts(schoolId)).toEqual({ classes: 0, students: 0, guardians: 0, links: 0 });
+    });
+
+    it("applies a role change made after the session was issued", async () => {
+      const schoolId = await createSchool();
+      const cookies = await staffCookie(schoolId, "admin");
+      await adminDb().updateTable("staffUsers").set({ role: "cozinha" }).where("schoolId", "=", schoolId).execute();
+      const res = await importCsv(cookies, CSV);
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe("insufficient_scope");
+      expect(await counts(schoolId)).toEqual({ classes: 0, students: 0, guardians: 0, links: 0 });
+    });
+
+    it("rejects a session for a staff id that does not exist", async () => {
+      const schoolId = await createSchool();
+      const cookies = {
+        [SESSION_COOKIE]: await signToken("session", { kind: "staff", sub: uuidv7(), schoolId, role: "admin" }, 60),
+      };
+      const res = await importCsv(cookies, CSV);
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe("unauthenticated");
+      expect(await counts(schoolId)).toEqual({ classes: 0, students: 0, guardians: 0, links: 0 });
+    });
+
+    it("uses the database role, not the one in the token", async () => {
+      const schoolId = await createSchool();
+      const id = uuidv7();
+      await adminDb().insertInto("staffUsers").values({ id, schoolId, email: `s-${id}@escola.test`, role: "secretaria" }).execute();
+      const cookies = {
+        [SESSION_COOKIE]: await signToken("session", { kind: "staff", sub: id, schoolId, role: "cozinha" }, 60),
+      };
+      const res = await importCsv(cookies, CSV);
+      expect(res.statusCode).toBe(200);
+      expect(res.json().applied).toBe(true);
+    });
+  });
 });
