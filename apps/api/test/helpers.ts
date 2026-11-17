@@ -1,7 +1,8 @@
-import { CamelCasePlugin, Kysely, PostgresDialect } from "kysely";
+import { CamelCasePlugin, Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 import { uuidv7 } from "uuidv7";
 import type { DB } from "../src/db/types";
+import { SESSION_COOKIE, signToken, type StaffRole } from "../src/platform/session";
 
 let admin: Kysely<DB> | undefined;
 
@@ -206,4 +207,80 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
 /** Remove o desafio de semente, para testes que contam desafios do sujeito. */
 export async function dropSeedChallenges(schoolId: string): Promise<void> {
   await adminDb().deleteFrom("otpChallenges").where("schoolId", "=", schoolId).where("codeHash", "=", "seed").execute();
+}
+
+export async function guardianCookie(schoolId: string, guardianId: string): Promise<Record<string, string>> {
+  const token = await signToken("session", { kind: "guardian", sub: guardianId, schoolId, scope: "order" }, 3600);
+  return { [SESSION_COOKIE]: token };
+}
+
+export async function staffCookie(
+  schoolId: string,
+  role: StaffRole = "admin",
+): Promise<{ cookies: Record<string, string>; staffUserId: string }> {
+  const staffUserId = uuidv7();
+  await adminDb()
+    .insertInto("staffUsers")
+    .values({ id: staffUserId, schoolId, email: `staff-${staffUserId}@escola.test`, role })
+    .execute();
+  const token = await signToken("session", { kind: "staff", sub: staffUserId, schoolId, role }, 3600);
+  return { cookies: { [SESSION_COOKIE]: token }, staffUserId };
+}
+
+let phoneSeq = 0;
+
+export async function seedFamily(
+  schoolId: string,
+  names: string[] = ["Léo", "Bia"],
+): Promise<{ guardianId: string; studentIds: string[] }> {
+  const db = adminDb();
+  const cls = await db
+    .insertInto("classes")
+    .values({ id: uuidv7(), schoolId, name: "Infantil 3A" })
+    .onConflict((oc) => oc.columns(["schoolId", "name"]).doUpdateSet({ name: "Infantil 3A" }))
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  const guardianId = uuidv7();
+  phoneSeq += 1;
+  await db
+    .insertInto("guardians")
+    .values({ id: guardianId, schoolId, phoneE164: `+55119${String(70000000 + phoneSeq).padStart(8, "0")}`, firstName: "Ana" })
+    .execute();
+  const studentIds: string[] = [];
+  for (const firstName of names) {
+    const id = uuidv7();
+    await db
+      .insertInto("students")
+      .values({ id, schoolId, classId: cls.id, externalCode: `S-${id}`, firstName })
+      .execute();
+    await db.insertInto("guardianStudents").values({ schoolId, guardianId, studentId: id }).execute();
+    studentIds.push(id);
+  }
+  return { guardianId, studentIds };
+}
+
+export async function seedServiceDay(
+  schoolId: string,
+  opts: { serviceDate?: string; cutoffInMinutes?: number; items?: { name: string; priceCents: number }[] } = {},
+): Promise<{ serviceDayId: string; serviceDate: string; items: { id: string; name: string; priceCents: number }[] }> {
+  const db = adminDb();
+  const serviceDate = opts.serviceDate ?? "2030-03-04";
+  const minutes = opts.cutoffInMinutes ?? 60;
+  const serviceDayId = uuidv7();
+  await sql`
+    INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
+    VALUES (${serviceDayId}, ${schoolId}, ${serviceDate}::date,
+            now() + make_interval(mins => ${minutes}), now() + make_interval(mins => ${minutes + 5}))`.execute(db);
+  const items: { id: string; name: string; priceCents: number }[] = [];
+  for (const item of opts.items ?? [
+    { name: "Misto quente", priceCents: 900 },
+    { name: "Suco", priceCents: 450 },
+  ]) {
+    const id = uuidv7();
+    const name = `${item.name} #${id.slice(-6)}`;
+    await db.insertInto("menuItems").values({ id, schoolId, name, priceCents: item.priceCents }).execute();
+    await db.insertInto("serviceDayItems").values({ schoolId, serviceDayId, menuItemId: id, priceCents: item.priceCents }).execute();
+    items.push({ id, name, priceCents: item.priceCents });
+  }
+  return { serviceDayId, serviceDate, items };
 }

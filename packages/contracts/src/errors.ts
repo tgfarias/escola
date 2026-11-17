@@ -15,6 +15,9 @@ export const errorCodes = [
   "request_rejected",
   "idempotency_key_required",
   "idempotency_key_reused",
+  "cutoff_passed",
+  "service_day_locked",
+  "menu_item_name_taken",
   "internal_error",
 ] as const;
 

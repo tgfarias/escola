@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { config } from "./platform/config";
 import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
+import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveStaff } from "./modules/auth/service";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
@@ -137,5 +138,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
 
   app.register(authRoutes);
   app.register(registryRoutes);
+  app.register(catalogRoutes);
   return app;
 }

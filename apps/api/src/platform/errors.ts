@@ -15,6 +15,9 @@ const STATUS: Record<ErrorCode, number> = {
   request_rejected: 400,
   idempotency_key_required: 400,
   idempotency_key_reused: 422,
+  cutoff_passed: 409,
+  service_day_locked: 409,
+  menu_item_name_taken: 409,
   internal_error: 500,
 };
 
@@ -29,4 +32,10 @@ export class DomainError extends Error {
   get status(): number {
     return STATUS[this.code];
   }
+}
+
+/** Violação de UNIQUE (23505) de uma constraint ou índice específico. */
+export function isUniqueViolation(err: unknown, constraint: string): boolean {
+  const e = err as { code?: unknown; constraint?: unknown } | null;
+  return e?.code === "23505" && e.constraint === constraint;
 }
