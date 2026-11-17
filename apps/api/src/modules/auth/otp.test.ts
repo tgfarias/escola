@@ -1,9 +1,18 @@
+import { EncryptJWT } from "jose";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, dropSeedChallenges, seedTenant } from "../../../test/helpers";
 import { withTenant } from "../../db/index";
 import { signToken } from "../../platform/session";
-import { assertOtpOk, checkCode, createChallenge, readOtpToken, signOtpToken } from "./otp";
+import { assertOtpOk, checkCode, createChallenge, readOtpToken, signOtpToken, signOtpTokenAt } from "./otp";
+
+const inertPayload = () => ({
+  subjectKind: "staff" as const,
+  schoolId: uuidv7(),
+  challengeId: uuidv7(),
+  subjectId: uuidv7(),
+  inert: true,
+});
 
 async function setup() {
   const schoolId = await createSchool();
@@ -160,13 +169,41 @@ describe("otp", () => {
   });
 
   it("round-trips the otp token and rejects garbage", async () => {
-    const token = await signOtpToken({ subjectKind: "none" });
-    expect(await readOtpToken(token)).toEqual({ subjectKind: "none" });
+    const payload = inertPayload();
+    const token = await signOtpToken(payload);
+    expect(token.split(".")).toHaveLength(5);
+    expect(await readOtpToken(token)).toEqual({ ...payload, iat: expect.any(Number) });
     await expect(readOtpToken("garbage")).rejects.toThrow("otp_expired");
   });
 
   it("rejects a token signed with the session purpose", async () => {
-    const token = await signToken("session", { subjectKind: "none" }, 60);
+    const token = await signToken("session", inertPayload(), 60);
     await expect(readOtpToken(token)).rejects.toThrow("otp_expired");
+  });
+
+  it("rejects a signed (JWS) token carrying the otp purpose", async () => {
+    const token = await signToken("otp", inertPayload(), 60);
+    await expect(readOtpToken(token)).rejects.toThrow("otp_expired");
+  });
+
+  it("rejects a token encrypted with a different key", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new EncryptJWT({ ...inertPayload() })
+      .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 600)
+      .encrypt(new Uint8Array(32).fill(7));
+    await expect(readOtpToken(token)).rejects.toThrow("otp_expired");
+  });
+
+  it("rejects an expired token", async () => {
+    const token = await signOtpTokenAt(inertPayload(), Math.floor(Date.now() / 1000) - 11 * 60);
+    await expect(readOtpToken(token)).rejects.toThrow("otp_expired");
+  });
+
+  it("gives real and inert staff tokens the same length", async () => {
+    const real = await signOtpToken({ ...inertPayload(), inert: false });
+    const inert = await signOtpToken(inertPayload());
+    expect(real.length).toBe(inert.length);
   });
 });

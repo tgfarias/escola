@@ -76,6 +76,12 @@ describe("guardian authentication", () => {
     expect(second.json().status).toBe("step_up_required");
     expect(sessionCookie(second)).toBeUndefined();
     const { otpToken } = second.json();
+    expect(otpToken.split(".")).toHaveLength(5);
+    for (const part of (otpToken as string).split(".")) {
+      const text = Buffer.from(part, "base64url").toString("latin1");
+      expect(text).not.toContain(schoolId);
+      expect(text).not.toContain("guardian");
+    }
     const code = await lastOtpCode(schoolId);
 
     const bad = await verify(otpToken, code === "000000" ? "000001" : "000000");

@@ -3,9 +3,11 @@ import { uuidv7 } from "uuidv7";
 import { withTenant } from "../../db/index";
 import { DomainError } from "../../platform/errors";
 import type { GuardianScope, SessionClaims } from "../../platform/session";
-import { assertOtpOk, checkCode, createChallenge, readOtpToken, signOtpToken } from "./otp";
+import { assertOtpOk, checkCode, createChallenge, inertStaffPayload, readOtpToken, signOtpToken } from "./otp";
 import * as repo from "./repo";
 import { hashToken } from "./tokens";
+
+const INERT_TOKEN_VALIDITY_SECONDS = 5 * 60;
 
 export type ExchangeResult =
   | { status: "ok"; claims: SessionClaims; scope: GuardianScope }
@@ -59,6 +61,7 @@ export async function exchange(input: { token: string; deviceSecret: string }): 
     subjectId: outcome.guardianId,
     deviceHash,
     scope: outcome.scope,
+    inert: false,
   });
   return { status: "step_up_required", otpToken };
 }
@@ -105,7 +108,7 @@ export async function getMe(session: SessionClaims): Promise<MeResponse> {
 
 export async function requestStaffOtp(email: string): Promise<{ otpToken: string }> {
   const resolved = await repo.resolveStaffEmail(email);
-  if (!resolved) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
+  if (!resolved) return { otpToken: await signOtpToken(inertStaffPayload()) };
   const challengeId = await withTenant(resolved.schoolId, async (trx) => {
     const staff = await repo.lockStaffUser(trx, resolved.staffUserId);
     if (!staff) return null;
@@ -119,12 +122,13 @@ export async function requestStaffOtp(email: string): Promise<{ otpToken: string
     });
   });
   // Throttled or gone/deactivated meanwhile: answer exactly like an unknown e-mail so the response does not reveal the account.
-  if (challengeId === null) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
+  if (challengeId === null) return { otpToken: await signOtpToken(inertStaffPayload()) };
   const otpToken = await signOtpToken({
     subjectKind: "staff",
     schoolId: resolved.schoolId,
     challengeId,
     subjectId: resolved.staffUserId,
+    inert: false,
   });
   return { otpToken };
 }
@@ -135,6 +139,11 @@ export async function verifyStaffOtp(input: {
 }): Promise<{ claims: SessionClaims; role: StaffRole }> {
   const payload = await readOtpToken(input.otpToken);
   if (payload.subjectKind !== "staff") throw new DomainError("otp_invalid");
+  if (payload.inert) {
+    // Mirror a real challenge's 5-minute validity without touching the database.
+    const ageSeconds = Math.floor(Date.now() / 1000) - payload.iat;
+    throw new DomainError(ageSeconds > INERT_TOKEN_VALIDITY_SECONDS ? "otp_expired" : "otp_invalid");
+  }
   const outcome = await withTenant(payload.schoolId, async (trx) => {
     const checked = await checkCode(trx, payload.challengeId, input.code, {
       subjectKind: "staff",

@@ -4,12 +4,30 @@ import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { SESSION_COOKIE, signToken } from "../../platform/session";
 import { withTenant } from "../../db/index";
-import { signOtpToken } from "./otp";
+import { decodeProtectedHeader } from "jose";
+import { signOtpToken, signOtpTokenAt } from "./otp";
 import * as repo from "./repo";
 import { requestStaffOtp } from "./service";
 
 function post(url: string, payload: unknown) {
   return buildApp().inject({ method: "POST", url, payload: payload as object });
+}
+
+/** Decodes every part of a compact token that is valid base64url and returns the decoded text. */
+function decodedParts(token: string): string[] {
+  return token
+    .split(".")
+    .filter((part) => /^[A-Za-z0-9_-]*$/.test(part))
+    .map((part) => Buffer.from(part, "base64url").toString("latin1"));
+}
+
+function expectOpaque(token: string, schoolId: string) {
+  for (const text of decodedParts(token)) {
+    expect(text).not.toContain(schoolId);
+    expect(text).not.toContain("subjectKind");
+    expect(text).not.toContain("staff");
+    expect(text).not.toContain("none");
+  }
 }
 
 async function otpEvents(schoolId: string) {
@@ -98,9 +116,11 @@ describe("staff authentication", () => {
   it("answers the fourth request in the window like any other but sends nothing", async () => {
     const schoolId = await createSchool();
     const seed = await seedTenant(schoolId);
+    const realTokens: string[] = [];
     for (let i = 0; i < 3; i++) {
       const res = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
       expect(res.statusCode).toBe(200);
+      realTokens.push(res.json().otpToken);
     }
     expect(await otpEvents(schoolId)).toHaveLength(3);
 
@@ -109,6 +129,8 @@ describe("staff authentication", () => {
     expect(Object.keys(fourth.json())).toEqual(["otpToken"]);
     expect(typeof fourth.json().otpToken).toBe("string");
     expect(await otpEvents(schoolId)).toHaveLength(3);
+    expect(fourth.json().otpToken.length).toBe(realTokens[0]!.length);
+    expectOpaque(fourth.json().otpToken, schoolId);
 
     const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken: fourth.json().otpToken, code: "123456" });
     expect(verified.statusCode).toBe(401);
@@ -135,8 +157,9 @@ describe("staff authentication", () => {
       schoolId: uuidv7(),
       challengeId: uuidv7(),
       subjectId: uuidv7(),
-      deviceHash: "h".repeat(43),
+      deviceHash: "a".repeat(64),
       scope: "order",
+      inert: false,
     });
     const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: "123456" });
     expect(verified.statusCode).toBe(401);
@@ -196,5 +219,44 @@ describe("staff authentication", () => {
     });
     expect(me.statusCode).toBe(401);
     expect(me.json().error.code).toBe("unauthenticated");
+  });
+
+  it("returns opaque tokens of the same form for known and unknown e-mails", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const known = (await post("/api/admin/v1/auth/otp/request", { email: seed.email })).json().otpToken as string;
+    const unknown = (await post("/api/admin/v1/auth/otp/request", { email: `nobody-${uuidv7()}@x.test` })).json()
+      .otpToken as string;
+    expect(known.split(".")).toHaveLength(5);
+    expect(unknown.split(".")).toHaveLength(5);
+    expect(JSON.stringify(decodeProtectedHeader(known))).toBe(JSON.stringify(decodeProtectedHeader(unknown)));
+    expect(Object.keys(decodeProtectedHeader(known)).sort()).toEqual(["alg", "enc"]);
+    expect(known.length).toBe(unknown.length);
+    expectOpaque(known, schoolId);
+    expectOpaque(unknown, schoolId);
+    expect(known).not.toContain(Buffer.from(schoolId).toString("base64url"));
+  });
+
+  it("answers otp_invalid for a fresh inert token without touching the database", async () => {
+    const otpToken = await signOtpToken({
+      subjectKind: "staff",
+      schoolId: uuidv7(),
+      challengeId: uuidv7(),
+      subjectId: uuidv7(),
+      inert: true,
+    });
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: "123456" });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+  });
+
+  it("answers otp_expired for an inert token issued more than five minutes ago", async () => {
+    const otpToken = await signOtpTokenAt(
+      { subjectKind: "staff", schoolId: uuidv7(), challengeId: uuidv7(), subjectId: uuidv7(), inert: true },
+      Math.floor(Date.now() / 1000) - 6 * 60,
+    );
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: "123456" });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_expired");
   });
 });
