@@ -21,10 +21,12 @@ export async function setup(project: TestProject) {
 }
 
 export async function teardown() {
-  // Tolera setup parcial e tenta parar os dois mesmo que o primeiro falhe.
-  const results = await Promise.allSettled([container?.stop(), network?.stop()]);
-  const failed = results.find((r) => r.status === "rejected");
-  if (failed) throw (failed as PromiseRejectedResult).reason;
+  // Tolera setup parcial; a rede só pode ser removida depois do contêiner, e é tentada mesmo se ele falhar.
+  try {
+    await container?.stop();
+  } finally {
+    await network?.stop();
+  }
 }
 
 declare module "vitest" {
