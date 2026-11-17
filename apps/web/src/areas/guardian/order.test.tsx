@@ -219,6 +219,35 @@ describe("checkout page", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
+  it("asks the server to create a missing Pix on each poll", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fn = mockApi({
+      [`GET /api/v1/checkouts/${C1}`]: ok(checkout("pending_payment", { payment: pix(null) })),
+      [`POST /api/v1/checkouts/${C1}/charge`]: [
+        "network",
+        ok(checkout("pending_payment", { payment: pix(null) })),
+        ok(checkout("pending_payment", { payment: pix("PIXCODE") })),
+      ],
+    });
+    renderAt(`/pedido/checkout/${C1}`);
+    await screen.findByText("Gerando o Pix… aguarde alguns segundos.");
+    await vi.advanceTimersByTimeAsync(3000);
+    await screen.findByText("Sem conexão. Verifique a internet e tente de novo.");
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await screen.findByText("PIXCODE");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fn.mock.calls.map((c) => `${c[1]?.method ?? "GET"} ${c[0]}`)).toEqual([
+      `GET /api/v1/checkouts/${C1}`,
+      `POST /api/v1/checkouts/${C1}/charge`,
+      `POST /api/v1/checkouts/${C1}/charge`,
+      `POST /api/v1/checkouts/${C1}/charge`,
+    ]);
+    // With the Pix shown, polling goes back to GET.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(fn.mock.calls.at(-1)?.[1]?.method ?? "GET").toBe("GET");
+  });
+
   it("keeps polling after a transient network error and clears the error", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockApi({ [`GET /api/v1/checkouts/${C1}`]: ["network", ok(checkout("paid"))] });

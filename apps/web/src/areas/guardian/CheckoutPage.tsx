@@ -22,14 +22,19 @@ export function CheckoutPage() {
   useEffect(() => {
     let stopped = false;
     let pending = true; // still unknown or pending_payment
+    let needsPix = false; // pending_payment without a Pix code: each poll asks the server to create it
     const load = () => {
       const seq = ++seqRef.current;
-      return apiFetch(`/api/v1/checkouts/${id}`, CheckoutView).then(
+      const request = needsPix
+        ? apiFetch(`/api/v1/checkouts/${id}/charge`, CheckoutView, { method: "POST" })
+        : apiFetch(`/api/v1/checkouts/${id}`, CheckoutView);
+      return request.then(
         (c) => {
           if (stopped || seq !== seqRef.current) return;
           setError(null);
           setCheckout(c);
           pending = c.status === "pending_payment";
+          needsPix = pending && !c.payment?.pixCopyPaste;
           if (pending) timerRef.current = setTimeout(load, 3000);
         },
         (err) => {
