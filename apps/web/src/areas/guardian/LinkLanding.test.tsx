@@ -96,7 +96,7 @@ describe("LinkLanding", () => {
       "/api/v1/auth/exchange": { status: 429, body: { error: { code: "otp_too_many_attempts", message: "x" } } },
     });
     renderAt("#tok-123456789012345678901234567890");
-    await screen.findByText("Muitas tentativas. Abra o link novamente para receber outro código.");
+    await screen.findByText("Muitas tentativas. Aguarde alguns minutos e abra o link novamente.");
   });
 
   it("never stores the token in web storage", async () => {
