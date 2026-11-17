@@ -7,6 +7,7 @@ import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveStaff } from "./modules/auth/service";
 import { ordersRoutes } from "./modules/orders/routes";
+import { serviceDayRoutes } from "./modules/serviceDays/routes";
 import { webhookRoutes } from "./modules/webhooks/routes";
 import { walletRoutes } from "./modules/wallet/routes";
 import { registryRoutes } from "./modules/registry/routes";
@@ -153,6 +154,7 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(catalogRoutes);
   app.register(walletRoutes);
   app.register(ordersRoutes);
+  app.register(serviceDayRoutes);
   app.register(webhookRoutes);
   return app;
 }

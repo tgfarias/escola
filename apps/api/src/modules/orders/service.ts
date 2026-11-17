@@ -257,3 +257,15 @@ export async function cancelCheckout(session: SessionClaims, checkoutId: string)
   });
   return getCheckout(session, checkoutId);
 }
+
+export async function expirePendingCheckouts(trx: Trx, schoolId: string, serviceDayId: string): Promise<number> {
+  let expired = 0;
+  for (const id of await repo.checkoutIdsByStatus(trx, serviceDayId, "pending_payment")) {
+    if (await expireCheckout(trx, schoolId, id)) expired += 1;
+  }
+  return expired;
+}
+
+export async function countLateCredited(trx: Trx, serviceDayId: string): Promise<number> {
+  return (await repo.checkoutIdsByStatus(trx, serviceDayId, "late_credited")).length;
+}

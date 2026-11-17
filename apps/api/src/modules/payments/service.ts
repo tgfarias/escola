@@ -139,3 +139,27 @@ export async function handleWebhook(input: {
 export async function expirePendingPayment(trx: Trx, checkoutId: string): Promise<void> {
   await repo.expirePending(trx, checkoutId);
 }
+
+/** Consulta no gateway as cobranças pendentes do dia e confirma as pagas pela mesma confirmPayment. */
+export async function reconcileServiceDay(schoolId: string, serviceDate: string, log: FastifyBaseLogger): Promise<void> {
+  const { pending, school } = await withTenant(schoolId, async (trx) => ({
+    pending: await repo.pendingChargesForDay(trx, serviceDate),
+    school: await repo.schoolPaymentConfig(trx),
+  }));
+  for (const p of pending) {
+    let charge;
+    try {
+      charge = await getProvider(p.provider).getCharge(p.providerChargeId!, school.paymentAccountRef);
+    } catch {
+      log.warn({ event: "reconcile_charge_failed", payment_id: p.id }, "reconciliation lookup failed");
+      continue;
+    }
+    if (charge.status !== "paid" || !charge.paidAt) continue;
+    if (charge.amountCents !== p.amountCents) {
+      log.error({ event: "payment_amount_mismatch", school_id: schoolId, payment_id: p.id }, "payment amount mismatch");
+      continue;
+    }
+    const paidAt = charge.paidAt;
+    await withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.id, paidAt }));
+  }
+}

@@ -100,3 +100,15 @@ export async function recordEvent(
 export async function expirePending(trx: Trx, checkoutId: string): Promise<void> {
   await trx.updateTable("payments").set({ status: "expired" }).where("checkoutId", "=", checkoutId).where("status", "=", "pending").execute();
 }
+
+export async function pendingChargesForDay(trx: Trx, serviceDate: string) {
+  return trx
+    .selectFrom("payments")
+    .innerJoin("checkouts", "checkouts.id", "payments.checkoutId")
+    .innerJoin("serviceDays", "serviceDays.id", "checkouts.serviceDayId")
+    .select(["payments.id", "payments.provider", "payments.providerChargeId", "payments.amountCents"])
+    .where("serviceDays.serviceDate", "=", serviceDate)
+    .where("payments.status", "=", "pending")
+    .where("payments.providerChargeId", "is not", null)
+    .execute();
+}

@@ -17,6 +17,7 @@ export const errorCodes = [
   "idempotency_key_reused",
   "cutoff_passed",
   "service_day_locked",
+  "service_day_open",
   "menu_item_name_taken",
   "insufficient_balance",
   "order_already_exists",
