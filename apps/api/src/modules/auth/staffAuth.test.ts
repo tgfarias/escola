@@ -259,4 +259,27 @@ describe("staff authentication", () => {
     expect(verified.statusCode).toBe(401);
     expect(verified.json().error.code).toBe("otp_expired");
   });
+
+  it("logs a throttled request once, with the staff id and without the e-mail", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const lines: string[] = [];
+    const app = buildApp({ logger: { level: "warn", stream: { write: (line: string) => lines.push(line) } } });
+    for (let i = 0; i < 3; i++) {
+      await app.inject({ method: "POST", url: "/api/admin/v1/auth/otp/request", payload: { email: seed.email } });
+    }
+    expect(lines).toEqual([]);
+    const fourth = await app.inject({
+      method: "POST",
+      url: "/api/admin/v1/auth/otp/request",
+      payload: { email: seed.email },
+    });
+    expect(fourth.statusCode).toBe(200);
+    expect(Object.keys(fourth.json())).toEqual(["otpToken"]);
+    const throttled = lines.map((l) => JSON.parse(l)).filter((l) => l.event === "otp_issuance_throttled");
+    expect(throttled).toHaveLength(1);
+    expect(throttled[0]).toMatchObject({ level: 40, subject_kind: "staff", subject_id: seed.staffUserId });
+    expect(lines.join("\n")).not.toContain(seed.email);
+    expect(lines.join("\n")).not.toContain(fourth.json().otpToken);
+  });
 });

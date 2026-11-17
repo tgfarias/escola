@@ -1,12 +1,25 @@
 import { ExchangeRequest, OtpVerifyRequest, StaffOtpRequest } from "@app-lanche/contracts";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { DomainError } from "../../platform/errors";
 import { GUARDIAN_SESSION_TTL, issueSession, STAFF_SESSION_TTL } from "../../platform/session";
 import * as service from "./service";
+
+/** Ids only: never the e-mail, phone or token (LGPD). */
+function logThrottled(req: FastifyRequest, subjectKind: "guardian" | "staff", subjectId: string): void {
+  req.log.warn(
+    { event: "otp_issuance_throttled", subject_kind: subjectKind, subject_id: subjectId },
+    "otp issuance throttled",
+  );
+}
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/v1/auth/exchange", { config: { auth: "public" } }, async (req, reply) => {
     const result = await service.exchange(ExchangeRequest.parse(req.body));
-    if (result.status === "step_up_required") return result;
+    if (result.status === "throttled") {
+      logThrottled(req, "guardian", result.guardianId);
+      throw new DomainError("otp_too_many_attempts");
+    }
+    if (result.status === "step_up_required") return { status: result.status, otpToken: result.otpToken };
     await issueSession(reply, result.claims, GUARDIAN_SESSION_TTL);
     return { status: "ok", scope: result.scope };
   });
@@ -21,9 +34,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     service.getMe(req.session!),
   );
 
-  app.post("/api/admin/v1/auth/otp/request", { config: { auth: "public" } }, async (req) =>
-    service.requestStaffOtp(StaffOtpRequest.parse(req.body).email),
-  );
+  app.post("/api/admin/v1/auth/otp/request", { config: { auth: "public" } }, async (req) => {
+    const result = await service.requestStaffOtp(StaffOtpRequest.parse(req.body).email);
+    if (result.throttled) logThrottled(req, "staff", result.staffUserId);
+    return { otpToken: result.otpToken };
+  });
 
   app.post("/api/admin/v1/auth/otp/verify", { config: { auth: "public" } }, async (req, reply) => {
     const result = await service.verifyStaffOtp(OtpVerifyRequest.parse(req.body));

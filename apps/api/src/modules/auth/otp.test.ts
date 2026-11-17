@@ -146,6 +146,41 @@ describe("otp", () => {
       expect(await issue(schoolId, seed.guardianId, seed.phone)).toEqual(expect.any(String));
     });
 
+    const insertPast = async (schoolId: string, guardianId: string, n: number, minutesAgo: number) => {
+      for (let i = 0; i < n; i++) {
+        await adminDb()
+          .insertInto("otpChallenges")
+          .values({
+            id: uuidv7(),
+            schoolId,
+            subjectKind: "guardian",
+            subjectId: guardianId,
+            codeHash: "past",
+            createdAt: new Date(Date.now() - minutesAgo * 60_000),
+            expiresAt: new Date(Date.now() - minutesAgo * 60_000 + 300_000),
+          })
+          .execute();
+      }
+    };
+
+    it("refuses a challenge after ten in the last 24 hours even outside the 15-minute window", async () => {
+      const schoolId = await createSchool();
+      const seed = await seedTenant(schoolId);
+      await dropSeedChallenges(schoolId);
+      await insertPast(schoolId, seed.guardianId, 10, 60);
+      expect(await issue(schoolId, seed.guardianId, seed.phone)).toBeNull();
+      expect(await otpEvents(schoolId)).toBe(0);
+    });
+
+    it("allows a challenge with nine in the last 24 hours and older ones outside it", async () => {
+      const schoolId = await createSchool();
+      const seed = await seedTenant(schoolId);
+      await dropSeedChallenges(schoolId);
+      await insertPast(schoolId, seed.guardianId, 9, 60);
+      await insertPast(schoolId, seed.guardianId, 5, 25 * 60);
+      expect(await issue(schoolId, seed.guardianId, seed.phone)).toEqual(expect.any(String));
+    });
+
     it("limits per subject, not per school", async () => {
       const schoolId = await createSchool();
       const seed = await seedTenant(schoolId);

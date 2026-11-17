@@ -235,4 +235,23 @@ describe("guardian authentication", () => {
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("unauthenticated");
   });
+
+  it("logs a throttled step-up with the guardian id and without the phone", async () => {
+    const { token, schoolId, seed } = await setup();
+    await dropSeedChallenges(schoolId);
+    const lines: string[] = [];
+    const app = buildApp({ logger: { level: "warn", stream: { write: (line: string) => lines.push(line) } } });
+    const ex = (deviceSecret: string) =>
+      app.inject({ method: "POST", url: "/api/v1/auth/exchange", payload: { token, deviceSecret } });
+    await ex(DEVICE_A);
+    for (let i = 0; i < 3; i++) await ex(String(i).repeat(43));
+    expect(lines).toEqual([]);
+    const fourth = await ex("9".repeat(43));
+    expect(fourth.statusCode).toBe(429);
+    expect(fourth.json().error.code).toBe("otp_too_many_attempts");
+    const throttled = lines.map((l) => JSON.parse(l)).filter((l) => l.event === "otp_issuance_throttled");
+    expect(throttled).toHaveLength(1);
+    expect(throttled[0]).toMatchObject({ level: 40, subject_kind: "guardian", subject_id: seed.guardianId });
+    expect(lines.join("\n")).not.toContain(seed.phone);
+  });
 });

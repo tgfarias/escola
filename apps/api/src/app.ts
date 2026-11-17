@@ -1,5 +1,5 @@
 import cookie from "@fastify/cookie";
-import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from "fastify";
 import { ZodError } from "zod";
 import { config } from "./platform/config";
 import { DomainError } from "./platform/errors";
@@ -54,9 +54,9 @@ async function authenticateWithDatabase(
   return refreshed;
 }
 
-export function buildApp(): FastifyInstance {
+export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = {}): FastifyInstance {
   const app = Fastify({
-    logger: {
+    logger: options.logger ?? {
       level: process.env.LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info"),
       redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['x-signature']"],
     },

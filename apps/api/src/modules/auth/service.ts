@@ -11,7 +11,8 @@ const INERT_TOKEN_VALIDITY_SECONDS = 5 * 60;
 
 export type ExchangeResult =
   | { status: "ok"; claims: SessionClaims; scope: GuardianScope }
-  | { status: "step_up_required"; otpToken: string };
+  | { status: "step_up_required"; otpToken: string }
+  | { status: "throttled"; guardianId: string };
 
 export async function exchange(input: { token: string; deviceSecret: string }): Promise<ExchangeResult> {
   const resolved = await repo.resolveMagicLink(hashToken(input.token));
@@ -41,12 +42,13 @@ export async function exchange(input: { token: string; deviceSecret: string }): 
       to: guardian.phoneE164,
       firstName: guardian.firstName,
     });
-    if (challengeId === null) return { kind: "throttled" as const };
+    if (challengeId === null) return { kind: "throttled" as const, guardianId: guardian.id };
     return { kind: "step_up" as const, guardianId: guardian.id, scope, challengeId };
   });
 
   if (outcome.kind === "invalid") throw new DomainError("invalid_token");
-  if (outcome.kind === "throttled") throw new DomainError("otp_too_many_attempts");
+  // The route logs the throttled outcome and answers 429.
+  if (outcome.kind === "throttled") return { status: "throttled", guardianId: outcome.guardianId };
   if (outcome.kind === "ok") {
     return {
       status: "ok",
@@ -106,13 +108,18 @@ export async function getMe(session: SessionClaims): Promise<MeResponse> {
   return found;
 }
 
-export async function requestStaffOtp(email: string): Promise<{ otpToken: string }> {
+/** `throttled` is for the route's log only; the HTTP response carries just `otpToken`. */
+export type StaffOtpRequestResult =
+  | { otpToken: string; throttled: false }
+  | { otpToken: string; throttled: true; staffUserId: string };
+
+export async function requestStaffOtp(email: string): Promise<StaffOtpRequestResult> {
   const resolved = await repo.resolveStaffEmail(email);
-  if (!resolved) return { otpToken: await signOtpToken(inertStaffPayload()) };
-  const challengeId = await withTenant(resolved.schoolId, async (trx) => {
+  if (!resolved) return { otpToken: await signOtpToken(inertStaffPayload()), throttled: false };
+  const outcome = await withTenant(resolved.schoolId, async (trx) => {
     const staff = await repo.lockStaffUser(trx, resolved.staffUserId);
-    if (!staff) return null;
-    return createChallenge(trx, {
+    if (!staff) return { kind: "inactive" as const };
+    const challengeId = await createChallenge(trx, {
       schoolId: resolved.schoolId,
       subjectKind: "staff",
       subjectId: resolved.staffUserId,
@@ -120,17 +127,21 @@ export async function requestStaffOtp(email: string): Promise<{ otpToken: string
       to: staff.email,
       firstName: null,
     });
+    return challengeId === null ? { kind: "throttled" as const } : { kind: "issued" as const, challengeId };
   });
   // Throttled or gone/deactivated meanwhile: answer exactly like an unknown e-mail so the response does not reveal the account.
-  if (challengeId === null) return { otpToken: await signOtpToken(inertStaffPayload()) };
+  if (outcome.kind === "inactive") return { otpToken: await signOtpToken(inertStaffPayload()), throttled: false };
+  if (outcome.kind === "throttled") {
+    return { otpToken: await signOtpToken(inertStaffPayload()), throttled: true, staffUserId: resolved.staffUserId };
+  }
   const otpToken = await signOtpToken({
     subjectKind: "staff",
     schoolId: resolved.schoolId,
-    challengeId,
+    challengeId: outcome.challengeId,
     subjectId: resolved.staffUserId,
     inert: false,
   });
-  return { otpToken };
+  return { otpToken, throttled: false };
 }
 
 export async function verifyStaffOtp(input: {
