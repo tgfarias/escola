@@ -21,6 +21,11 @@ const STAFF_MESSAGES: Record<string, string> = {
   otp_expired: "Este código expirou. Peça um novo código.",
   otp_too_many_attempts: "Muitas tentativas. Aguarde alguns minutos e peça um novo código.",
   unauthenticated: "Sua sessão expirou. Entre novamente.",
+  cutoff_passed: "O horário de corte deste dia já passou.",
+  service_day_locked: "Este dia já tem pedidos ou está fechado; o cardápio não pode mudar.",
+  service_day_open: "O dia só pode ser fechado depois do horário de corte.",
+  menu_item_name_taken: "Já existe um item com esse nome.",
+  validation_failed: "Confira os dados e tente de novo.",
 };
 
 export function staffErrorMessage(code: string): string {

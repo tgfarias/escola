@@ -3,6 +3,8 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { staffErrorMessage } from "../../ui/messages";
+import { MenuAdmin } from "./MenuAdmin";
+import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
 
 export function AdminHome() {
   const navigate = useNavigate();
@@ -85,6 +87,12 @@ export function AdminHome() {
           </div>
         )}
       </section>
+      {(me.role === "admin" || me.role === "secretaria") && (
+        <>
+          <MenuAdmin />
+          <ServiceDaysAdmin />
+        </>
+      )}
     </main>
   );
 }
