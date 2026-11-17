@@ -64,7 +64,8 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 - Aparelho já registrado para aquele responsável: entra direto.
 - Qualquer outro aparelho: resposta 200 com `status: "step_up_required"` e um `otpToken`; o aparelho é registrado depois de o código ser confirmado. Nesse caso o backend emite `auth.otp_requested` e o n8n envia um código de 6 dígitos por WhatsApp.
 - OTP: validade de 5 min, 5 tentativas, hash no banco.
-- Limite de emissão: no máximo 3 códigos por pessoa a cada 15 min, contados pelo relógio do banco. Acima disso o responsável recebe 429 e nenhuma mensagem é enviada; para a equipe a resposta é a mesma de um e-mail desconhecido.
+- Limite de emissão: no máximo 3 códigos por pessoa a cada 15 min e 10 por 24 h, contados pelo relógio do banco. Cada bloqueio gera um log de aviso só com o id da pessoa. Acima disso o responsável recebe 429 e nenhuma mensagem é enviada; para a equipe a resposta é a mesma de um e-mail desconhecido.
+- O token de OTP devolvido ao navegador é cifrado (JWE `dir` + `A256GCM`, chave derivada do segredo de sessão por HKDF), não apenas assinado: seu conteúdo não revela se a conta existe nem a escola. Para e-mail desconhecido ou bloqueado, a equipe recebe um token de mesmo formato e tamanho. Resíduo aceito: um token real responde 429 na sexta tentativa errada; um inerte continua respondendo `otp_invalid`.
 - O desafio pertence a uma pessoa: um código só é aceito para o responsável ou membro da equipe para quem foi emitido.
 - Aparelho revogado conta como "já teve aparelho": o responsável cujos aparelhos foram todos revogados precisa de OTP no próximo. Um aparelho revogado que passa pelo OTP volta a ficar ativo.
 - Limitação conhecida: no iOS o navegador e a PWA instalada têm armazenamentos separados, então o responsável pode receber um OTP em cada contexto na primeira vez.
@@ -74,7 +75,8 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 - JWT assinado (HS256, segredo no Secret Manager), validade de 2 h, em cookie `__session` com `HttpOnly; Secure; SameSite=Lax; Path=/`.
 - Claims: `sub` (guardian, staff ou device), `school_id`, `kind` (`guardian` | `staff` | `kitchen`), `scope`.
 - Escopos do responsável: `order` (pedir, pagar, ver saldo) e `documents` (listar e baixar). Pedido de reembolso de saldo e alteração de cadastro exigem OTP recente (10 min).
-- Equipe (`staff_users`): login por e-mail + OTP; sessão de 8 h; papéis `admin`, `secretaria`, `cozinha`.
+- Equipe (`staff_users`): login por e-mail + OTP; sessão de 8 h; papéis `admin`, `secretaria`, `cozinha`. A cada requisição de equipe, `active` e o papel são relidos do banco; desativar ou trocar o papel vale na hora.
+- Proteção contra CSRF: rotas com sessão que alteram estado (métodos diferentes de GET/HEAD/OPTIONS) recusam com 403 `origin_rejected` um `Origin` diferente de `APP_BASE_URL`, ou, sem `Origin`, um `Sec-Fetch-Site` diferente de `same-origin`.
 - KDS: pareamento por código de uso único gerado na área admin; o tablet recebe token de dispositivo de 30 dias, escopo `kitchen`, renovado a cada sincronização.
 
 ### 4.4 Isolamento entre escolas
@@ -663,5 +665,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F4 | KDS offline | F2 |
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
+
+Pendências registradas para fases futuras: criação de magic link com validade calculada pelo banco (`/internal/v1/magic-links` e lembretes, F3); rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limpeza do código do OTP na outbox antes de qualquer envio real (F3); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
 
 Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md` e `2026-11-16-f1-cadastros-e-autenticacao.md`.
