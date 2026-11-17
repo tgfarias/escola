@@ -136,8 +136,9 @@ Toda transição é um `UPDATE … WHERE status = '<estado anterior>'`; zero lin
    - se o saldo cobre tudo, o checkout nasce `paid` e os pedidos `confirmed`;
    - senão, cria `payments` pendente pelo restante.
 2. Fora da transação, cria a cobrança no gateway com split para a subconta da escola e expiração igual a `cutoff_at`. A chamada usa o `payment.id` como chave de idempotência do gateway.
-3. O PWA mostra o Pix Copia e Cola e consulta `GET /api/v1/checkouts/:id` a cada 3 s. Não há WebSocket.
-4. Checkout não pago até o corte: `expired`, e o `checkout_hold` é revertido por um lançamento `hold_release`.
+3. O PWA mostra o Pix Copia e Cola e consulta `GET /api/v1/checkouts/:id` a cada 3 s. Não há WebSocket. Se a cobrança ainda não existe (gateway falhou), a consulta usa `POST /api/v1/checkouts/:id/charge`, que tenta criá-la de novo e devolve o mesmo estado.
+4. Ordem de travas em toda transação: `service_days` → `checkouts` → `payments` → `wallets`.
+5. Checkout não pago até o corte: `expired`, e o `checkout_hold` é revertido por um lançamento `hold_release`.
 
 ### 5.4 Idempotência
 
@@ -594,6 +595,7 @@ Convenções do esquema:
 | `POST /api/v1/checkouts` | Cria checkout (idempotente) |
 | `GET /api/v1/checkouts/:id` | Estado do checkout e dados do Pix |
 | `POST /api/v1/checkouts/:id/cancel` | Cancela e credita na carteira |
+| `POST /api/v1/checkouts/:id/charge` | Cria o Pix que faltou (falha do gateway no checkout); idempotente por natureza, sem `Idempotency-Key` |
 | `GET /api/v1/wallet` | Saldo e extrato |
 | `GET /api/v1/documents` · `GET /api/v1/documents/:id/download` | Lista e URL assinada |
 | `POST /api/kds/v1/pair` | Pareia o tablet |
