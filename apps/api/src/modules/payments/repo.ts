@@ -45,3 +45,24 @@ export async function paymentsForCheckouts(trx: Trx, checkoutIds: string[]) {
     .where("checkoutId", "in", checkoutIds)
     .execute();
 }
+
+export async function paymentContext(trx: Trx, paymentId: string) {
+  return trx
+    .selectFrom("payments")
+    .innerJoin("checkouts", "checkouts.id", "payments.checkoutId")
+    .select(["payments.id", "payments.checkoutId", "payments.amountCents", "checkouts.serviceDayId"])
+    .where("payments.id", "=", paymentId)
+    .executeTakeFirst();
+}
+
+/** pending → paid, ou expired → paid (pagamento depois do fechamento). */
+export async function markPaid(trx: Trx, paymentId: string, paidAt: Date): Promise<boolean> {
+  const row = await trx
+    .updateTable("payments")
+    .set({ status: "paid", paidAt })
+    .where("id", "=", paymentId)
+    .where("status", "in", ["pending", "expired"])
+    .returning("id")
+    .executeTakeFirst();
+  return row !== undefined;
+}

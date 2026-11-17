@@ -169,3 +169,42 @@ export async function listCheckouts(session: SessionClaims, serviceDate: string)
     checkouts: await views(trx, await repo.guardianCheckoutIds(trx, session.sub, serviceDate)),
   }));
 }
+
+export async function creditLatePayment(
+  trx: Trx,
+  input: { schoolId: string; checkoutId: string; paymentId: string; amountCents: number },
+): Promise<void> {
+  const checkout = await repo.transitionCheckout(trx, input.checkoutId, ["pending_payment", "expired"], "late_credited");
+  if (!checkout) throw new Error(`checkout ${input.checkoutId} cannot be late-credited`);
+  await repo.transitionOrders(trx, input.checkoutId, "pending", "expired_late");
+
+  const base = { schoolId: input.schoolId, guardianId: checkout.guardianId };
+  let { balanceCents } = await wallet.postEntry(trx, {
+    ...base,
+    kind: "late_payment_credit",
+    amountCents: input.amountCents,
+    sourceType: "payment",
+    sourceId: input.paymentId,
+  });
+  if (checkout.walletAppliedCents > 0) {
+    ({ balanceCents } = await wallet.postEntry(trx, {
+      ...base,
+      kind: "hold_release",
+      amountCents: checkout.walletAppliedCents,
+      sourceType: "checkout",
+      sourceId: input.checkoutId,
+    }));
+  }
+
+  const guardian = await repo.guardianContact(trx, checkout.guardianId);
+  await enqueueEvent(trx, input.schoolId, {
+    type: "payment.late_credited",
+    data: {
+      guardian_id: checkout.guardianId,
+      phone: guardian.phoneE164,
+      first_name: guardian.firstName,
+      amount_cents: input.amountCents,
+      wallet_balance_cents: balanceCents,
+    },
+  });
+}
