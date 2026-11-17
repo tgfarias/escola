@@ -2,6 +2,14 @@ import { CamelCasePlugin, Kysely, PostgresDialect, sql, type Transaction } from 
 import pg from "pg";
 import type { DB } from "./types";
 
+// int8 → number (centavos cabem com folga em 2^53); date → "YYYY-MM-DD", nunca um Date no fuso do servidor.
+pg.types.setTypeParser(pg.types.builtins.INT8, (value) => {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n)) throw new Error("int8 value out of safe integer range");
+  return n;
+});
+pg.types.setTypeParser(pg.types.builtins.DATE, (value) => value);
+
 export type Trx = Transaction<DB>;
 
 let db: Kysely<DB> | undefined;

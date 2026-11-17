@@ -33,6 +33,17 @@ export interface AuditLog {
   schoolId: string;
 }
 
+export interface Checkouts {
+  createdAt: Generated<Timestamp>;
+  guardianId: string;
+  id: string;
+  schoolId: string;
+  serviceDayId: string;
+  status: Generated<string>;
+  totalCents: number;
+  walletAppliedCents: Generated<number>;
+}
+
 export interface Classes {
   createdAt: Generated<Timestamp>;
   id: string;
@@ -68,6 +79,14 @@ export interface GuardianStudents {
   studentId: string;
 }
 
+export interface IdempotencyKeys {
+  createdAt: Generated<Timestamp>;
+  key: string;
+  requestHash: string;
+  response: Json | null;
+  schoolId: string;
+}
+
 export interface MagicLinks {
   createdAt: Generated<Timestamp>;
   expiresAt: Timestamp;
@@ -75,8 +94,45 @@ export interface MagicLinks {
   id: string;
   schoolId: string;
   scope: string;
-  serviceDate: Timestamp | null;
+  serviceDate: string | null;
   tokenHash: string;
+}
+
+export interface Manifests {
+  content: Json;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  schoolId: string;
+  serviceDayId: string;
+  version: Generated<number>;
+}
+
+export interface MenuItems {
+  active: Generated<boolean>;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  name: string;
+  priceCents: number;
+  schoolId: string;
+}
+
+export interface OrderItems {
+  id: string;
+  menuItemId: string;
+  orderId: string;
+  qty: number;
+  schoolId: string;
+  unitPriceCents: number;
+}
+
+export interface Orders {
+  checkoutId: string;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  schoolId: string;
+  serviceDate: string;
+  status: Generated<string>;
+  studentId: string;
 }
 
 export interface OtpChallenges {
@@ -102,6 +158,32 @@ export interface OutboxEvents {
   type: string;
 }
 
+export interface PaymentEvents {
+  id: string;
+  paymentId: string | null;
+  provider: string;
+  providerEventId: string;
+  raw: Json;
+  receivedAt: Generated<Timestamp>;
+  schoolId: string;
+}
+
+export interface Payments {
+  amountCents: number;
+  checkoutId: string;
+  createdAt: Generated<Timestamp>;
+  expiresAt: Timestamp;
+  id: string;
+  method: string;
+  paidAt: Timestamp | null;
+  pixCopyPaste: string | null;
+  pixQrPngBase64: string | null;
+  provider: string;
+  providerChargeId: string | null;
+  schoolId: string;
+  status: Generated<string>;
+}
+
 export interface SchemaMigrations {
   appliedAt: Generated<Timestamp>;
   name: string;
@@ -117,6 +199,24 @@ export interface Schools {
   paymentWebhookSecretRef: string | null;
   platformFeeBps: Generated<number>;
   timezone: Generated<string>;
+}
+
+export interface ServiceDayItems {
+  menuItemId: string;
+  priceCents: number;
+  schoolId: string;
+  serviceDayId: string;
+}
+
+export interface ServiceDays {
+  closedAt: Timestamp | null;
+  createdAt: Generated<Timestamp>;
+  cutoffAt: Timestamp;
+  freezeAt: Timestamp;
+  id: string;
+  schoolId: string;
+  serviceDate: string;
+  status: Generated<string>;
 }
 
 export interface StaffUsers {
@@ -140,17 +240,49 @@ export interface Students {
   schoolId: string;
 }
 
+export interface WalletEntries {
+  amountCents: number;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  kind: string;
+  note: string | null;
+  schoolId: string;
+  sourceId: string;
+  sourceType: string;
+  walletId: string;
+}
+
+export interface Wallets {
+  balanceCents: Generated<number>;
+  createdAt: Generated<Timestamp>;
+  guardianId: string;
+  id: string;
+  schoolId: string;
+}
+
 export interface DB {
   auditLog: AuditLog;
+  checkouts: Checkouts;
   classes: Classes;
   devices: Devices;
   guardians: Guardians;
   guardianStudents: GuardianStudents;
+  idempotencyKeys: IdempotencyKeys;
   magicLinks: MagicLinks;
+  manifests: Manifests;
+  menuItems: MenuItems;
+  orderItems: OrderItems;
+  orders: Orders;
   otpChallenges: OtpChallenges;
   outboxEvents: OutboxEvents;
+  paymentEvents: PaymentEvents;
+  payments: Payments;
   schemaMigrations: SchemaMigrations;
   schools: Schools;
+  serviceDayItems: ServiceDayItems;
+  serviceDays: ServiceDays;
   staffUsers: StaffUsers;
   students: Students;
+  walletEntries: WalletEntries;
+  wallets: Wallets;
 }

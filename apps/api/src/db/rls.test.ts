@@ -9,15 +9,27 @@ import type { DB } from "./types";
 /** Toda tabela com school_id. Ao criar tabela nova, acrescente aqui e em seedTenant. */
 const TENANT_TABLES = [
   "audit_log",
+  "checkouts",
   "classes",
   "devices",
   "guardian_students",
   "guardians",
+  "idempotency_keys",
   "magic_links",
+  "manifests",
+  "menu_items",
+  "order_items",
+  "orders",
   "otp_challenges",
   "outbox_events",
+  "payment_events",
+  "payments",
+  "service_day_items",
+  "service_days",
   "staff_users",
   "students",
+  "wallet_entries",
+  "wallets",
 ];
 
 describe("row level security", () => {
