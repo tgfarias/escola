@@ -73,6 +73,12 @@ A conta de serviço do serviço Cloud Run precisa dos papéis:
 - `roles/secretmanager.secretAccessor` (ler os segredos);
 - `roles/cloudsql.client` (conectar ao Cloud SQL).
 
+## Pagamentos
+
+- `PAYMENT_PROVIDER` hoje só aceita `fake`. O provedor `fake` serve apenas para desenvolvimento e homologação: a API só sobe com ele se `ENABLE_FAKE_PAYMENTS=true`. O gateway real (Efí) é configurado em uma etapa posterior.
+- Cada escola tem `schools.payment_webhook_secret_ref` com o NOME de uma variável de ambiente (ex.: `PAYMENT_WEBHOOK_SECRET_ESCOLA_PILOTO`), mapeada de um segredo do Secret Manager com `--set-secrets` (mínimo 32 caracteres). Incluir escola nova exige novo deploy.
+- URL de webhook a configurar no gateway: `https://<url do Cloud Run>/webhooks/payments/<provedor>/<school_id>` (direto no Cloud Run, sem passar pelo Hosting).
+
 ## Web
 
 ```bash

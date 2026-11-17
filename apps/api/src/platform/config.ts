@@ -8,6 +8,8 @@ const Env = z.object({
   INTERNAL_HMAC_SECRET: secret,
   SESSION_SECRET: secret,
   APP_BASE_URL: z.url(),
+  PAYMENT_PROVIDER: z.enum(["fake"]).default("fake"),
+  ENABLE_FAKE_PAYMENTS: z.enum(["true", "false"]).default("false"),
 });
 
 export interface Config {
@@ -16,6 +18,8 @@ export interface Config {
   internalHmacSecret: string;
   sessionSecret: string;
   appBaseUrl: string;
+  paymentProvider: "fake";
+  fakePaymentsEnabled: boolean;
 }
 
 let cached: Config | undefined;
@@ -29,12 +33,17 @@ export function config(): Config {
     throw new Error(`invalid environment: ${names.join(", ")}`);
   }
   const env = parsed.data;
+  if (env.PAYMENT_PROVIDER === "fake" && env.ENABLE_FAKE_PAYMENTS !== "true") {
+    throw new Error("invalid environment: PAYMENT_PROVIDER");
+  }
   cached = {
     databaseUrl: env.DATABASE_URL,
     internalServiceToken: env.INTERNAL_SERVICE_TOKEN,
     internalHmacSecret: env.INTERNAL_HMAC_SECRET,
     sessionSecret: env.SESSION_SECRET,
     appBaseUrl: env.APP_BASE_URL.replace(/\/+$/, ""),
+    paymentProvider: env.PAYMENT_PROVIDER,
+    fakePaymentsEnabled: env.ENABLE_FAKE_PAYMENTS === "true",
   };
   return cached;
 }

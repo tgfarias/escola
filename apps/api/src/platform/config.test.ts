@@ -34,7 +34,23 @@ describe("config", () => {
       internalHmacSecret: valid.INTERNAL_HMAC_SECRET,
       sessionSecret: valid.SESSION_SECRET,
       appBaseUrl: valid.APP_BASE_URL,
+      paymentProvider: "fake",
+      fakePaymentsEnabled: true,
     });
+  });
+
+  it("refuses the fake payment provider unless ENABLE_FAKE_PAYMENTS is true", () => {
+    setEnv({ PAYMENT_PROVIDER: undefined, ENABLE_FAKE_PAYMENTS: "false" });
+    expect(() => config()).toThrow(/PAYMENT_PROVIDER/);
+    resetConfigForTests();
+    setEnv({ PAYMENT_PROVIDER: undefined, ENABLE_FAKE_PAYMENTS: undefined });
+    expect(() => config()).toThrow(/PAYMENT_PROVIDER/);
+  });
+
+  it("enables the fake payment provider explicitly", () => {
+    setEnv({ PAYMENT_PROVIDER: undefined, ENABLE_FAKE_PAYMENTS: "true" });
+    expect(config().fakePaymentsEnabled).toBe(true);
+    expect(config().paymentProvider).toBe("fake");
   });
 
   it("rejects a short secret, naming the variable but not leaking its value", () => {
