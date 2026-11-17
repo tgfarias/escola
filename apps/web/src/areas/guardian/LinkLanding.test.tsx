@@ -90,4 +90,28 @@ describe("LinkLanding", () => {
     await screen.findByText("Este link expirou. Peça um novo pelo WhatsApp da escola.");
     await waitFor(() => expect(fetchMock).not.toHaveBeenCalled());
   });
+
+  it("explains too many attempts on exchange", async () => {
+    mockApi({
+      "/api/v1/auth/exchange": { status: 429, body: { error: { code: "otp_too_many_attempts", message: "x" } } },
+    });
+    renderAt("#tok-123456789012345678901234567890");
+    await screen.findByText("Muitas tentativas. Abra o link novamente para receber outro código.");
+  });
+
+  it("never stores the token in web storage", async () => {
+    const token = "tok-123456789012345678901234567890";
+    sessionStorage.clear();
+    mockApi({ "/api/v1/auth/exchange": { status: 200, body: { status: "ok", scope: "order" } } });
+    renderAt(`#${token}`);
+    await screen.findByText("tela de pedido");
+    expect(localStorage.getItem("deviceSecret")).toBeTruthy();
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i)!;
+        expect(key).not.toContain(token);
+        expect(storage.getItem(key)).not.toContain(token);
+      }
+    }
+  });
 });
