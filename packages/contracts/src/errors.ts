@@ -20,6 +20,7 @@ export const errorCodes = [
   "menu_item_name_taken",
   "insufficient_balance",
   "order_already_exists",
+  "checkout_not_cancellable",
   "invalid_order",
   "internal_error",
 ] as const;

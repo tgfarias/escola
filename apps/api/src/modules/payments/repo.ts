@@ -96,3 +96,7 @@ export async function recordEvent(
     .executeTakeFirst();
   return inserted !== undefined;
 }
+
+export async function expirePending(trx: Trx, checkoutId: string): Promise<void> {
+  await trx.updateTable("payments").set({ status: "expired" }).where("checkoutId", "=", checkoutId).where("status", "=", "pending").execute();
+}

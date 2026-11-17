@@ -208,3 +208,52 @@ export async function creditLatePayment(
     },
   });
 }
+
+export async function expireCheckout(trx: Trx, schoolId: string, checkoutId: string): Promise<boolean> {
+  const checkout = await repo.transitionCheckout(trx, checkoutId, ["pending_payment"], "expired");
+  if (!checkout) return false;
+  await repo.transitionOrders(trx, checkoutId, "pending", "expired");
+  await payments.expirePendingPayment(trx, checkoutId);
+  if (checkout.walletAppliedCents > 0) {
+    await wallet.postEntry(trx, {
+      schoolId,
+      guardianId: checkout.guardianId,
+      kind: "hold_release",
+      amountCents: checkout.walletAppliedCents,
+      sourceType: "checkout",
+      sourceId: checkoutId,
+    });
+  }
+  return true;
+}
+
+export async function cancelCheckout(session: SessionClaims, checkoutId: string): Promise<CheckoutView> {
+  const schoolId = session.schoolId;
+  await withTenant(schoolId, async (trx) => {
+    const [first] = await repo.checkoutHeaders(trx, [checkoutId]);
+    if (!first || first.guardianId !== session.sub) throw new DomainError("not_found");
+    const day = await catalog.lockServiceDayById(trx, first.serviceDayId, "share");
+    // Relido depois da trava: um webhook pode ter confirmado o pagamento entre as duas leituras.
+    const [current] = await repo.checkoutHeaders(trx, [checkoutId]);
+    const status = current!.status;
+    if (status === "cancelled" || status === "expired") return;
+    if (status === "late_credited") throw new DomainError("checkout_not_cancellable");
+    if (day.status !== "open" || !day.beforeCutoff) throw new DomainError("cutoff_passed");
+    if (status === "paid") {
+      const cancelled = await repo.transitionCheckout(trx, checkoutId, ["paid"], "cancelled");
+      if (!cancelled) return;
+      await repo.transitionOrders(trx, checkoutId, "confirmed", "cancelled");
+      await wallet.postEntry(trx, {
+        schoolId,
+        guardianId: cancelled.guardianId,
+        kind: "cancel_credit",
+        amountCents: cancelled.totalCents,
+        sourceType: "checkout",
+        sourceId: checkoutId,
+      });
+      return;
+    }
+    await expireCheckout(trx, schoolId, checkoutId);
+  });
+  return getCheckout(session, checkoutId);
+}

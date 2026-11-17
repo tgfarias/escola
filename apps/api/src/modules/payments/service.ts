@@ -135,3 +135,7 @@ export async function handleWebhook(input: {
     return outcomes;
   });
 }
+
+export async function expirePendingPayment(trx: Trx, checkoutId: string): Promise<void> {
+  await repo.expirePending(trx, checkoutId);
+}

@@ -17,6 +17,10 @@ export async function ordersRoutes(app: FastifyInstance): Promise<void> {
     service.getCheckout(req.session!, IdParams.parse(req.params).id),
   );
 
+  app.post("/api/v1/checkouts/:id/cancel", { config: { auth: GUARDIAN } }, async (req) =>
+    service.cancelCheckout(req.session!, IdParams.parse(req.params).id),
+  );
+
   app.get("/api/v1/checkouts", { config: { auth: GUARDIAN } }, async (req) =>
     service.listCheckouts(req.session!, CheckoutListQuery.parse(req.query).serviceDate),
   );
