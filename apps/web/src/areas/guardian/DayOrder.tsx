@@ -22,8 +22,6 @@ export function DayOrder({ day, me }: { day: GuardianServiceDay; me: MeResponse 
   const keyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setCart({});
-    keyRef.current = null;
     apiFetch(`/api/v1/checkouts?serviceDate=${day.serviceDate}`, CheckoutListResponse).then(
       (res) => {
         const map = new Map<string, string>();

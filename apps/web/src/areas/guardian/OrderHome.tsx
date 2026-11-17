@@ -45,7 +45,7 @@ export function OrderHome() {
               ))}
             </select>
           </label>
-          {day && <DayOrder day={day} me={me} />}
+          {day && <DayOrder key={day.serviceDate} day={day} me={me} />}
         </>
       )}
     </main>
