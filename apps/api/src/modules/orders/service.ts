@@ -164,6 +164,16 @@ export async function getCheckout(session: SessionClaims, checkoutId: string): P
   });
 }
 
+/** Tenta de novo criar o Pix de um checkout pendente sem cobrança (gateway fora do ar na criação). */
+export async function retryCharge(session: SessionClaims, checkoutId: string, log: FastifyBaseLogger): Promise<CheckoutView> {
+  await withTenant(session.schoolId, async (trx) => {
+    const [header] = await repo.checkoutHeaders(trx, [checkoutId]);
+    if (!header || header.guardianId !== session.sub) throw new DomainError("not_found");
+  });
+  await payments.ensureCharge(session.schoolId, checkoutId, log);
+  return getCheckout(session, checkoutId);
+}
+
 export async function listCheckouts(session: SessionClaims, serviceDate: string): Promise<CheckoutListResponse> {
   return withTenant(session.schoolId, async (trx) => ({
     checkouts: await views(trx, await repo.guardianCheckoutIds(trx, session.sub, serviceDate)),

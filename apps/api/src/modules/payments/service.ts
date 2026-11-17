@@ -38,7 +38,12 @@ export async function ensureCharge(schoolId: string, checkoutId: string, log: Fa
     log.warn({ event: "charge_create_failed", payment_id: payment.id }, "charge creation failed");
     return;
   }
-  await withTenant(schoolId, (trx) => repo.attachCharge(trx, payment.id, charge));
+  try {
+    await withTenant(schoolId, (trx) => repo.attachCharge(trx, payment.id, charge));
+  } catch {
+    // A cobrança existe no gateway; a próxima tentativa recebe a mesma (idempotente pelo id) e a grava.
+    log.warn({ event: "charge_attach_failed", payment_id: payment.id }, "charge attach failed");
+  }
 }
 
 export async function paymentViews(trx: Trx, checkoutIds: string[]): Promise<Map<string, PaymentView>> {

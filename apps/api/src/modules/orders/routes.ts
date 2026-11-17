@@ -17,6 +17,11 @@ export async function ordersRoutes(app: FastifyInstance): Promise<void> {
     service.getCheckout(req.session!, IdParams.parse(req.params).id),
   );
 
+  // Sem Idempotency-Key: só tenta de novo criar a cobrança, que é idempotente pelo id do pagamento.
+  app.post("/api/v1/checkouts/:id/charge", { config: { auth: GUARDIAN } }, async (req) =>
+    service.retryCharge(req.session!, IdParams.parse(req.params).id, req.log),
+  );
+
   app.post("/api/v1/checkouts/:id/cancel", { config: { auth: GUARDIAN } }, async (req) =>
     service.cancelCheckout(req.session!, IdParams.parse(req.params).id),
   );

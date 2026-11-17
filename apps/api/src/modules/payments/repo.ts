@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import type { Trx } from "../../db/index";
 import type { Charge } from "./provider";
@@ -18,6 +19,8 @@ export async function unchargedPendingPayment(trx: Trx, checkoutId: string) {
     .where("checkoutId", "=", checkoutId)
     .where("status", "=", "pending")
     .where("providerChargeId", "is", null)
+    // Depois do corte não se cria cobrança viva (CLAUDE.md regra 15: o tempo vem do banco).
+    .where("expiresAt", ">", sql<Date>`now()`)
     .executeTakeFirst();
 }
 

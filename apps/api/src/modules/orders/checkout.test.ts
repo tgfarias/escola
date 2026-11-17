@@ -174,6 +174,57 @@ describe("POST /api/v1/checkouts", () => {
     const retry = await post(s.cookies, oneOrder(s), key);
     expect(retry.json().payment.pixCopyPaste).toMatch(/^00020101FAKE/);
   });
+
+  it("does not create a charge on replay once the cutoff has passed", async () => {
+    const s = await setup();
+    const key = uuidv7();
+    fakeFailNextCreate();
+    const first = (await post(s.cookies, oneOrder(s), key)).json();
+    await sql`UPDATE payments SET expires_at = now() - interval '1 minute' WHERE checkout_id = ${first.id}`.execute(adminDb());
+    const replay = await post(s.cookies, oneOrder(s), key);
+    expect(replay.statusCode).toBe(200);
+    expect(replay.json().payment.pixCopyPaste).toBeNull();
+    const row = await adminDb().selectFrom("payments").select("providerChargeId").where("checkoutId", "=", first.id).executeTakeFirstOrThrow();
+    expect(row.providerChargeId).toBeNull();
+  });
+});
+
+describe("POST /api/v1/checkouts/:id/charge", () => {
+  const charge = (id: string, cookies: Record<string, string>) =>
+    buildApp().inject({ method: "POST", url: `/api/v1/checkouts/${id}/charge`, cookies });
+
+  it("creates the missing Pix for the checkout's guardian only", async () => {
+    const s = await setup();
+    fakeFailNextCreate();
+    const created = (await post(s.cookies, oneOrder(s))).json();
+    expect(created.payment.pixCopyPaste).toBeNull();
+
+    const stranger = await seedFamily(s.schoolId, ["Caio"]);
+    const denied = await charge(created.id, await guardianCookie(s.schoolId, stranger.guardianId));
+    expect(denied.statusCode).toBe(404);
+
+    const res = await charge(created.id, s.cookies);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: created.id, status: "pending_payment", payment: { pixCopyPaste: expect.stringMatching(/^00020101FAKE/) } });
+    expect((await charge(created.id, s.cookies)).json()).toEqual(res.json());
+  });
+
+  it("answers without a Pix when the charge cannot be stored, and stores it on the next retry", async () => {
+    const s = await setup();
+    fakeFailNextCreate(2);
+    const first = (await post(s.cookies, oneOrder(s, 0))).json();
+    const other = (await post(s.cookies, oneOrder(s, 1))).json();
+    const payment = await adminDb().selectFrom("payments").select("id").where("checkoutId", "=", first.id).executeTakeFirstOrThrow();
+    // Another payment already holds the charge id the gateway will return, so attaching it fails.
+    await sql`UPDATE payments SET provider_charge_id = ${`fake_${payment.id}`} WHERE checkout_id = ${other.id}`.execute(adminDb());
+
+    const failed = await charge(first.id, s.cookies);
+    expect(failed.statusCode).toBe(200);
+    expect(failed.json().payment.pixCopyPaste).toBeNull();
+
+    await sql`UPDATE payments SET provider_charge_id = NULL WHERE checkout_id = ${other.id}`.execute(adminDb());
+    expect((await charge(first.id, s.cookies)).json().payment.pixCopyPaste).toBe(`00020101FAKEfake_${payment.id}`);
+  });
 });
 
 describe("GET /api/v1/checkouts", () => {
