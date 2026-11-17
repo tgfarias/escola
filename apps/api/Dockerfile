@@ -1,6 +1,6 @@
 FROM node:22-slim AS build
 WORKDIR /repo
-RUN corepack enable && corepack prepare pnpm@12.21.0 --activate
+RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @app-lanche/api build

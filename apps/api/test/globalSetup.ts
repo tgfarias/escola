@@ -3,8 +3,8 @@ import { Network, type StartedNetwork } from "testcontainers";
 import type { TestProject } from "vitest/node";
 import { migrate } from "../../../db/migrate";
 
-let network: StartedNetwork;
-let container: StartedPostgreSqlContainer;
+let network: StartedNetwork | undefined;
+let container: StartedPostgreSqlContainer | undefined;
 
 export async function setup(project: TestProject) {
   // A dedicated network (instead of Docker's default bridge) keeps published ports
@@ -21,8 +21,10 @@ export async function setup(project: TestProject) {
 }
 
 export async function teardown() {
-  await container.stop();
-  await network.stop();
+  // Tolera setup parcial e tenta parar os dois mesmo que o primeiro falhe.
+  const results = await Promise.allSettled([container?.stop(), network?.stop()]);
+  const failed = results.find((r) => r.status === "rejected");
+  if (failed) throw (failed as PromiseRejectedResult).reason;
 }
 
 declare module "vitest" {

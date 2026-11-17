@@ -3,3 +3,8 @@
 .git
 docs
 n8n
+.env
+.env.*
+.superpowers
+.claude
+prompt.txt
