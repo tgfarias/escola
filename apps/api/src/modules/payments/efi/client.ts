@@ -1,3 +1,4 @@
+import type { IncomingMessage } from "node:http";
 import https from "node:https";
 import { z } from "zod";
 import { config } from "../../../platform/config";
@@ -22,6 +23,7 @@ export type EfiTransport = (req: {
 
 const HOSTS = { production: "pix.api.efipay.com.br", homologacao: "pix-h.api.efipay.com.br" } as const;
 const TIMEOUT_MS = 15_000;
+const DEADLINE_MS = 20_000;
 const agents = new Map<string, https.Agent>();
 const tokens = new Map<string, { value: string; expiresAt: number }>();
 
@@ -47,8 +49,31 @@ function agentFor(c: EfiCredentials): https.Agent {
   return agent;
 }
 
+/** Reads a response body; rejects if the connection drops before the body completes. Never puts the body in errors. */
+export function collectResponse(res: IncomingMessage): Promise<{ status: number; body: unknown }> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    res.on("data", (c: Buffer) => chunks.push(c));
+    res.on("error", reject);
+    res.on("close", () => {
+      if (!res.complete) reject(new Error("efi response aborted"));
+    });
+    res.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8");
+      let body: unknown;
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {
+        body = null;
+      }
+      resolve({ status: res.statusCode ?? 0, body });
+    });
+  });
+}
+
 const httpsTransport: EfiTransport = (req) =>
   new Promise((resolve, reject) => {
+    let settled = false;
     const r = https.request(
       {
         host: HOSTS[config().efiEnv],
@@ -59,22 +84,20 @@ const httpsTransport: EfiTransport = (req) =>
         timeout: TIMEOUT_MS,
       },
       (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          let body: unknown;
-          try {
-            body = text ? JSON.parse(text) : null;
-          } catch {
-            body = null;
-          }
-          resolve({ status: res.statusCode ?? 0, body });
-        });
+        collectResponse(res).then(settle(resolve), settle(reject));
       },
     );
+    const deadline = setTimeout(() => r.destroy(new Error("efi request timed out")), DEADLINE_MS);
+    function settle<T>(fn: (v: T) => void): (v: T) => void {
+      return (v) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline);
+        fn(v);
+      };
+    }
     r.on("timeout", () => r.destroy(new Error("efi request timed out")));
-    r.on("error", reject);
+    r.on("error", settle(reject));
     if (req.body) r.write(req.body);
     r.end();
   });
