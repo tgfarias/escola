@@ -100,3 +100,8 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .execute();
   return ids;
 }
+
+/** Remove o desafio de semente, para testes que contam desafios do sujeito. */
+export async function dropSeedChallenges(schoolId: string): Promise<void> {
+  await adminDb().deleteFrom("otpChallenges").where("schoolId", "=", schoolId).where("codeHash", "=", "seed").execute();
+}

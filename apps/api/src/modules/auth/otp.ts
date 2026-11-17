@@ -9,6 +9,8 @@ import * as repo from "./repo";
 import { generateOtpCode, hashOtp } from "./tokens";
 
 const MAX_ATTEMPTS = 5;
+export const MAX_CHALLENGES_PER_WINDOW = 3;
+export const CHALLENGE_WINDOW_MINUTES = 15;
 const OTP_TOKEN_TTL = 10 * 60;
 
 export type OtpResult = "ok" | "invalid" | "expired" | "too_many_attempts";
@@ -29,7 +31,14 @@ export async function createChallenge(
     to: string;
     firstName: string | null;
   },
-): Promise<string> {
+): Promise<string | null> {
+  const recent = await repo.countRecentChallenges(
+    trx,
+    input.subjectKind,
+    input.subjectId,
+    CHALLENGE_WINDOW_MINUTES,
+  );
+  if (recent >= MAX_CHALLENGES_PER_WINDOW) return null;
   const id = uuidv7();
   const code = generateOtpCode();
   const expiresAt = await repo.insertChallenge(trx, {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
+import { adminDb, createSchool, dropSeedChallenges, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
-import { SESSION_COOKIE } from "../../platform/session";
+import { SESSION_COOKIE, signToken } from "../../platform/session";
 import { createMagicLink } from "./magicLink";
 import { hashToken } from "./tokens";
 
@@ -195,5 +195,38 @@ describe("guardian authentication", () => {
     expect(rows[0]!.revokedAt).toBeNull();
     expect((await exchange(token, DEVICE_A)).json().status).toBe("ok");
   });
-});
 
+  it("throttles OTP issuance: the fourth step-up gets 429 and no new event", async () => {
+    const { token, schoolId } = await setup();
+    await dropSeedChallenges(schoolId);
+    await exchange(token, DEVICE_A);
+    for (let i = 0; i < 3; i++) {
+      const res = await exchange(token, String(i).repeat(43));
+      expect(res.json().status).toBe("step_up_required");
+    }
+    const fourth = await exchange(token, "9".repeat(43));
+    expect(fourth.statusCode).toBe(429);
+    expect(fourth.json().error.code).toBe("otp_too_many_attempts");
+    expect(sessionCookie(fourth)).toBeUndefined();
+    const events = await adminDb()
+      .selectFrom("outboxEvents")
+      .select("id")
+      .where("schoolId", "=", schoolId)
+      .where("type", "=", "auth.otp_requested")
+      .execute();
+    expect(events).toHaveLength(3);
+  });
+
+  it("hides a guardian of another school behind RLS on /me", async () => {
+    const a = await setup();
+    const b = await setup();
+    const forged = await signToken(
+      "session",
+      { kind: "guardian", sub: b.seed.guardianId, schoolId: a.schoolId, scope: "order" },
+      60,
+    );
+    const res = await buildApp().inject({ method: "GET", url: "/api/v1/me", cookies: { [SESSION_COOKIE]: forged } });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("unauthenticated");
+  });
+});

@@ -1,6 +1,6 @@
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
+import { adminDb, createSchool, dropSeedChallenges, seedTenant } from "../../../test/helpers";
 import { withTenant } from "../../db/index";
 import { signToken } from "../../platform/session";
 import { assertOtpOk, checkCode, createChallenge, readOtpToken, signOtpToken } from "./otp";
@@ -25,7 +25,7 @@ async function setup() {
     .where("type", "=", "auth.otp_requested")
     .executeTakeFirstOrThrow();
   const code = (event.data as { code: string }).code;
-  return { schoolId, challengeId, code, expected: subject(seed) };
+  return { schoolId, seed, challengeId: challengeId!, code, expected: subject(seed) };
 }
 
 const subject = (seed: { guardianId: string }) => ({ subjectKind: "guardian" as const, subjectId: seed.guardianId });
@@ -89,6 +89,67 @@ describe("otp", () => {
       .where("id", "=", challengeId)
       .executeTakeFirstOrThrow();
     expect(row.attempts).toBe(0);
+  });
+
+  describe("issuance limit", () => {
+    const issue = (schoolId: string, guardianId: string, phone: string) =>
+      withTenant(schoolId, (trx) =>
+        createChallenge(trx, {
+          schoolId,
+          subjectKind: "guardian",
+          subjectId: guardianId,
+          channel: "whatsapp",
+          to: phone,
+          firstName: "Ana",
+        }),
+      );
+    const otpEvents = async (schoolId: string) =>
+      (
+        await adminDb()
+          .selectFrom("outboxEvents")
+          .select("id")
+          .where("schoolId", "=", schoolId)
+          .where("type", "=", "auth.otp_requested")
+          .execute()
+      ).length;
+
+    it("allows three challenges per subject and refuses the fourth without enqueuing", async () => {
+      const schoolId = await createSchool();
+      const seed = await seedTenant(schoolId);
+      await dropSeedChallenges(schoolId);
+      for (let i = 0; i < 3; i++) {
+        expect(await issue(schoolId, seed.guardianId, seed.phone)).toEqual(expect.any(String));
+      }
+      expect(await issue(schoolId, seed.guardianId, seed.phone)).toBeNull();
+      expect(await otpEvents(schoolId)).toBe(3);
+    });
+
+    it("allows a new challenge once the window has passed", async () => {
+      const schoolId = await createSchool();
+      const seed = await seedTenant(schoolId);
+      await dropSeedChallenges(schoolId);
+      for (let i = 0; i < 3; i++) await issue(schoolId, seed.guardianId, seed.phone);
+      await adminDb()
+        .updateTable("otpChallenges")
+        .set({ createdAt: new Date(Date.now() - 16 * 60_000) })
+        .where("subjectId", "=", seed.guardianId)
+        .execute();
+      expect(await issue(schoolId, seed.guardianId, seed.phone)).toEqual(expect.any(String));
+    });
+
+    it("limits per subject, not per school", async () => {
+      const schoolId = await createSchool();
+      const seed = await seedTenant(schoolId);
+      await dropSeedChallenges(schoolId);
+      for (let i = 0; i < 3; i++) await issue(schoolId, seed.guardianId, seed.phone);
+      expect(await issue(schoolId, seed.guardianId, seed.phone)).toBeNull();
+      const otherId = uuidv7();
+      await adminDb()
+        .insertInto("guardians")
+        .values({ id: otherId, schoolId, phoneE164: "+5511999990002", firstName: "Bia" })
+        .execute();
+      expect(await issue(schoolId, otherId, "+5511999990002")).toEqual(expect.any(String));
+    });
   });
 
   it("maps results to domain errors", () => {

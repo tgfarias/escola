@@ -39,10 +39,12 @@ export async function exchange(input: { token: string; deviceSecret: string }): 
       to: guardian.phoneE164,
       firstName: guardian.firstName,
     });
+    if (challengeId === null) return { kind: "throttled" as const };
     return { kind: "step_up" as const, guardianId: guardian.id, scope, challengeId };
   });
 
   if (outcome.kind === "invalid") throw new DomainError("invalid_token");
+  if (outcome.kind === "throttled") throw new DomainError("otp_too_many_attempts");
   if (outcome.kind === "ok") {
     return {
       status: "ok",

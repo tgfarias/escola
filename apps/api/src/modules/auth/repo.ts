@@ -45,6 +45,23 @@ export async function insertChallenge(
   return inserted.expiresAt;
 }
 
+/** Desafios criados para o sujeito na janela, contados pelo relógio do banco. */
+export async function countRecentChallenges(
+  trx: Trx,
+  subjectKind: "guardian" | "staff",
+  subjectId: string,
+  windowMinutes: number,
+): Promise<number> {
+  const row = await trx
+    .selectFrom("otpChallenges")
+    .select((eb) => eb.fn.countAll<string>().as("n"))
+    .where("subjectKind", "=", subjectKind)
+    .where("subjectId", "=", subjectId)
+    .where(sql<boolean>`${sql.ref("createdAt")} > now() - make_interval(mins => ${windowMinutes})`)
+    .executeTakeFirstOrThrow();
+  return Number(row.n);
+}
+
 export async function lockChallenge(trx: Trx, id: string) {
   return trx
     .selectFrom("otpChallenges")
