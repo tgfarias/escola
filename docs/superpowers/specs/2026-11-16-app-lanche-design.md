@@ -60,8 +60,9 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 ### 4.2 Vínculo ao aparelho e OTP
 
 - O Firebase Hosting só repassa ao Cloud Run o cookie `__session`. Por isso o identificador do aparelho não é cookie: o PWA gera um `device_secret` de 256 bits, guarda em `localStorage` e o envia no corpo do `exchange`. O servidor guarda o hash em `devices`.
-- Primeira troca de um link: o aparelho é registrado e vinculado ao responsável.
-- Troca com `device_secret` desconhecido para aquele responsável: resposta `step_up_required`; o backend emite `auth.otp_requested` e o n8n envia um código de 6 dígitos por WhatsApp.
+- Responsável ainda sem nenhum aparelho registrado: o primeiro aparelho que troca um link é registrado sem OTP.
+- Aparelho já registrado para aquele responsável: entra direto.
+- Qualquer outro aparelho: resposta 200 com `status: "step_up_required"` e um `otpToken`; o aparelho é registrado depois de o código ser confirmado. Nesse caso o backend emite `auth.otp_requested` e o n8n envia um código de 6 dígitos por WhatsApp.
 - OTP: validade de 5 min, 5 tentativas, hash no banco.
 - Limitação conhecida: no iOS o navegador e a PWA instalada têm armazenamentos separados, então o responsável pode receber um OTP em cada contexto na primeira vez.
 
@@ -386,6 +387,7 @@ erDiagram
   students { uuid id PK
     uuid school_id FK
     uuid class_id FK
+    text external_code
     text first_name
     text full_name
     text dietary_restrictions
@@ -560,7 +562,8 @@ Convenções do esquema:
 - Chaves primárias UUID v7 geradas pela aplicação.
 - Toda tabela exceto `schools` tem `school_id NOT NULL`, RLS e `UNIQUE (school_id, id)` para servir de alvo das FKs compostas.
 - Datas e horas em `timestamptz`; `service_date` em `date` no fuso da escola.
-- Unicidades relevantes: `guardians (school_id, phone_e164)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, além das listadas em 5.4.
+- `students.external_code` é o código/matrícula do aluno na escola; é a chave que torna a importação CSV idempotente.
+- Unicidades relevantes: `guardians (school_id, phone_e164)`, `students (school_id, external_code)`, `staff_users (email)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, além das listadas em 5.4.
 - `status`, `kind`, `role`, `scope` e `type` são `text` com `CHECK` de valores permitidos.
 
 ## 10. API pública (resumo)
@@ -624,7 +627,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 
 ## 12. Erros e observabilidade
 
-- Erros de domínio têm código estável (`cutoff_passed`, `order_already_exists`, `insufficient_scope`, `step_up_required`…) e a web traduz o código para mensagem.
+- Erros de domínio têm código estável (`cutoff_passed`, `order_already_exists`, `insufficient_scope`, `invalid_token`…) e a web traduz o código para mensagem.
 - Logs estruturados em JSON com `request_id`, `school_id` e identificadores internos; sem dados pessoais.
 - Alertas: outbox com evento há mais de 10 min sem entrega, webhook com divergência de valor, dia não fechado 10 min após o corte, conexões de banco acima de 80 %.
 
@@ -651,4 +654,4 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
 
-Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`.
+Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md` e `2026-11-16-f1-cadastros-e-autenticacao.md`.
