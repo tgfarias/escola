@@ -13,6 +13,8 @@ const STATUS: Record<ErrorCode, number> = {
   invalid_signature: 401,
   payload_too_large: 413,
   request_rejected: 400,
+  idempotency_key_required: 400,
+  idempotency_key_reused: 422,
   internal_error: 500,
 };
 

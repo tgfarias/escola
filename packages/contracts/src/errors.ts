@@ -13,6 +13,8 @@ export const errorCodes = [
   "invalid_signature",
   "payload_too_large",
   "request_rejected",
+  "idempotency_key_required",
+  "idempotency_key_reused",
   "internal_error",
 ] as const;
 
