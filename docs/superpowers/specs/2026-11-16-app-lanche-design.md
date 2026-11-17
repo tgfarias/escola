@@ -64,6 +64,9 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 - Aparelho já registrado para aquele responsável: entra direto.
 - Qualquer outro aparelho: resposta 200 com `status: "step_up_required"` e um `otpToken`; o aparelho é registrado depois de o código ser confirmado. Nesse caso o backend emite `auth.otp_requested` e o n8n envia um código de 6 dígitos por WhatsApp.
 - OTP: validade de 5 min, 5 tentativas, hash no banco.
+- Limite de emissão: no máximo 3 códigos por pessoa a cada 15 min, contados pelo relógio do banco. Acima disso o responsável recebe 429 e nenhuma mensagem é enviada; para a equipe a resposta é a mesma de um e-mail desconhecido.
+- O desafio pertence a uma pessoa: um código só é aceito para o responsável ou membro da equipe para quem foi emitido.
+- Aparelho revogado conta como "já teve aparelho": o responsável cujos aparelhos foram todos revogados precisa de OTP no próximo. Um aparelho revogado que passa pelo OTP volta a ficar ativo.
 - Limitação conhecida: no iOS o navegador e a PWA instalada têm armazenamentos separados, então o responsável pode receber um OTP em cada contexto na primeira vez.
 
 ### 4.3 Sessão
