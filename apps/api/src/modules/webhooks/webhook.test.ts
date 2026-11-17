@@ -1,12 +1,16 @@
 import { uuidv7 } from "uuidv7";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay } from "../../../test/helpers";
 import { buildApp } from "../../app";
+import * as repo from "../payments/repo";
 import { fakeReset } from "../payments/fakeProvider";
 
 const SECRET = process.env.PAYMENT_WEBHOOK_SECRET_TEST!;
 
-afterEach(() => fakeReset());
+afterEach(() => {
+  vi.restoreAllMocks();
+  fakeReset();
+});
 
 async function pendingPayment() {
   const schoolId = await createSchool();
@@ -96,7 +100,10 @@ describe("payment webhook", () => {
     const p = await pendingPayment();
     expect((await send(p.schoolId, paid(p), { token: "x".repeat(40) })).statusCode).toBe(401);
     const other = await createSchool();
+    process.env.PAYMENT_WEBHOOK_SECRET_OTHER = "other-school-webhook-secret-with-32-chars";
+    await adminDb().updateTable("schools").set({ paymentWebhookSecretRef: "PAYMENT_WEBHOOK_SECRET_OTHER" }).where("id", "=", other).execute();
     expect((await send(other, paid(p))).statusCode).toBe(401);
+    expect(await eventCount(other)).toBe(0);
     expect((await send(uuidv7(), paid(p))).statusCode).toBe(401);
     expect((await send("not-a-uuid", paid(p))).statusCode).toBe(401);
     expect((await send(p.schoolId, paid(p), { provider: "nope" })).statusCode).toBe(404);
@@ -109,5 +116,13 @@ describe("payment webhook", () => {
     const res = await send(p.schoolId, { ...paid(p), charge_id: "fake_unknown" });
     expect(res.statusCode).toBe(200);
     expect(await checkoutStatus(p.checkoutId)).toBe("pending_payment");
+  });
+
+  it("answers 500, not 401, when reading the school config fails", async () => {
+    const p = await pendingPayment();
+    vi.spyOn(repo, "findSchoolPaymentConfig").mockRejectedValueOnce(new Error("connection lost"));
+    const res = await send(p.schoolId, paid(p));
+    expect(res.statusCode).toBe(500);
+    expect(await eventCount(p.schoolId)).toBe(0);
   });
 });

@@ -28,6 +28,14 @@ export async function schoolPaymentConfig(trx: Trx) {
     .executeTakeFirstOrThrow();
 }
 
+/** Like `schoolPaymentConfig`, but `undefined` when the school does not exist; real errors propagate. */
+export async function findSchoolPaymentConfig(trx: Trx) {
+  return trx
+    .selectFrom("schools")
+    .select(["paymentAccountRef", "paymentWebhookSecretRef", "platformFeeBps", "kitchenPhone"])
+    .executeTakeFirst();
+}
+
 export async function attachCharge(trx: Trx, paymentId: string, charge: Charge): Promise<void> {
   await trx
     .updateTable("payments")

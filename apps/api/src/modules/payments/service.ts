@@ -96,7 +96,7 @@ export async function handleWebhook(input: {
   const provider = getProvider(input.providerName);
   if (!UUID.test(input.schoolId)) throw new DomainError("invalid_signature");
   const { schoolId } = input;
-  const school = await withTenant(schoolId, (trx) => repo.schoolPaymentConfig(trx).catch(() => undefined));
+  const school = await withTenant(schoolId, (trx) => repo.findSchoolPaymentConfig(trx));
   if (!school?.paymentWebhookSecretRef) throw new DomainError("invalid_signature");
   // Fora de transação: o provedor pode consultar o gateway (CLAUDE.md regra 20).
   const events = await provider.parseWebhook({
