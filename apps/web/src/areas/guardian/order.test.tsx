@@ -219,6 +219,27 @@ describe("checkout page", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps polling after a transient network error and clears the error", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mockApi({ [`GET /api/v1/checkouts/${C1}`]: ["network", ok(checkout("paid"))] });
+    renderAt(`/pedido/checkout/${C1}`);
+    await screen.findByText("Sem conexão. Verifique a internet e tente de novo.");
+    await vi.advanceTimersByTimeAsync(3000);
+    await screen.findByText("Pedido confirmado!");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("stops polling on a 4xx", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fn = mockApi({
+      [`GET /api/v1/checkouts/${C1}`]: { status: 404, body: { error: { code: "not_found", message: "x" } } },
+    });
+    renderAt(`/pedido/checkout/${C1}`);
+    await screen.findByText("Não encontramos este pedido.");
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   it("copies the Pix code", async () => {
     const writeText = vi.fn(async () => undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });

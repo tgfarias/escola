@@ -1,5 +1,5 @@
 import { CheckoutView } from "@app-lanche/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
@@ -15,33 +15,46 @@ export function CheckoutPage() {
   const [checkout, setCheckout] = useState<CheckoutView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const seqRef = useRef(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fail = (err: unknown) => setError(errorMessage(err instanceof ApiError ? err.code : "internal_error"));
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
-    const load = () =>
-      apiFetch(`/api/v1/checkouts/${id}`, CheckoutView).then(
+    let pending = true; // still unknown or pending_payment
+    const load = () => {
+      const seq = ++seqRef.current;
+      return apiFetch(`/api/v1/checkouts/${id}`, CheckoutView).then(
         (c) => {
-          if (stopped) return;
+          if (stopped || seq !== seqRef.current) return;
+          setError(null);
           setCheckout(c);
-          if (c.status === "pending_payment") timer = setTimeout(load, 3000);
+          pending = c.status === "pending_payment";
+          if (pending) timerRef.current = setTimeout(load, 3000);
         },
         (err) => {
-          if (!stopped) fail(err);
+          if (stopped || seq !== seqRef.current) return;
+          fail(err);
+          const transient = err instanceof ApiError && (err.status === 0 || err.status >= 500);
+          if (transient && pending) timerRef.current = setTimeout(load, 3000);
         },
       );
+    };
     void load();
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      clearTimeout(timerRef.current);
     };
   }, [id]);
 
   async function cancel() {
     if (!window.confirm("Cancelar este pedido?")) return;
     try {
-      setCheckout(await apiFetch(`/api/v1/checkouts/${id}/cancel`, CheckoutView, { method: "POST" }));
+      const cancelled = await apiFetch(`/api/v1/checkouts/${id}/cancel`, CheckoutView, { method: "POST" });
+      clearTimeout(timerRef.current);
+      seqRef.current++; // drop any poll still in flight
+      setError(null);
+      setCheckout(cancelled);
     } catch (err) {
       fail(err);
     }
