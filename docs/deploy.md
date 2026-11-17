@@ -75,9 +75,41 @@ A conta de serviço do serviço Cloud Run precisa dos papéis:
 
 ## Pagamentos
 
-- `PAYMENT_PROVIDER` hoje só aceita `fake`. O provedor `fake` serve apenas para desenvolvimento e homologação: a API só sobe com ele se `ENABLE_FAKE_PAYMENTS=true`. O gateway real (Efí) é configurado em uma etapa posterior.
+- `PAYMENT_PROVIDER` aceita `fake` ou `efi`. O provedor `fake` serve apenas para desenvolvimento e homologação: a API só sobe com ele se `ENABLE_FAKE_PAYMENTS=true`. O gateway real (Efí) está descrito na seção "Efí (Pix)" abaixo.
 - Cada escola tem `schools.payment_webhook_secret_ref` com o NOME de uma variável de ambiente (ex.: `PAYMENT_WEBHOOK_SECRET_ESCOLA_PILOTO`), mapeada de um segredo do Secret Manager com `--set-secrets` (mínimo 32 caracteres). Incluir escola nova exige novo deploy.
 - URL de webhook a configurar no gateway: `https://<url do Cloud Run>/webhooks/payments/<provedor>/<school_id>` (direto no Cloud Run, sem passar pelo Hosting).
+
+## Efí (Pix)
+
+Referência da API e itens não confirmados: `docs/efi-pix.md`.
+
+Variáveis do serviço:
+
+- `PAYMENT_PROVIDER=efi`.
+- `EFI_ENV`: `homologacao` até o piloto; `production` depois.
+- `EFI_PLATFORM_ACCOUNT`: JSON com a conta Efí da plataforma, que recebe o split: `{"document_type":"cnpj","document":"<só dígitos>","account":"<número da conta Efí>"}`. Obrigatória se alguma escola tem `platform_fee_bps > 0`.
+
+Por escola:
+
+- Segredo JSON de credenciais, mapeado com `--set-secrets` numa variável cujo nome vai em `schools.payment_account_ref`: `client_id`, `client_secret`, `pix_key`, `certificate_p12_base64` (o certificado `.p12` em base64) e `certificate_passphrase` (se houver).
+- Segredo do webhook (`openssl rand -hex 32`), numa variável cujo nome vai em `schools.payment_webhook_secret_ref`. Para a Efí ele precisa casar `[A-Za-z0-9_-]{32,}`, pois vai na URL.
+- Escopos que a aplicação da escola precisa ter no painel Efí: `cob.write`, `cob.read`, `pix.read`, `webhook.write`, `webhook.read`, `gn.split.write`, `gn.split.read`.
+
+Depois do deploy, registre o webhook e o split de cada escola (com `PAYMENT_PROVIDER=efi`, `EFI_PLATFORM_ACCOUNT` e os segredos no ambiente do comando):
+
+```bash
+pnpm --filter @app-lanche/api cli:efi-setup <school_id> <URL do Cloud Run>
+```
+
+O comando registra o webhook com `x-skip-mtls-checking: true` (o Cloud Run não faz mTLS) e cria a configuração de split. Ele imprime só o resultado de cada passo, nunca a URL (que contém o token).
+
+Checklist de homologação (itens não confirmados em `docs/efi-pix.md`):
+
+- criar uma cobrança e pagá-la no ambiente de homologação;
+- conferir que o webhook chega com `?token=…&ignorar=/pix`;
+- repetir o PUT do mesmo txid (espera-se 409 ou 2xx);
+- conferir o split vinculado;
+- conferir a senha do `.p12`.
 
 ## Web
 

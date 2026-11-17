@@ -2,13 +2,32 @@ import { z } from "zod";
 
 const secret = z.string().min(32);
 
+const PlatformAccount = z.object({
+  document_type: z.enum(["cpf", "cnpj"]),
+  document: z.string().regex(/^\d+$/),
+  account: z.string().min(1),
+});
+
 const Env = z.object({
   DATABASE_URL: z.string().min(1),
   INTERNAL_SERVICE_TOKEN: secret,
   INTERNAL_HMAC_SECRET: secret,
   SESSION_SECRET: secret,
   APP_BASE_URL: z.url(),
-  PAYMENT_PROVIDER: z.enum(["fake"]).default("fake"),
+  PAYMENT_PROVIDER: z.enum(["fake", "efi"]).default("fake"),
+  EFI_ENV: z.enum(["production", "homologacao"]).default("homologacao"),
+  EFI_PLATFORM_ACCOUNT: z
+    .string()
+    .optional()
+    .transform((text, ctx) => {
+      if (text === undefined || text === "") return null;
+      try {
+        return PlatformAccount.parse(JSON.parse(text));
+      } catch {
+        ctx.addIssue({ code: "custom", message: "invalid" });
+        return z.NEVER;
+      }
+    }),
   ENABLE_FAKE_PAYMENTS: z.enum(["true", "false"]).default("false"),
 });
 
@@ -18,8 +37,10 @@ export interface Config {
   internalHmacSecret: string;
   sessionSecret: string;
   appBaseUrl: string;
-  paymentProvider: "fake";
+  paymentProvider: "fake" | "efi";
   fakePaymentsEnabled: boolean;
+  efiEnv: "production" | "homologacao";
+  efiPlatformAccount: { documentType: "cpf" | "cnpj"; document: string; account: string } | null;
 }
 
 let cached: Config | undefined;
@@ -44,6 +65,14 @@ export function config(): Config {
     appBaseUrl: env.APP_BASE_URL.replace(/\/+$/, ""),
     paymentProvider: env.PAYMENT_PROVIDER,
     fakePaymentsEnabled: env.ENABLE_FAKE_PAYMENTS === "true",
+    efiEnv: env.EFI_ENV,
+    efiPlatformAccount: env.EFI_PLATFORM_ACCOUNT
+      ? {
+          documentType: env.EFI_PLATFORM_ACCOUNT.document_type,
+          document: env.EFI_PLATFORM_ACCOUNT.document,
+          account: env.EFI_PLATFORM_ACCOUNT.account,
+        }
+      : null,
   };
   return cached;
 }

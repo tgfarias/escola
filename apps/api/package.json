@@ -9,6 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "cli:create-school": "tsx src/cli/createSchool.ts",
+    "cli:efi-setup": "tsx src/cli/efiSetup.ts",
     "db:types": "kysely-codegen --dialect postgres --camel-case --date-parser string --type-mapping '{\"int8\":\"number\"}' --out-file src/db/types.ts"
   },
   "dependencies": {

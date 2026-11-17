@@ -1,3 +1,4 @@
+import { Writable } from "node:stream";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -11,6 +12,21 @@ describe("buildApp", () => {
     const res = await app.inject({ method: "GET", url: "/healthz" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
+  });
+
+  it("keeps query strings (webhook tokens) out of the request log", async () => {
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk, _enc, cb) {
+        lines.push(String(chunk));
+        cb();
+      },
+    });
+    const app = buildApp({ logger: { level: "info", stream } });
+    await app.inject({ method: "GET", url: "/healthz?token=abc123segredo" });
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.join("")).not.toContain("abc123segredo");
+    expect(lines.join("")).toContain("/healthz");
   });
 
   it("refuses to register a route without config.auth", async () => {

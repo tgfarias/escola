@@ -60,13 +60,32 @@ async function authenticateWithDatabase(
   return refreshed;
 }
 
-export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = {}): FastifyInstance {
-  const app = Fastify({
-    logger: options.logger ?? {
+/** The request log never carries the query string: webhook URLs hold a secret token there. */
+const LOG_SERIALIZERS = {
+  req: (req: { method: string; url: string; hostname?: string; ip?: string }) => ({
+    method: req.method,
+    url: req.url.split("?")[0],
+    hostname: req.hostname,
+    remoteAddress: req.ip,
+  }),
+};
+
+function loggerOptions(logger: FastifyServerOptions["logger"]): FastifyServerOptions["logger"] {
+  if (logger === undefined) {
+    return {
       level: process.env.LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info"),
       redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['x-signature']"],
-    },
-  });
+      serializers: LOG_SERIALIZERS,
+    };
+  }
+  if (typeof logger === "object" && logger !== null) {
+    return { ...logger, serializers: { ...LOG_SERIALIZERS, ...(logger.serializers ?? {}) } };
+  }
+  return logger;
+}
+
+export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = {}): FastifyInstance {
+  const app = Fastify({ logger: loggerOptions(options.logger) });
 
   app.register(cookie);
 

@@ -36,6 +36,8 @@ describe("config", () => {
       appBaseUrl: valid.APP_BASE_URL,
       paymentProvider: "fake",
       fakePaymentsEnabled: true,
+      efiEnv: "homologacao",
+      efiPlatformAccount: null,
     });
   });
 
@@ -51,6 +53,23 @@ describe("config", () => {
     setEnv({ PAYMENT_PROVIDER: undefined, ENABLE_FAKE_PAYMENTS: "true" });
     expect(config().fakePaymentsEnabled).toBe(true);
     expect(config().paymentProvider).toBe("fake");
+  });
+
+  it("starts with the efi provider without ENABLE_FAKE_PAYMENTS and defaults EFI_ENV to homologacao", () => {
+    setEnv({ PAYMENT_PROVIDER: "efi", ENABLE_FAKE_PAYMENTS: undefined });
+    expect(config().paymentProvider).toBe("efi");
+    expect(config().efiEnv).toBe("homologacao");
+  });
+
+  it("validates EFI_PLATFORM_ACCOUNT, naming the variable", () => {
+    setEnv({ EFI_PLATFORM_ACCOUNT: JSON.stringify({ document_type: "rg", document: "12", account: "1" }) });
+    expect(() => config()).toThrow(/EFI_PLATFORM_ACCOUNT/);
+    resetConfigForTests();
+    setEnv({ EFI_PLATFORM_ACCOUNT: "not json" });
+    expect(() => config()).toThrow(/EFI_PLATFORM_ACCOUNT/);
+    resetConfigForTests();
+    setEnv({ EFI_PLATFORM_ACCOUNT: JSON.stringify({ document_type: "cnpj", document: "12345678000190", account: "123456" }) });
+    expect(config().efiPlatformAccount).toEqual({ documentType: "cnpj", document: "12345678000190", account: "123456" });
   });
 
   it("rejects a short secret, naming the variable but not leaking its value", () => {
