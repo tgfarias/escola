@@ -5,9 +5,9 @@ export const OtpRequestedEvent = z.object({
   data: z.object({
     channel: z.enum(["whatsapp", "email"]),
     to: z.string(),
-    firstName: z.string().nullable(),
+    first_name: z.string().nullable(),
     code: z.string().regex(/^\d{6}$/),
-    expiresAt: z.string().datetime({ offset: true }),
+    expires_at: z.string().datetime({ offset: true }),
   }),
 });
 

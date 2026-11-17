@@ -1,4 +1,6 @@
+import { sql } from "kysely";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { adminDb, createSchool } from "../../test/helpers";
 import { withTenant } from "../db/index";
 import { enqueueEvent } from "./outbox";
@@ -8,9 +10,9 @@ const event = {
   data: {
     channel: "whatsapp" as const,
     to: "+5511999990001",
-    firstName: "Ana",
+    first_name: "Ana",
     code: "123456",
-    expiresAt: "2026-11-17T07:30:00-03:00",
+    expires_at: "2026-11-17T07:30:00-03:00",
   },
 };
 
@@ -21,11 +23,13 @@ describe("enqueueEvent", () => {
     const row = await adminDb()
       .selectFrom("outboxEvents")
       .selectAll()
+      .select(sql<string>`data::text`.as("rawData"))
       .where("id", "=", id)
       .executeTakeFirstOrThrow();
     expect(row.schoolId).toBe(schoolId);
     expect(row.type).toBe("auth.otp_requested");
-    expect(row.data).toEqual(event.data);
+    // CamelCasePlugin renomeia chaves de JSON na leitura; o texto cru mostra o formato real no fio.
+    expect(JSON.parse(row.rawData)).toEqual(event.data);
     expect(row.deliveredAt).toBeNull();
   });
 
@@ -48,6 +52,14 @@ describe("enqueueEvent", () => {
   it("rejects an event that does not match the contract", async () => {
     const schoolId = await createSchool();
     const bad = { ...event, data: { ...event.data, code: "12" } };
-    await expect(withTenant(schoolId, (trx) => enqueueEvent(trx, schoolId, bad))).rejects.toThrow();
+    await expect(
+      withTenant(schoolId, (trx) => enqueueEvent(trx, schoolId, bad)),
+    ).rejects.toBeInstanceOf(ZodError);
+    const rows = await adminDb()
+      .selectFrom("outboxEvents")
+      .select("id")
+      .where("schoolId", "=", schoolId)
+      .execute();
+    expect(rows).toEqual([]);
   });
 });
