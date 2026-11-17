@@ -19,6 +19,8 @@ export const errorCodes = [
   "service_day_locked",
   "menu_item_name_taken",
   "insufficient_balance",
+  "order_already_exists",
+  "invalid_order",
   "internal_error",
 ] as const;
 

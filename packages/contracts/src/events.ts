@@ -11,8 +11,32 @@ export const OtpRequestedEvent = z.object({
   }),
 });
 
+export const PaymentConfirmedEvent = z.object({
+  type: z.literal("payment.confirmed"),
+  data: z.object({
+    guardian_id: z.string().uuid(),
+    phone: z.string(),
+    first_name: z.string(),
+    checkout_id: z.string().uuid(),
+    service_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    students: z.array(z.string()).min(1),
+    total_cents: z.number().int().positive(),
+  }),
+});
+
+export const PaymentLateCreditedEvent = z.object({
+  type: z.literal("payment.late_credited"),
+  data: z.object({
+    guardian_id: z.string().uuid(),
+    phone: z.string(),
+    first_name: z.string(),
+    amount_cents: z.number().int().positive(),
+    wallet_balance_cents: z.number().int().nonnegative(),
+  }),
+});
+
 /** Novos tipos de evento entram nesta união. */
-export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent]);
+export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent, PaymentConfirmedEvent, PaymentLateCreditedEvent]);
 export type OutboxEvent = z.infer<typeof OutboxEvent>;
 
 export const OutboxEnvelope = z.object({

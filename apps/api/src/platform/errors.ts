@@ -19,6 +19,8 @@ const STATUS: Record<ErrorCode, number> = {
   service_day_locked: 409,
   menu_item_name_taken: 409,
   insufficient_balance: 409,
+  order_already_exists: 409,
+  invalid_order: 422,
   internal_error: 500,
 };
 
