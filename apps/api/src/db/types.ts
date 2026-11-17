@@ -40,6 +40,18 @@ export interface Classes {
   schoolId: string;
 }
 
+export interface Devices {
+  createdAt: Generated<Timestamp>;
+  guardianId: string | null;
+  id: string;
+  kind: string;
+  pairingCodeHash: string | null;
+  pairingExpiresAt: Timestamp | null;
+  revokedAt: Timestamp | null;
+  schoolId: string;
+  secretHash: string | null;
+}
+
 export interface Guardians {
   createdAt: Generated<Timestamp>;
   email: string | null;
@@ -54,6 +66,29 @@ export interface GuardianStudents {
   restrictionConsentAt: Timestamp | null;
   schoolId: string;
   studentId: string;
+}
+
+export interface MagicLinks {
+  createdAt: Generated<Timestamp>;
+  expiresAt: Timestamp;
+  guardianId: string;
+  id: string;
+  schoolId: string;
+  scope: string;
+  serviceDate: Timestamp | null;
+  tokenHash: string;
+}
+
+export interface OtpChallenges {
+  attempts: Generated<number>;
+  codeHash: string;
+  consumedAt: Timestamp | null;
+  createdAt: Generated<Timestamp>;
+  expiresAt: Timestamp;
+  id: string;
+  schoolId: string;
+  subjectId: string;
+  subjectKind: string;
 }
 
 export interface OutboxEvents {
@@ -108,8 +143,11 @@ export interface Students {
 export interface DB {
   auditLog: AuditLog;
   classes: Classes;
+  devices: Devices;
   guardians: Guardians;
   guardianStudents: GuardianStudents;
+  magicLinks: MagicLinks;
+  otpChallenges: OtpChallenges;
   outboxEvents: OutboxEvents;
   schemaMigrations: SchemaMigrations;
   schools: Schools;

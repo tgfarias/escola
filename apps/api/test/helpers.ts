@@ -72,5 +72,31 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .insertInto("outboxEvents")
     .values({ id: uuidv7(), schoolId, type: "seed", data: JSON.stringify({}) })
     .execute();
+  await db
+    .insertInto("devices")
+    .values({ id: uuidv7(), schoolId, kind: "kitchen" })
+    .execute();
+  await db
+    .insertInto("magicLinks")
+    .values({
+      id: uuidv7(),
+      schoolId,
+      guardianId: ids.guardianId,
+      tokenHash: `seed-${uuidv7()}`,
+      scope: "order",
+      expiresAt: new Date(Date.now() + 3_600_000),
+    })
+    .execute();
+  await db
+    .insertInto("otpChallenges")
+    .values({
+      id: uuidv7(),
+      schoolId,
+      subjectKind: "guardian",
+      subjectId: ids.guardianId,
+      codeHash: "seed",
+      expiresAt: new Date(Date.now() + 300_000),
+    })
+    .execute();
   return ids;
 }

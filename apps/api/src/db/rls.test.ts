@@ -10,8 +10,11 @@ import type { DB } from "./types";
 const TENANT_TABLES = [
   "audit_log",
   "classes",
+  "devices",
   "guardian_students",
   "guardians",
+  "magic_links",
+  "otp_challenges",
   "outbox_events",
   "staff_users",
   "students",
