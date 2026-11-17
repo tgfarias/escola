@@ -84,4 +84,64 @@ describe("buildApp", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().raw).toBe(payload);
   });
+
+  it("refuses an /internal/ route that is not declared internal", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.get("/internal/v1/leak", { config: { auth: "public" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/\/internal\/v1\/leak/);
+  });
+
+  it("refuses an internal route outside /internal/", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.get("/api/v1/sneaky", { config: { auth: "internal" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/\/api\/v1\/sneaky/);
+  });
+
+  it("fails closed for session-based auth until sessions exist", async () => {
+    const app = buildApp();
+    app.get("/api/v1/mine", { config: { auth: { kind: "guardian" } } }, async () => ({ ok: true }));
+    const res = await app.inject({ method: "GET", url: "/api/v1/mine" });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("unauthenticated");
+  });
+
+  it("answers unknown paths with the error envelope and no-store", async () => {
+    const app = buildApp();
+    const res = await app.inject({ method: "GET", url: "/api/v1/nowhere" });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: { code: "not_found", message: "not found" } });
+    expect(res.headers["cache-control"]).toBe("private, no-store");
+  });
+
+  it("maps an oversized body to 413 payload_too_large", async () => {
+    const app = buildApp();
+    app.post("/api/v1/echo", { config: { auth: "public" } }, async (req) => req.body);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/echo",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ a: "x".repeat(1024 * 1024 + 1) }),
+    });
+    expect(res.statusCode).toBe(413);
+    expect(res.json().error.code).toBe("payload_too_large");
+  });
+
+  it("maps an unsupported content type to 415 request_rejected", async () => {
+    const app = buildApp();
+    app.post("/api/v1/echo", { config: { auth: "public" } }, async (req) => req.body);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/echo",
+      headers: { "content-type": "text/xml" },
+      payload: "<a/>",
+    });
+    expect(res.statusCode).toBe(415);
+    expect(res.json().error.code).toBe("request_rejected");
+  });
 });

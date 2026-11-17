@@ -10,6 +10,8 @@ const STATUS: Record<ErrorCode, number> = {
   otp_expired: 401,
   otp_too_many_attempts: 429,
   invalid_signature: 401,
+  payload_too_large: 413,
+  request_rejected: 400,
   internal_error: 500,
 };
 

@@ -10,6 +10,8 @@ export const errorCodes = [
   "otp_expired",
   "otp_too_many_attempts",
   "invalid_signature",
+  "payload_too_large",
+  "request_rejected",
   "internal_error",
 ] as const;
 
