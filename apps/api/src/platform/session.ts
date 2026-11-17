@@ -1,0 +1,102 @@
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { SignJWT, jwtVerify } from "jose";
+import { z } from "zod";
+import type { RouteAuth } from "../app";
+import { config } from "./config";
+import { DomainError } from "./errors";
+
+export const SESSION_COOKIE = "__session";
+export const GUARDIAN_SESSION_TTL = 2 * 60 * 60;
+export const STAFF_SESSION_TTL = 8 * 60 * 60;
+
+const GuardianScope = z.enum(["order", "documents"]);
+const StaffRole = z.enum(["admin", "secretaria", "cozinha"]);
+export type GuardianScope = z.infer<typeof GuardianScope>;
+export type StaffRole = z.infer<typeof StaffRole>;
+
+const SessionClaims = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("guardian"),
+    sub: z.string().uuid(),
+    schoolId: z.string().uuid(),
+    scope: GuardianScope,
+    otpAt: z.number().optional(),
+  }),
+  z.object({
+    kind: z.literal("staff"),
+    sub: z.string().uuid(),
+    schoolId: z.string().uuid(),
+    role: StaffRole,
+  }),
+]);
+export type SessionClaims = z.infer<typeof SessionClaims>;
+
+declare module "fastify" {
+  interface FastifyRequest {
+    session?: SessionClaims;
+  }
+}
+
+function key(): Uint8Array {
+  return new TextEncoder().encode(config().sessionSecret);
+}
+
+export async function signToken(
+  purpose: "session" | "otp",
+  payload: Record<string, unknown>,
+  ttlSeconds: number,
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ ...payload, purpose })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
+    .sign(key());
+}
+
+export async function verifyToken(
+  purpose: "session" | "otp",
+  token: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const { payload } = await jwtVerify(token, key(), { algorithms: ["HS256"] });
+    if (payload.purpose !== purpose) throw new Error("wrong purpose");
+    return payload;
+  } catch {
+    throw new DomainError("unauthenticated");
+  }
+}
+
+export async function issueSession(
+  reply: FastifyReply,
+  claims: SessionClaims,
+  ttlSeconds: number,
+): Promise<void> {
+  const token = await signToken("session", claims, ttlSeconds);
+  reply.setCookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: ttlSeconds,
+  });
+}
+
+export async function authenticate(
+  req: FastifyRequest,
+  auth: Exclude<RouteAuth, string>,
+): Promise<SessionClaims> {
+  const token = req.cookies[SESSION_COOKIE];
+  if (!token) throw new DomainError("unauthenticated");
+  const parsed = SessionClaims.safeParse(await verifyToken("session", token));
+  if (!parsed.success) throw new DomainError("unauthenticated");
+  const claims = parsed.data;
+  if (claims.kind !== auth.kind) throw new DomainError("insufficient_scope");
+  if (claims.kind === "guardian" && auth.scope && claims.scope !== auth.scope) {
+    throw new DomainError("insufficient_scope");
+  }
+  if (claims.kind === "staff" && auth.roles && !auth.roles.includes(claims.role)) {
+    throw new DomainError("insufficient_scope");
+  }
+  return claims;
+}

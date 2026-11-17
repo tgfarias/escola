@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { DomainError } from "./platform/errors";
 import { verifyInternalRequest } from "./platform/hmac";
+import { authenticate } from "./platform/session";
 
 export type RouteAuth =
   | "public"
@@ -62,8 +63,7 @@ export function buildApp(): FastifyInstance {
   app.addHook("preHandler", async (req) => {
     const auth = req.routeOptions.config.auth;
     if (auth === "internal") verifyInternalRequest(req);
-    // F1 substitui este ramo pela verificação real de sessão; até lá, falha fechado.
-    else if (typeof auth === "object") throw new DomainError("unauthenticated");
+    else if (typeof auth === "object") req.session = await authenticate(req, auth);
   });
 
   app.setNotFoundHandler((_req, reply) =>
