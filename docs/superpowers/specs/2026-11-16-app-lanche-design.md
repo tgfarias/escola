@@ -201,11 +201,13 @@ n8n → Node, em toda chamada:
 ```
 Authorization: Bearer <token de serviço>
 X-Timestamp: 2026-11-16T21:00:00Z
-X-Signature: hex(HMAC-SHA256(secret, timestamp + "\n" + corpo))
+X-Signature: hex(HMAC-SHA256(secret, MÉTODO + "\n" + caminho-com-query + "\n" + timestamp + "\n" + corpo))
 Idempotency-Key: <uuid>            (em todo POST)
 ```
 
-Timestamp fora de ±5 min é recusado. Node → n8n usa os mesmos `X-Timestamp` e `X-Signature` com outro segredo.
+Timestamp fora de ±5 min é recusado. O método (maiúsculo) e o caminho com query string entram na assinatura para que uma requisição assinada não possa ser reaproveitada em outra rota ou para outra escola; em requisição sem corpo, o corpo é a string vazia. Node → n8n usa os mesmos `X-Timestamp` e `X-Signature` com outro segredo.
+
+Campos de `data` nos eventos e de corpos trocados com o n8n usam `snake_case`.
 
 Erros seguem `{ "error": { "code": "…", "message": "…" } }` com códigos estáveis.
 
@@ -273,6 +275,11 @@ Idempotente: a repetição devolve o mesmo romaneio. O n8n formata o resumo e en
 ### 6.3 Node → n8n (outbox)
 
 Eventos são gravados em `outbox_events` na mesma transação da mudança de estado. Um dispatcher (Cloud Scheduler a cada minuto, mais disparo imediato após o commit) faz `POST` no webhook do n8n, com retry exponencial por até 24 h. O n8n deduplica por `id`.
+
+Pendências do dispatcher (fase F3):
+
+- Sob RLS ele não consegue listar escolas com eventos pendentes; precisa de uma quinta função `SECURITY DEFINER`, `list_schools_with_pending_events()`, somada às quatro da seção 4.4.
+- Após entregar um `auth.otp_requested`, apaga `data` do evento, para o código e o destino não ficarem guardados em claro.
 
 ```json
 { "id": "0193…", "type": "payment.late_credited", "school_id": "0193…",

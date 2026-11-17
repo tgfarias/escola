@@ -783,9 +783,9 @@ export async function createChallenge(
     data: {
       channel: input.channel,
       to: input.to,
-      firstName: input.firstName,
+      first_name: input.firstName,
       code,
-      expiresAt: expiresAt.toISOString(),
+      expires_at: expiresAt.toISOString(),
     },
   });
   return id;
@@ -2832,7 +2832,8 @@ Expected: todos PASS.
 Com `pnpm db:up` e as migrações aplicadas, em um terminal:
 ```bash
 DATABASE_URL=postgres://app_user:app_user@localhost:5432/app_lanche \
-INTERNAL_SERVICE_TOKEN=dev INTERNAL_HMAC_SECRET=dev \
+INTERNAL_SERVICE_TOKEN=dev-service-token-with-at-least-32-chars \
+INTERNAL_HMAC_SECRET=dev-hmac-secret-with-at-least-32-chars \
 SESSION_SECRET=dev-session-secret-with-at-least-32-chars \
 APP_BASE_URL=http://localhost:5173 pnpm dev
 ```
