@@ -70,4 +70,18 @@ describe("buildApp", () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/x" });
     expect(res.headers["cache-control"]).toBe("private, no-store");
   });
+
+  it("exposes the exact raw request body", async () => {
+    const app = buildApp();
+    app.post("/api/v1/raw", { config: { auth: "public" } }, async (req) => ({ raw: req.rawBody }));
+    const payload = '{ "a":  1 }';
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/raw",
+      headers: { "content-type": "application/json" },
+      payload,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().raw).toBe(payload);
+  });
 });

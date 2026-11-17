@@ -2,6 +2,7 @@ import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { DomainError } from "./platform/errors";
+import { verifyInternalRequest } from "./platform/hmac";
 
 export type RouteAuth =
   | "public"
@@ -48,6 +49,11 @@ export function buildApp(): FastifyInstance {
 
   app.addHook("onSend", async (req, reply) => {
     if (req.url.startsWith("/api/")) reply.header("cache-control", "private, no-store");
+  });
+
+  app.addHook("preHandler", async (req) => {
+    const auth = req.routeOptions.config.auth;
+    if (auth === "internal") verifyInternalRequest(req);
   });
 
   app.setErrorHandler((err, req, reply) => {
