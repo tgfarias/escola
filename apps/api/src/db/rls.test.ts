@@ -1,8 +1,10 @@
-import { sql } from "kysely";
+import { CamelCasePlugin, Kysely, PostgresDialect, sql } from "kysely";
+import pg from "pg";
 import { uuidv7 } from "uuidv7";
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedTenant } from "../../test/helpers";
+import { adminDb, createSchool, seedTenant, type SeedIds } from "../../test/helpers";
 import { getDb, withTenant } from "./index";
+import type { DB } from "./types";
 
 /** Toda tabela com school_id. Ao criar tabela nova, acrescente aqui e em seedTenant. */
 const TENANT_TABLES = [
@@ -18,12 +20,24 @@ const TENANT_TABLES = [
 describe("row level security", () => {
   let schoolA: string;
   let schoolB: string;
+  let idsB: SeedIds;
 
   beforeAll(async () => {
     schoolA = await createSchool("A");
     schoolB = await createSchool("B");
     await seedTenant(schoolA);
-    await seedTenant(schoolB);
+    idsB = await seedTenant(schoolB);
+  });
+
+  it.each([...TENANT_TABLES, "schools"])("%s: has exactly one tenant_isolation policy for ALL commands", async (table) => {
+    const { rows } = await sql<{ policyname: string; cmd: string; permissive: string; qual: string | null }>`
+      SELECT policyname, cmd, permissive, qual FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = ${table}`.execute(adminDb());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.policyname).toBe("tenant_isolation");
+    expect(rows[0]?.cmd).toBe("ALL");
+    expect(rows[0]?.permissive).toBe("PERMISSIVE");
+    expect(rows[0]?.qual).toContain("app_school_id()");
   });
 
   it("lists every table that has a school_id column", async () => {
@@ -69,9 +83,75 @@ describe("row level security", () => {
     ).rejects.toThrow(/row-level security/);
   });
 
+  it("cannot update another tenant's row", async () => {
+    const res = await withTenant(schoolA, (trx) =>
+      trx.updateTable("classes").set({ name: "hacked" }).where("id", "=", idsB.classId).executeTakeFirst(),
+    );
+    expect(res.numUpdatedRows).toBe(0n);
+    const row = await adminDb()
+      .selectFrom("classes")
+      .select("name")
+      .where("id", "=", idsB.classId)
+      .executeTakeFirstOrThrow();
+    expect(row.name).toBe("Infantil 3A");
+  });
+
+  it("cannot delete another tenant's row", async () => {
+    const res = await withTenant(schoolA, (trx) =>
+      trx.deleteFrom("classes").where("id", "=", idsB.classId).executeTakeFirst(),
+    );
+    expect(res.numDeletedRows).toBe(0n);
+    const row = await adminDb()
+      .selectFrom("classes")
+      .select("id")
+      .where("id", "=", idsB.classId)
+      .executeTakeFirst();
+    expect(row?.id).toBe(idsB.classId);
+  });
+
+  it("a blanket update as tenant A touches only A's rows", async () => {
+    const own = await adminDb()
+      .selectFrom("classes")
+      .select("id")
+      .where("schoolId", "=", schoolA)
+      .execute();
+    const res = await withTenant(schoolA, (trx) =>
+      sql`UPDATE classes SET name = name`.execute(trx),
+    );
+    expect(res.numAffectedRows).toBe(BigInt(own.length));
+    expect(own.length).toBeGreaterThan(0);
+  });
+
+  it("audit_log is append-only: update and delete are denied even on own rows", async () => {
+    await expect(
+      withTenant(schoolA, (trx) => sql`UPDATE audit_log SET action = 'tampered'`.execute(trx)),
+    ).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolA, (trx) => sql`DELETE FROM audit_log`.execute(trx))).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
   it("does not leak the tenant setting to the next transaction on the same connection", async () => {
-    await withTenant(schoolA, (trx) => trx.selectFrom("classes").select("id").execute());
-    const rows = await getDb().selectFrom("classes").select("id").execute();
-    expect(rows).toEqual([]);
+    const single = new Kysely<DB>({
+      dialect: new PostgresDialect({
+        pool: new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 }),
+      }),
+      plugins: [new CamelCasePlugin()],
+    });
+    try {
+      const pid = (r: { rows: { pid: number }[] }) => r.rows[0]?.pid;
+      const inTx = await single.transaction().execute(async (trx) => {
+        await sql`SELECT set_config('app.school_id', ${schoolA}, true)`.execute(trx);
+        const seen = await trx.selectFrom("classes").select("id").execute();
+        expect(seen.length).toBeGreaterThan(0);
+        return pid(await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(trx));
+      });
+      const rows = await single.selectFrom("classes").select("id").execute();
+      const after = pid(await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(single));
+      expect(rows).toEqual([]);
+      expect(after).toBe(inTx);
+    } finally {
+      await single.destroy();
+    }
   });
 });
