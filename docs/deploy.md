@@ -9,6 +9,9 @@ Variáveis usadas abaixo: `GCP_PROJECT`, `SQL_INSTANCE` (formato `projeto:regiao
 
 `DATABASE_URL` (usuário `app_user`), `INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET`, `SESSION_SECRET`.
 
+`INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET` e `SESSION_SECRET` devem ter no mínimo 32 caracteres
+(por exemplo `openssl rand -hex 32`); a API recusa iniciar com valores mais curtos ou ausentes.
+
 ## Migrações
 
 Rodar de uma máquina com acesso ao banco (Cloud SQL Auth Proxy):
