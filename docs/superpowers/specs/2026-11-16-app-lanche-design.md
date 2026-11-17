@@ -122,7 +122,7 @@ Dois filhos na mesma escola: um link, um checkout com dois `orders`, uma cobran�
 |---|---|
 | `checkouts` | `pending_payment` → `paid`; `pending_payment` → `expired`; `pending_payment` → `late_credited`; `expired` → `late_credited`; `paid` → `cancelled` |
 | `orders` | `pending` → `confirmed` → `delivered`; `pending` → `expired`; `pending` → `expired_late`; `confirmed` → `cancelled` |
-| `payments` | `pending` → `paid`; `pending` → `expired`; `paid` → `refunded` |
+| `payments` | `pending` → `paid`; `pending` → `expired`; `expired` → `paid` (pagamento tardio); `paid` → `refunded` |
 
 Toda transição é um `UPDATE … WHERE status = '<estado anterior>'`; zero linhas afetadas significa que outro processo já fez a transição e a operação termina sem efeito.
 
@@ -177,7 +177,7 @@ Fechamento `closeServiceDay(school, date)`:
 
 O fechamento é disparado pelo n8n em `freeze_at`. Um Cloud Scheduler fecha qualquer dia que passou 10 min do corte, caso o n8n esteja fora.
 
-Cancelamento pelo responsável: permitido enquanto o dia está `open`; o valor do checkout vira crédito na carteira (`cancel_credit`). Estorno em dinheiro só por pedido à secretaria, com OTP, lançado como `refund` e executado no gateway.
+Cancelamento pelo responsável: permitido enquanto o dia está `open` e antes de `cutoff_at`. Checkout `paid` → `cancelled`, e o valor do checkout vira crédito na carteira (`cancel_credit`). Checkout `pending_payment` → `expired` (pedidos `expired`, pagamento `expired`, `hold_release`), para o aluno poder receber outro pedido; se esse Pix for pago depois, vira crédito tardio. Estorno em dinheiro só por pedido à secretaria, com OTP, lançado como `refund` e executado no gateway.
 
 ### 5.7 Carteira
 
@@ -189,6 +189,8 @@ Cancelamento pelo responsável: permitido enquanto o dia está `open`; o valor d
 ### 5.8 Gateway
 
 Interface `PaymentProvider` (`createCharge`, `getCharge`, `refund`, `parseWebhook`). Primeira implementação: Asaas (subcontas e split). Chaves por subconta ficam no Secret Manager, referenciadas por `schools.payment_account_ref`.
+
+Estado na F2: existe só o provedor `fake` (desenvolvimento, testes e homologação; a API recusa subir com ele sem `ENABLE_FAKE_PAYMENTS=true`). O adaptador Asaas espera uma decisão: criar cobrança exige cliente com CPF/CNPJ, dado pessoal que o sistema ainda não guarda. `refund` entra com o reembolso em dinheiro. Os campos `*_ref` de `schools` guardam o nome de uma variável de ambiente que o Cloud Run preenche a partir do Secret Manager (`--set-secrets`); incluir escola exige novo deploy.
 
 ### 5.9 Capacidade
 
@@ -577,6 +579,9 @@ Convenções do esquema:
 - `students.external_code` é o código/matrícula do aluno na escola; é a chave que torna a importação CSV idempotente.
 - Unicidades relevantes: `guardians (school_id, phone_e164)`, `students (school_id, external_code)`, `staff_users (email)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, além das listadas em 5.4.
 - `status`, `kind`, `role`, `scope` e `type` são `text` com `CHECK` de valores permitidos.
+- `wallet_entries.amount_cents` tem sinal: `checkout_hold` e `refund` negativos; `hold_release`, `late_payment_credit` e `cancel_credit` positivos; `manual_adjustment` qualquer sinal diferente de zero. Saldo = soma dos lançamentos. `wallet_entries.note` (opcional, até 200 caracteres) guarda o motivo de um ajuste manual.
+- `payments` guarda também `pix_copy_paste` e `pix_qr_png_base64` devolvidos pelo gateway; um checkout tem no máximo uma cobrança.
+- No romaneio, a restrição alimentar só aparece se algum responsável do aluno registrou `restriction_consent_at`; item com quantidade maior que 1 aparece como `"2x Misto quente"`.
 
 ## 10. API pública (resumo)
 
@@ -668,4 +673,6 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 
 Pendências registradas para fases futuras: criação de magic link com validade calculada pelo banco (`/internal/v1/magic-links` e lembretes, F3); rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limpeza do código do OTP na outbox antes de qualquer envio real (F3); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
 
-Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md` e `2026-11-16-f1-cadastros-e-autenticacao.md`.
+Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
+
+Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md`, `2026-11-16-f1-cadastros-e-autenticacao.md` e `2026-11-17-f2-pedidos-pagamento-carteira.md`.
