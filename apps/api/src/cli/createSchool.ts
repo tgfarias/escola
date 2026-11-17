@@ -6,7 +6,7 @@ const [name, email] = process.argv.slice(2);
 const adminUrl = process.env.DATABASE_ADMIN_URL;
 const parts = email?.split("@") ?? [];
 const emailOk = parts.length === 2 && parts[0] !== "" && parts[1] !== "";
-if (!name || !email || !emailOk || !adminUrl) {
+if (!name?.trim() || !email || !emailOk || !adminUrl) {
   console.error('usage: DATABASE_ADMIN_URL=... cli:create-school "<school name>" <admin email>');
   process.exit(1);
 }
@@ -24,7 +24,7 @@ try {
   await client.query("COMMIT");
   console.log(`school created: ${schoolId}`);
 } catch (err) {
-  await client.query("ROLLBACK");
+  await client.query("ROLLBACK").catch(() => {});
   console.error((err as Error).message);
   process.exitCode = 1;
 } finally {

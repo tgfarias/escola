@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { SESSION_COOKIE, signToken } from "../../platform/session";
+import { withTenant } from "../../db/index";
 import { signOtpToken } from "./otp";
+import * as repo from "./repo";
+import { requestStaffOtp } from "./service";
 
 function post(url: string, payload: unknown) {
   return buildApp().inject({ method: "POST", url, payload: payload as object });
@@ -138,5 +141,60 @@ describe("staff authentication", () => {
     const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: "123456" });
     expect(verified.statusCode).toBe(401);
     expect(verified.json().error.code).toBe("otp_invalid");
+  });
+
+  it("lockStaffUser returns nothing for an inactive or nonexistent user", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    expect(await withTenant(schoolId, (trx) => repo.lockStaffUser(trx, seed.staffUserId))).toMatchObject({
+      email: seed.email,
+    });
+    await adminDb().updateTable("staffUsers").set({ active: false }).where("id", "=", seed.staffUserId).execute();
+    expect(await withTenant(schoolId, (trx) => repo.lockStaffUser(trx, seed.staffUserId))).toBeUndefined();
+    expect(await withTenant(schoolId, (trx) => repo.lockStaffUser(trx, uuidv7()))).toBeUndefined();
+  });
+
+  it("answers an inert token and sends nothing for a deactivated user", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    await adminDb().updateTable("staffUsers").set({ active: false }).where("id", "=", seed.staffUserId).execute();
+    const res = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
+    expect(res.statusCode).toBe(200);
+    expect(typeof res.json().otpToken).toBe("string");
+    expect(await otpEvents(schoolId)).toEqual([]);
+    expect(typeof (await requestStaffOtp(seed.email)).otpToken).toBe("string");
+  });
+
+  it("sends the code to the stored e-mail when the request is mixed case", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const { otpToken } = (
+      await post("/api/admin/v1/auth/otp/request", { email: seed.email.toUpperCase() })
+    ).json();
+    const [event] = await otpEvents(schoolId);
+    const data = event!.data as { code: string; to: string };
+    expect(data.to).toBe(seed.email);
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: data.code });
+    expect(verified.statusCode).toBe(200);
+  });
+
+  it("rejects an existing session once the staff user is deactivated", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const { otpToken } = (await post("/api/admin/v1/auth/otp/request", { email: seed.email })).json();
+    const [event] = await otpEvents(schoolId);
+    const verified = await post("/api/admin/v1/auth/otp/verify", {
+      otpToken,
+      code: (event!.data as { code: string }).code,
+    });
+    const cookie = verified.cookies.find((c) => c.name === SESSION_COOKIE)!;
+    await adminDb().updateTable("staffUsers").set({ active: false }).where("id", "=", seed.staffUserId).execute();
+    const me = await buildApp().inject({
+      method: "GET",
+      url: "/api/admin/v1/me",
+      cookies: { [SESSION_COOKIE]: cookie.value },
+    });
+    expect(me.statusCode).toBe(401);
+    expect(me.json().error.code).toBe("unauthenticated");
   });
 });

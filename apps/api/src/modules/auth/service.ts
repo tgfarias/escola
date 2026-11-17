@@ -107,17 +107,18 @@ export async function requestStaffOtp(email: string): Promise<{ otpToken: string
   const resolved = await repo.resolveStaffEmail(email);
   if (!resolved) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
   const challengeId = await withTenant(resolved.schoolId, async (trx) => {
-    await repo.lockStaffUser(trx, resolved.staffUserId);
+    const staff = await repo.lockStaffUser(trx, resolved.staffUserId);
+    if (!staff) return null;
     return createChallenge(trx, {
       schoolId: resolved.schoolId,
       subjectKind: "staff",
       subjectId: resolved.staffUserId,
       channel: "email",
-      to: email.toLowerCase(),
+      to: staff.email,
       firstName: null,
     });
   });
-  // Throttled: answer exactly like an unknown e-mail so the response does not reveal the account.
+  // Throttled or gone/deactivated meanwhile: answer exactly like an unknown e-mail so the response does not reveal the account.
   if (challengeId === null) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
   const otpToken = await signOtpToken({
     subjectKind: "staff",

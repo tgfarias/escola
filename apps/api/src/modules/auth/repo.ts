@@ -173,8 +173,9 @@ export async function getStaffUser(trx: Trx, id: string) {
 export async function lockStaffUser(trx: Trx, id: string) {
   return trx
     .selectFrom("staffUsers")
-    .select("id")
+    .select(["id", "email"])
     .where("id", "=", id)
+    .where("active", "=", true)
     .forUpdate()
-    .executeTakeFirstOrThrow();
+    .executeTakeFirst();
 }
