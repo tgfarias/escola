@@ -58,6 +58,7 @@ describe("guardian authentication", () => {
     expect(me.json()).toEqual({
       guardian: { id: seed.guardianId, firstName: "Ana" },
       students: [{ id: seed.studentId, firstName: "Léo", className: "Infantil 3A" }],
+      walletBalanceCents: 100, // seedTenant wallet
     });
   });
 

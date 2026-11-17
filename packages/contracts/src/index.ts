@@ -4,3 +4,4 @@ export * from "./common";
 export * from "./errors";
 export * from "./events";
 export * from "./registry";
+export * from "./wallet";

@@ -6,6 +6,7 @@ import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveStaff } from "./modules/auth/service";
+import { walletRoutes } from "./modules/wallet/routes";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
 import { authenticate, type GuardianScope, type SessionClaims, type StaffRole } from "./platform/session";
@@ -139,5 +140,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(authRoutes);
   app.register(registryRoutes);
   app.register(catalogRoutes);
+  app.register(walletRoutes);
   return app;
 }

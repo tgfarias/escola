@@ -4,6 +4,7 @@ import { withTenant } from "../../db/index";
 import { DomainError } from "../../platform/errors";
 import type { GuardianScope, SessionClaims } from "../../platform/session";
 import { assertOtpOk, checkCode, createChallenge, inertStaffPayload, readOtpToken, signOtpToken } from "./otp";
+import * as wallet from "../wallet/service";
 import * as repo from "./repo";
 import { hashToken } from "./tokens";
 
@@ -103,7 +104,10 @@ export async function verifyGuardianOtp(input: {
 }
 
 export async function getMe(session: SessionClaims): Promise<MeResponse> {
-  const found = await withTenant(session.schoolId, (trx) => repo.getGuardianWithStudents(trx, session.sub));
+  const found = await withTenant(session.schoolId, async (trx) => {
+    const data = await repo.getGuardianWithStudents(trx, session.sub);
+    return data && { ...data, walletBalanceCents: await wallet.balanceOf(trx, session.sub) };
+  });
   if (!found) throw new DomainError("unauthenticated");
   return found;
 }

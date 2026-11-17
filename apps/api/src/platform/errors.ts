@@ -18,6 +18,7 @@ const STATUS: Record<ErrorCode, number> = {
   cutoff_passed: 409,
   service_day_locked: 409,
   menu_item_name_taken: 409,
+  insufficient_balance: 409,
   internal_error: 500,
 };
 

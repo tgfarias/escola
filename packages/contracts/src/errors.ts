@@ -18,6 +18,7 @@ export const errorCodes = [
   "cutoff_passed",
   "service_day_locked",
   "menu_item_name_taken",
+  "insufficient_balance",
   "internal_error",
 ] as const;
 

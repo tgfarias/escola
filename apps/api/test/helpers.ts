@@ -284,3 +284,13 @@ export async function seedServiceDay(
   }
   return { serviceDayId, serviceDate, items };
 }
+
+/** Invariante do ledger (spec 13): saldo gravado = soma dos lançamentos. Sem carteira conta como verdadeiro. */
+export async function walletLedgerMatches(schoolId: string, guardianId: string): Promise<boolean> {
+  const { rows } = await sql<{ balance: number; total: number }>`
+    SELECT w.balance_cents AS balance, coalesce(sum(e.amount_cents), 0)::bigint AS total
+    FROM wallets w LEFT JOIN wallet_entries e ON e.wallet_id = w.id
+    WHERE w.school_id = ${schoolId} AND w.guardian_id = ${guardianId}
+    GROUP BY w.balance_cents`.execute(adminDb());
+  return rows.length === 0 || rows[0]!.balance === rows[0]!.total;
+}

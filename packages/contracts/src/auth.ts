@@ -32,6 +32,7 @@ export const MeResponse = z.object({
   students: z.array(
     z.object({ id: z.string().uuid(), firstName: z.string(), className: z.string() }),
   ),
+  walletBalanceCents: z.number().int().nonnegative(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
