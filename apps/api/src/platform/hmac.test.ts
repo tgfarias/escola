@@ -8,13 +8,26 @@ function appWithEcho() {
   return app;
 }
 
-function headers(body: string, overrides: Record<string, string> = {}) {
-  const timestamp = new Date().toISOString();
+const SECRET = "test-hmac-secret-with-at-least-32-chars";
+const TOKEN = "test-service-token-with-at-least-32-chars";
+const URL_ECHO = "/internal/v1/echo";
+
+function headers(
+  body: string,
+  overrides: Record<string, string> = {},
+  sign: { method?: string; path?: string; timestamp?: string } = {},
+) {
+  const timestamp = sign.timestamp ?? new Date().toISOString();
   return {
     "content-type": "application/json",
-    authorization: "Bearer test-service-token",
+    authorization: `Bearer ${TOKEN}`,
     "x-timestamp": timestamp,
-    "x-signature": signInternal("test-hmac-secret", timestamp, body),
+    "x-signature": signInternal(SECRET, {
+      method: sign.method ?? "POST",
+      path: sign.path ?? URL_ECHO,
+      timestamp,
+      body,
+    }),
     ...overrides,
   };
 }
@@ -61,7 +74,7 @@ describe("internal route authentication", () => {
       url: "/internal/v1/echo",
       headers: headers(body, {
         "x-timestamp": old,
-        "x-signature": signInternal("test-hmac-secret", old, body),
+        "x-signature": signInternal(SECRET, { method: "POST", path: URL_ECHO, timestamp: old, body }),
       }),
       payload: body,
     });
@@ -84,8 +97,82 @@ describe("internal route authentication", () => {
       url: "/internal/v1/echo",
       headers: headers(body, {
         "x-timestamp": "garbage",
-        "x-signature": signInternal("test-hmac-secret", "garbage", body),
+        "x-signature": signInternal(SECRET, { method: "POST", path: URL_ECHO, timestamp: "garbage", body }),
       }),
+      payload: body,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects a signature made for another path", async () => {
+    const app = appWithEcho();
+    app.post("/internal/v1/other", { config: { auth: "internal" } }, async () => ({ ok: true }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/internal/v1/other",
+      headers: headers(body, {}, { path: URL_ECHO }),
+      payload: body,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects a POST signature replayed on a GET route of the same path", async () => {
+    const app = appWithEcho();
+    app.get(URL_ECHO, { config: { auth: "internal" } }, async () => ({ ok: true }));
+    const res = await app.inject({
+      method: "GET",
+      url: URL_ECHO,
+      headers: headers("", {}, { method: "POST" }),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("covers the query string in the signature", async () => {
+    const app = appWithEcho();
+    const sign = { path: `${URL_ECHO}?a=1` };
+    const ok = await app.inject({
+      method: "POST",
+      url: `${URL_ECHO}?a=1`,
+      headers: headers(body, {}, sign),
+      payload: body,
+    });
+    expect(ok.statusCode).toBe(200);
+    const bad = await app.inject({
+      method: "POST",
+      url: `${URL_ECHO}?a=2`,
+      headers: headers(body, {}, sign),
+      payload: body,
+    });
+    expect(bad.statusCode).toBe(401);
+  });
+
+  it("rejects a timestamp 6 minutes in the future", async () => {
+    const future = new Date(Date.now() + 6 * 60_000).toISOString();
+    const res = await appWithEcho().inject({
+      method: "POST",
+      url: URL_ECHO,
+      headers: headers(body, {}, { timestamp: future }),
+      payload: body,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("accepts a timestamp 4 minutes in the past", async () => {
+    const past = new Date(Date.now() - 4 * 60_000).toISOString();
+    const res = await appWithEcho().inject({
+      method: "POST",
+      url: URL_ECHO,
+      headers: headers(body, {}, { timestamp: past }),
+      payload: body,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("rejects a correct token and unchanged body with a wrong signature", async () => {
+    const res = await appWithEcho().inject({
+      method: "POST",
+      url: URL_ECHO,
+      headers: headers(body, { "x-signature": "0".repeat(64) }),
       payload: body,
     });
     expect(res.statusCode).toBe(401);

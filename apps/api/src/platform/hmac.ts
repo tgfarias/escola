@@ -5,8 +5,20 @@ import { DomainError } from "./errors";
 
 const MAX_SKEW_MS = 5 * 60_000;
 
-export function signInternal(secret: string, timestamp: string, body: string): string {
-  return createHmac("sha256", secret).update(`${timestamp}\n${body}`).digest("hex");
+export interface InternalSignInput {
+  method: string;
+  /** URL exatamente como recebida (caminho + query string). */
+  path: string;
+  timestamp: string;
+  body: string;
+}
+
+/** Assina `METHOD\npathWithQuery\ntimestamp\nrawBody`. */
+export function signInternal(secret: string, input: InternalSignInput): string {
+  const { method, path, timestamp, body } = input;
+  return createHmac("sha256", secret)
+    .update(`${method.toUpperCase()}\n${path}\n${timestamp}\n${body}`)
+    .digest("hex");
 }
 
 function safeEqual(a: string, b: string): boolean {
@@ -25,7 +37,12 @@ export function verifyInternalRequest(req: FastifyRequest): void {
   const { internalServiceToken, internalHmacSecret } = config();
   const timestamp = header(req, "x-timestamp");
   const skew = Math.abs(Date.now() - Date.parse(timestamp));
-  const expected = signInternal(internalHmacSecret, timestamp, req.rawBody ?? "");
+  const expected = signInternal(internalHmacSecret, {
+    method: req.method,
+    path: req.url,
+    timestamp,
+    body: req.rawBody ?? "",
+  });
   const ok =
     safeEqual(header(req, "authorization"), `Bearer ${internalServiceToken}`) &&
     Number.isFinite(skew) &&
