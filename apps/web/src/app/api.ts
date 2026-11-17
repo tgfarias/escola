@@ -31,5 +31,7 @@ export async function apiFetch<T>(
     const parsed = ErrorResponse.safeParse(json);
     throw new ApiError(res.status, parsed.success ? parsed.data.error.code : "internal_error");
   }
-  return schema.parse(json);
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) throw new ApiError(res.status, "invalid_response");
+  return parsed.data;
 }

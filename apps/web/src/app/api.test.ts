@@ -8,6 +8,10 @@ function mockFetch(status: number, body: unknown) {
   return fn;
 }
 
+function mockResponse(res: Response) {
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => res));
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("apiFetch", () => {
@@ -35,9 +39,30 @@ describe("apiFetch", () => {
   });
 
   it("throws ApiError network_error when fetch rejects", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => Promise.reject(new TypeError("offline"))));
     const err = await apiFetch("/api/v1/x", z.object({})).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err.code).toBe("network_error");
+  });
+
+  it("throws ApiError invalid_response when a 200 body does not match the schema", async () => {
+    mockFetch(200, { ok: "yes" });
+    const err = await apiFetch("/api/v1/x", z.object({ ok: z.boolean() })).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 200, code: "invalid_response" });
+  });
+
+  it("throws ApiError invalid_response for an empty 204 body", async () => {
+    mockResponse(new Response(null, { status: 204 }));
+    const err = await apiFetch("/api/v1/x", z.object({})).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 204, code: "invalid_response" });
+  });
+
+  it("maps a non-JSON error body to internal_error with the response status", async () => {
+    mockResponse(new Response("Bad Gateway", { status: 502 }));
+    const err = await apiFetch("/api/v1/x", z.object({})).catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 502, code: "internal_error" });
   });
 });
