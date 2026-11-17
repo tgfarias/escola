@@ -43,7 +43,7 @@ db/migrations/            NNNN_descricao.sql
 
 - `routes.ts` valida com o schema de `contracts`, chama o `service` e devolve. Sem regra de negócio.
 - `service.ts` contém as regras e recebe a transação como parâmetro.
-- `repo.ts` é o único lugar com SQL.
+- SQL vive em `repo.ts`, em `apps/api/src/db` e em gravadores de infraestrutura de uma tabela em `platform/` (outbox, audit, idempotência) que recebem a transação; código de `platform/` nunca chama `getDb()`.
 - Um módulo só usa outro pelo `service.ts` dele.
 
 ## Regras invioláveis
@@ -66,7 +66,7 @@ db/migrations/            NNNN_descricao.sql
 
 ### Idempotência e estados
 
-11. Todo `POST` que cria ou altera estado aceita `Idempotency-Key` e usa o helper de `platform/idempotency`.
+11. Todo `POST` que cria ou altera estado aceita `Idempotency-Key` e usa o helper de `platform/idempotency`, exceto rotas naturalmente idempotentes, como as de autenticação e a importação CSV.
 12. Transição de estado é `UPDATE … WHERE status = '<anterior>'`. Zero linhas afetadas significa "já feito": termine sem erro e sem efeito colateral.
 13. Deduplicação é por constraint `UNIQUE` + `ON CONFLICT DO NOTHING`, não por `SELECT` seguido de `INSERT`.
 14. Webhook de pagamento: gravar o evento bruto, processar na mesma transação, responder 200. Evento repetido responde 200 sem processar.
