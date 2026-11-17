@@ -13,14 +13,17 @@ export class ApiError extends Error {
 export async function apiFetch<T>(
   path: string,
   schema: z.ZodType<T>,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; idempotencyKey?: string } = {},
 ): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (init.body !== undefined) headers["content-type"] = "application/json";
+  if (init.idempotencyKey) headers["idempotency-key"] = init.idempotencyKey;
   let res: Response;
   try {
     res = await fetch(path, {
       method: init.method ?? "GET",
       credentials: "same-origin",
-      headers: init.body === undefined ? {} : { "content-type": "application/json" },
+      headers,
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     });
   } catch {

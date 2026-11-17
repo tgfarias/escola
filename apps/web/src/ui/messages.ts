@@ -5,6 +5,11 @@ const MESSAGES: Record<string, string> = {
   otp_too_many_attempts: "Muitas tentativas. Aguarde alguns minutos e abra o link novamente.",
   unauthenticated: "Sua sessão expirou. Abra o link novamente.",
   insufficient_scope: "Você não tem acesso a esta área.",
+  cutoff_passed: "O horário de pedidos para este dia já encerrou.",
+  order_already_exists: "Já existe um pedido para este aluno neste dia.",
+  invalid_order: "Não foi possível montar o pedido. Atualize a página e tente de novo.",
+  checkout_not_cancellable: "Este pedido não pode mais ser cancelado.",
+  not_found: "Não encontramos este pedido.",
   network_error: "Sem conexão. Verifique a internet e tente de novo.",
 };
 

@@ -30,6 +30,14 @@ describe("apiFetch", () => {
     expect((init.headers as Record<string, string>)["content-type"]).toBe("application/json");
   });
 
+  it("sends the Idempotency-Key header when given", async () => {
+    const fn = mockFetch(200, {});
+    await apiFetch("/api/v1/x", z.object({}), { method: "POST", body: { a: 1 }, idempotencyKey: "k-123456789" });
+    const headers = (fn.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["idempotency-key"]).toBe("k-123456789");
+    expect(headers["content-type"]).toBe("application/json");
+  });
+
   it("throws ApiError with the server error code", async () => {
     mockFetch(401, { error: { code: "invalid_token", message: "x" } });
     await expect(apiFetch("/api/v1/x", z.object({}))).rejects.toMatchObject({
