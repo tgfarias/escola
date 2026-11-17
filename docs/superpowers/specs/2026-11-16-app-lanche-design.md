@@ -188,9 +188,9 @@ Cancelamento pelo responsável: permitido enquanto o dia está `open` e antes de
 
 ### 5.8 Gateway
 
-Interface `PaymentProvider` (`createCharge`, `getCharge`, `refund`, `parseWebhook`). Primeira implementação: Asaas (subcontas e split). Chaves por subconta ficam no Secret Manager, referenciadas por `schools.payment_account_ref`.
+Interface `PaymentProvider` (`createCharge`, `getCharge`, `refund`, `parseWebhook`). Implementação: Efí (conta por escola e split). Credenciais por escola ficam no Secret Manager, referenciadas por `schools.payment_account_ref`.
 
-Estado na F2: existe só o provedor `fake` (desenvolvimento, testes e homologação; a API recusa subir com ele sem `ENABLE_FAKE_PAYMENTS=true`). O adaptador Asaas espera uma decisão: criar cobrança exige cliente com CPF/CNPJ, dado pessoal que o sistema ainda não guarda. `refund` entra com o reembolso em dinheiro. Os campos `*_ref` de `schools` guardam o nome de uma variável de ambiente que o Cloud Run preenche a partir do Secret Manager (`--set-secrets`); incluir escola exige novo deploy.
+Decisão de 2026-11-17: o gateway é a **Efí** (Pix imediato, `PUT /v2/cob/:txid` com o txid derivado do `payment.id`, sem `devedor`; o Asaas foi descartado porque exige CPF do pagador). Cada escola tem conta Efí própria (credenciais e certificado mTLS por escola) e a taxa da plataforma vai por split Pix da Efí para a conta da plataforma. A Efí não assina o webhook: a URL registrada carrega o segredo da escola (`?token=…&ignorar=`) e cada pagamento notificado é confirmado consultando a cobrança na própria Efí antes de chamar `confirmPayment`. O provedor `fake` serve a desenvolvimento e testes (a API recusa subir com ele sem `ENABLE_FAKE_PAYMENTS=true`). `refund` entra com o reembolso em dinheiro. Os campos `*_ref` de `schools` guardam o nome de uma variável de ambiente que o Cloud Run preenche a partir do Secret Manager (`--set-secrets`); incluir escola exige novo deploy. Referência da API: `docs/efi-pix.md`.
 
 ### 5.9 Capacidade
 

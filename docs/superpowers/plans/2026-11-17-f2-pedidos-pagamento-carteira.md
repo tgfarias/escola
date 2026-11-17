@@ -33,7 +33,7 @@
 
 ## Decisões desta fase (rulings do controlador; a spec é emendada no commit de abertura da fase)
 
-1. **Gateway concreto (Asaas) fica fora desta fase.** Criar cobrança Pix no Asaas exige cliente com CPF/CNPJ, dado pessoal que o sistema não guarda (CLAUDE.md regra 31 manda perguntar). A F2 entrega a interface `PaymentProvider`, o provedor `fake` (dev, testes e piloto assistido) e todo o fluxo; o adaptador real entra num plano próprio depois da decisão do usuário. Custo se errado: um plano curto a mais.
+1. **Gateway: Efí Pix** (decisão do usuário em 2026-11-17, no lugar do Asaas, que exige CPF do pagador). A cobrança imediata da Efí não exige `devedor`. As Tasks 5–12 usam a interface `PaymentProvider` e o provedor `fake`; a Task 13 implementa o adaptador `efi`. Referência da API levantada em `.superpowers/sdd/2026-11-17-f2-pedidos-pagamento-carteira/efi-pix-reference.md` (copiada para `docs/efi-pix.md` na Task 13).
 2. **Segredos por escola:** `schools.payment_webhook_secret_ref` é o NOME de uma variável de ambiente (Cloud Run injeta segredos do Secret Manager como env). `getSecret(ref)` lê `process.env[ref]`. Custo: incluir escola exige novo deploy até trocarmos por cliente do Secret Manager.
 3. **Cancelar checkout pendente** (`pending_payment`) é permitido e equivale a expirá-lo antes do corte (`→ expired`, pedidos `→ expired`, pagamento `→ expired`, `hold_release`). Sem isso o aluno ficaria bloqueado até o corte. Pagamento posterior desse Pix vira crédito tardio.
 4. **`payments`: `expired → paid`** é permitido (pagamento tardio de cobrança já expirada pelo fechamento), como exige a spec 5.6.
@@ -1982,17 +1982,28 @@ export interface Charge {
 export type WebhookEvent =
   | { eventId: string; kind: "charge_paid"; chargeId: string; amountCents: number; paidAt: Date }
   | { eventId: string; kind: "ignored"; chargeId: string | null };
+export interface WebhookInput {
+  headers: Record<string, string | string[] | undefined>;
+  query: Record<string, string | undefined>;
+  rawBody: string;
+  secret: string;            // segredo de webhook da escola
+  accountRef: string | null; // schools.payment_account_ref, para o provedor consultar o gateway
+}
 export interface PaymentProvider {
   readonly name: string;
   createCharge(req: ChargeRequest): Promise<Charge>;
   getCharge(chargeId: string, accountRef: string | null): Promise<Charge>;
-  /** Valida a autenticidade com o segredo da escola; lança DomainError("invalid_signature"). */
-  parseWebhook(input: { headers: Record<string, string | string[] | undefined>; rawBody: string; secret: string }): WebhookEvent;
+  /**
+   * Valida a autenticidade com o segredo da escola (lança DomainError("invalid_signature")) e devolve os eventos
+   * da notificação (pode ser vários, ou nenhum). Roda fora de transação: um provedor que não assina o corpo
+   * (Efí) consulta a cobrança no gateway aqui e só devolve `charge_paid` com valor e horário vindos do gateway.
+   */
+  parseWebhook(input: WebhookInput): Promise<WebhookEvent[]>;
 }
 ```
 
 - Produces (`registry.ts`): `getProvider(name: string): PaymentProvider` (lança `DomainError("not_found")` para nome desconhecido ou `fake` desabilitado); `defaultProviderName(): string`.
-- Produces (`fakeProvider.ts`): `fakeProvider: PaymentProvider` (`name: "fake"`), e para testes `fakeMarkPaid(chargeId: string, paidAt: Date): void`, `fakeFailNextCreate(times?: number): void`, `fakeReset(): void`. Charge id = `fake_<paymentId>`; `pixCopyPaste = "00020101FAKE" + chargeId`; `pixQrPngBase64 = null`. Webhook: header `x-fake-token` igual ao segredo (comparação em tempo constante); corpo `{ id, event, charge_id, amount_cents?, paid_at? }`; `event === "charge.paid"` exige `amount_cents` e `paid_at`, os demais viram `ignored`; corpo inválido → `DomainError("validation_failed")`.
+- Produces (`fakeProvider.ts`): `fakeProvider: PaymentProvider` (`name: "fake"`), e para testes `fakeMarkPaid(chargeId: string, paidAt: Date): void`, `fakeFailNextCreate(times?: number): void`, `fakeReset(): void`. Charge id = `fake_<paymentId>`; `pixCopyPaste = "00020101FAKE" + chargeId`; `pixQrPngBase64 = null`. Webhook: header `x-fake-token` igual ao segredo (comparação em tempo constante); corpo `{ id, event, charge_id, amount_cents?, paid_at? }` produz exatamente um evento; `event === "charge.paid"` exige `amount_cents` e `paid_at`, os demais viram `ignored`; corpo inválido → `DomainError("validation_failed")`.
 - Produces (`platform/secrets.ts`): `getSecret(ref: string): string` — `ref` deve casar `/^[A-Z][A-Z0-9_]{2,100}$/`; lê `process.env[ref]`; ausente ou com menos de 32 caracteres lança `Error` com o NOME do ref (nunca o valor).
 - Config: `PAYMENT_PROVIDER` (`z.enum(["fake"])`, padrão `"fake"`) e `ENABLE_FAKE_PAYMENTS` (`"true" | "false"`, padrão `"false"`). `config()` falha com `invalid environment: PAYMENT_PROVIDER` se o provedor é `fake` e `ENABLE_FAKE_PAYMENTS` não é `"true"`. `Config` ganha `paymentProvider: "fake"` e `fakePaymentsEnabled: boolean`.
 - `setupEnv.ts`: `ENABLE_FAKE_PAYMENTS = "true"` e `PAYMENT_WEBHOOK_SECRET_TEST = "test-payment-webhook-secret-with-32-chars"`.
@@ -2036,34 +2047,23 @@ describe("fake provider", () => {
     await expect(fakeProvider.createCharge(req())).resolves.toMatchObject({ status: "pending" });
   });
 
-  it("parses a paid webhook with the right token", () => {
+  const hook = (rawBody: string, headers: Record<string, string> = { "x-fake-token": SECRET }) =>
+    fakeProvider.parseWebhook({ headers, query: {}, rawBody, secret: SECRET, accountRef: null });
+
+  it("parses a paid webhook with the right token", async () => {
     const rawBody = JSON.stringify({ id: "evt-1", event: "charge.paid", charge_id: "fake_x", amount_cents: 1350, paid_at: "2030-03-04T10:00:00Z" });
-    expect(fakeProvider.parseWebhook({ headers: { "x-fake-token": SECRET }, rawBody, secret: SECRET })).toEqual({
-      eventId: "evt-1",
-      kind: "charge_paid",
-      chargeId: "fake_x",
-      amountCents: 1350,
-      paidAt: new Date("2030-03-04T10:00:00Z"),
-    });
+    expect(await hook(rawBody)).toEqual([
+      { eventId: "evt-1", kind: "charge_paid", chargeId: "fake_x", amountCents: 1350, paidAt: new Date("2030-03-04T10:00:00Z") },
+    ]);
   });
 
-  it("ignores other events and rejects a wrong token or a bad body", () => {
+  it("ignores other events and rejects a wrong token or a bad body", async () => {
     const other = JSON.stringify({ id: "evt-2", event: "charge.created", charge_id: "fake_x" });
-    expect(fakeProvider.parseWebhook({ headers: { "x-fake-token": SECRET }, rawBody: other, secret: SECRET })).toEqual({
-      eventId: "evt-2",
-      kind: "ignored",
-      chargeId: "fake_x",
-    });
-    expect(() => fakeProvider.parseWebhook({ headers: { "x-fake-token": "nope" }, rawBody: other, secret: SECRET })).toThrow(
-      expect.objectContaining({ code: "invalid_signature" }),
-    );
-    expect(() => fakeProvider.parseWebhook({ headers: {}, rawBody: other, secret: SECRET })).toThrow(
-      expect.objectContaining({ code: "invalid_signature" }),
-    );
+    expect(await hook(other)).toEqual([{ eventId: "evt-2", kind: "ignored", chargeId: "fake_x" }]);
+    await expect(hook(other, { "x-fake-token": "nope" })).rejects.toMatchObject({ code: "invalid_signature" });
+    await expect(hook(other, {})).rejects.toMatchObject({ code: "invalid_signature" });
     const bad = JSON.stringify({ id: "evt-3", event: "charge.paid", charge_id: "fake_x" });
-    expect(() => fakeProvider.parseWebhook({ headers: { "x-fake-token": SECRET }, rawBody: bad, secret: SECRET })).toThrow(
-      expect.objectContaining({ code: "validation_failed" }),
-    );
+    await expect(hook(bad)).rejects.toMatchObject({ code: "validation_failed" });
   });
 });
 
@@ -2146,7 +2146,7 @@ com `paymentProvider: env.PAYMENT_PROVIDER` e `fakePaymentsEnabled: env.ENABLE_F
 import { z } from "zod";
 import { DomainError } from "../../platform/errors";
 import { safeEqual } from "../../platform/hmac";
-import type { Charge, ChargeRequest, PaymentProvider, WebhookEvent } from "./provider";
+import type { Charge, ChargeRequest, PaymentProvider, WebhookEvent, WebhookInput } from "./provider";
 
 type FakeCharge = { chargeId: string; amountCents: number; status: Charge["status"]; paidAt: Date | null };
 
@@ -2193,7 +2193,7 @@ export const fakeProvider: PaymentProvider = {
     return view(c);
   },
 
-  parseWebhook({ headers, rawBody, secret }): WebhookEvent {
+  async parseWebhook({ headers, rawBody, secret }: WebhookInput): Promise<WebhookEvent[]> {
     if (!safeEqual(header(headers, "x-fake-token"), secret)) throw new DomainError("invalid_signature");
     let parsed: z.infer<typeof FakeWebhook>;
     try {
@@ -2201,17 +2201,19 @@ export const fakeProvider: PaymentProvider = {
     } catch {
       throw new DomainError("validation_failed");
     }
-    if (parsed.event !== "charge.paid") return { eventId: parsed.id, kind: "ignored", chargeId: parsed.charge_id };
+    if (parsed.event !== "charge.paid") return [{ eventId: parsed.id, kind: "ignored", chargeId: parsed.charge_id }];
     if (!parsed.charge_id || parsed.amount_cents === undefined || parsed.paid_at === undefined) {
       throw new DomainError("validation_failed");
     }
-    return {
-      eventId: parsed.id,
-      kind: "charge_paid",
-      chargeId: parsed.charge_id,
-      amountCents: parsed.amount_cents,
-      paidAt: new Date(parsed.paid_at),
-    };
+    return [
+      {
+        eventId: parsed.id,
+        kind: "charge_paid",
+        chargeId: parsed.charge_id,
+        amountCents: parsed.amount_cents,
+        paidAt: new Date(parsed.paid_at),
+      },
+    ];
   },
 };
 
@@ -3377,12 +3379,12 @@ git commit -m "feat(api): add confirmPayment with cutoff check, late credit and 
 
 **Interfaces:**
 - Produces: `RouteAuth = "public" | "internal" | "webhook" | {…}`. `onRoute` exige `"webhook"` em toda URL que começa com `/webhooks/` e só nelas (como `"internal"` ↔ `/internal/`). O `preHandler` não faz nada para `"webhook"`: a rota valida o segredo da escola via provedor.
-- Produces (`payments/service.ts`): `type WebhookOutcome = ConfirmOutcome | "duplicate" | "ignored" | "unknown_charge" | "amount_mismatch"`; `handleWebhook(input: { providerName: string; schoolId: string; headers: Record<string, string | string[] | undefined>; rawBody: string; log: FastifyBaseLogger }): Promise<WebhookOutcome>`.
+- Produces (`payments/service.ts`): `type WebhookOutcome = ConfirmOutcome | "duplicate" | "ignored" | "unknown_charge" | "amount_mismatch"`; `handleWebhook(input: { providerName: string; schoolId: string; headers: Record<string, string | string[] | undefined>; query: Record<string, string | undefined>; rawBody: string; log: FastifyBaseLogger }): Promise<WebhookOutcome[]>` (um resultado por evento da notificação; zero eventos → `[]`).
 - Resposta HTTP: `200 { "received": true }` para todo evento autêntico (inclusive repetido, ignorado, cobrança desconhecida e divergência de valor); `401 invalid_signature` para token errado, escola inexistente ou sem segredo; `404` para provedor desconhecido; `400` corpo inválido; `500` se o processamento falhar (nada fica gravado e o gateway reenvia).
 
 Regras (spec 5.4, 5.5; CLAUDE.md 14, 21):
-1. `getProvider(provider)`; `schoolId` precisa ser UUID (senão 401); lê `schools.payment_webhook_secret_ref` em `withTenant(schoolId)`; sem ref → 401; `getSecret(ref)`; `provider.parseWebhook`.
-2. Numa transação: acha o pagamento por `(provider, provider_charge_id)`; grava `payment_events` (`raw` = corpo recebido) com `ON CONFLICT (provider, provider_event_id) DO NOTHING`; sem linha → `duplicate`. Evento não-pago → `ignored`. Pago sem pagamento → log `warn` `{ event: "payment_webhook_unknown_charge", school_id }` → `unknown_charge`. Valor diferente → log `error` `{ event: "payment_amount_mismatch", school_id, payment_id }`, não confirma → `amount_mismatch`. Senão `confirmPayment`.
+1. `getProvider(provider)`; `schoolId` precisa ser UUID (senão 401); lê `schools.payment_webhook_secret_ref` e `payment_account_ref` em `withTenant(schoolId)` (`repo.schoolPaymentConfig`); sem ref de webhook → 401; `getSecret(ref)`; `await provider.parseWebhook({ headers, query, rawBody, secret, accountRef })` — fora de transação.
+2. Numa transação, para cada evento, em ordem: acha o pagamento por `(provider, provider_charge_id)`; grava `payment_events` (`raw` = corpo recebido) com `ON CONFLICT (provider, provider_event_id) DO NOTHING`; sem linha → `duplicate`. Evento não-pago → `ignored`. Pago sem pagamento → log `warn` `{ event: "payment_webhook_unknown_charge", school_id }` → `unknown_charge`. Valor diferente → log `error` `{ event: "payment_amount_mismatch", school_id, payment_id }`, não confirma → `amount_mismatch`. Senão `confirmPayment`.
 3. Nunca registrar o corpo do webhook em log.
 
 - [ ] **Step 1: Testes que falham**
@@ -3518,11 +3520,6 @@ Run: `pnpm --filter @app-lanche/api exec vitest run src/modules/webhooks src/app
 Em `payments/repo.ts`:
 
 ```ts
-export async function webhookSecretRef(trx: Trx): Promise<string | null> {
-  const row = await trx.selectFrom("schools").select("paymentWebhookSecretRef").executeTakeFirst();
-  return row?.paymentWebhookSecretRef ?? null;
-}
-
 export async function paymentByCharge(trx: Trx, provider: string, chargeId: string) {
   return trx
     .selectFrom("payments")
@@ -3560,36 +3557,50 @@ export async function handleWebhook(input: {
   providerName: string;
   schoolId: string;
   headers: Record<string, string | string[] | undefined>;
+  query: Record<string, string | undefined>;
   rawBody: string;
   log: FastifyBaseLogger;
-}): Promise<WebhookOutcome> {
+}): Promise<WebhookOutcome[]> {
   const provider = getProvider(input.providerName);
   if (!UUID.test(input.schoolId)) throw new DomainError("invalid_signature");
   const { schoolId } = input;
-  const ref = await withTenant(schoolId, (trx) => repo.webhookSecretRef(trx));
-  if (!ref) throw new DomainError("invalid_signature");
-  const event = provider.parseWebhook({ headers: input.headers, rawBody: input.rawBody, secret: getSecret(ref) });
+  const school = await withTenant(schoolId, (trx) => repo.schoolPaymentConfig(trx).catch(() => undefined));
+  if (!school?.paymentWebhookSecretRef) throw new DomainError("invalid_signature");
+  // Fora de transação: o provedor pode consultar o gateway (CLAUDE.md regra 20).
+  const events = await provider.parseWebhook({
+    headers: input.headers,
+    query: input.query,
+    rawBody: input.rawBody,
+    secret: getSecret(school.paymentWebhookSecretRef),
+    accountRef: school.paymentAccountRef,
+  });
 
   return withTenant(schoolId, async (trx) => {
-    const payment = event.chargeId ? await repo.paymentByCharge(trx, provider.name, event.chargeId) : undefined;
-    const recorded = await repo.recordEvent(trx, {
-      provider: provider.name,
-      providerEventId: event.eventId,
-      schoolId,
-      paymentId: payment?.id ?? null,
-      raw: input.rawBody,
-    });
-    if (!recorded) return "duplicate";
-    if (event.kind !== "charge_paid") return "ignored";
-    if (!payment) {
-      input.log.warn({ event: "payment_webhook_unknown_charge", school_id: schoolId }, "webhook for unknown charge");
-      return "unknown_charge";
+    const outcomes: WebhookOutcome[] = [];
+    for (const event of events) {
+      const payment = event.chargeId ? await repo.paymentByCharge(trx, provider.name, event.chargeId) : undefined;
+      const recorded = await repo.recordEvent(trx, {
+        provider: provider.name,
+        providerEventId: event.eventId,
+        schoolId,
+        paymentId: payment?.id ?? null,
+        raw: input.rawBody,
+      });
+      if (!recorded) {
+        outcomes.push("duplicate");
+      } else if (event.kind !== "charge_paid") {
+        outcomes.push("ignored");
+      } else if (!payment) {
+        input.log.warn({ event: "payment_webhook_unknown_charge", school_id: schoolId }, "webhook for unknown charge");
+        outcomes.push("unknown_charge");
+      } else if (payment.amountCents !== event.amountCents) {
+        input.log.error({ event: "payment_amount_mismatch", school_id: schoolId, payment_id: payment.id }, "payment amount mismatch");
+        outcomes.push("amount_mismatch");
+      } else {
+        outcomes.push(await confirmPayment(trx, { schoolId, paymentId: payment.id, paidAt: event.paidAt }));
+      }
     }
-    if (payment.amountCents !== event.amountCents) {
-      input.log.error({ event: "payment_amount_mismatch", school_id: schoolId, payment_id: payment.id }, "payment amount mismatch");
-      return "amount_mismatch";
-    }
-    return confirmPayment(trx, { schoolId, paymentId: payment.id, paidAt: event.paidAt });
+    return outcomes;
   });
 }
 ```
@@ -3611,6 +3622,7 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
       providerName: params.provider,
       schoolId: params.schoolId,
       headers: req.headers,
+      query: req.query as Record<string, string | undefined>,
       rawBody: req.rawBody ?? "",
       log: req.log,
     });
@@ -4849,9 +4861,540 @@ git commit -m "feat(web): add menu and service day management with day close for
 
 ---
 
+### Task 13: Adaptador Efí Pix (`efi`)
+
+**Files:**
+- Create: `apps/api/src/modules/payments/efi/money.ts`, `apps/api/src/modules/payments/efi/client.ts`, `apps/api/src/modules/payments/efi/efiProvider.ts`, `apps/api/src/modules/payments/efi/efi.test.ts`, `apps/api/src/modules/webhooks/efiWebhook.test.ts`
+- Create: `apps/api/src/cli/efiSetup.ts`; Modify: `apps/api/package.json` (script `cli:efi-setup`)
+- Modify: `apps/api/src/modules/payments/registry.ts`, `apps/api/src/platform/config.ts` (+ `config.test.ts`), `apps/api/src/app.ts` (serializer de log), `apps/api/src/app.test.ts`
+- Create: `docs/efi-pix.md` (cópia de `.superpowers/sdd/2026-11-17-f2-pedidos-pagamento-carteira/efi-pix-reference.md`, com título em português e a lista de itens não confirmados); Modify: `docs/deploy.md`
+
+**Interfaces:**
+- Consumes: `PaymentProvider`, `WebhookInput`, `WebhookEvent`, `Charge`, `ChargeRequest` (Task 5); `getSecret` (Task 5); `safeEqual` (`platform/hmac.ts`); `handleWebhook` (Task 8).
+- Produces:
+  - `efiProvider: PaymentProvider` (`name: "efi"`), sempre registrado em `getProvider("efi")`.
+  - `money.ts`: `centsToReais(cents: number): string` (`1350 → "13.50"`), `reaisToCents(text: string): number` (`"13.50" → 1350`; aceita só `/^\d+\.\d{2}$/`, senão lança), `bpsToPercent(bps: number): string` (`1000 → "10.00"`, `9000 → "90.00"`, `250 → "2.50"`). Só aritmética inteira.
+  - `client.ts`: `type EfiCredentials = { client_id: string; client_secret: string; pix_key: string; certificate_p12_base64: string; certificate_passphrase?: string }`; `loadCredentials(ref: string): EfiCredentials` (lê `getSecret(ref)` como JSON validado por zod; erro cita o ref, nunca o valor); `type EfiTransport = (req: { credentials: EfiCredentials; method: string; path: string; headers: Record<string, string>; body?: string }) => Promise<{ status: number; body: unknown }>`; `efiCall(credentials, method, path, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: unknown }>`; `setEfiTransportForTests(t: EfiTransport | null): void`; `resetEfiForTests(): void`.
+  - `txidFor(paymentId: string): string` = UUID sem hífens (32 caracteres); `splitConfigIdFor(schoolId: string): string` = `"sp" + schoolId sem hífens` (34 caracteres).
+- Config: `PAYMENT_PROVIDER: z.enum(["fake", "efi"])` (padrão `"fake"`); `EFI_ENV: z.enum(["production", "homologacao"])` (padrão `"homologacao"`); `EFI_PLATFORM_ACCOUNT` opcional, JSON `{ "document_type": "cpf" | "cnpj", "document": "<só dígitos>", "account": "<número da conta Efí>" }` validado por zod no boot (inválido → `invalid environment: EFI_PLATFORM_ACCOUNT`). `Config` ganha `efiEnv` e `efiPlatformAccount: { documentType; document; account } | null`. A trava "fake só com `ENABLE_FAKE_PAYMENTS=true`" continua valendo apenas quando `PAYMENT_PROVIDER=fake`.
+
+Regras (referência: `docs/efi-pix.md`):
+1. **Credenciais por escola:** `schools.payment_account_ref` é o nome da variável de ambiente com o JSON `EfiCredentials` (mapeada do Secret Manager). `schools.payment_webhook_secret_ref` continua sendo o segredo do webhook; para a Efí ele precisa casar `/^[A-Za-z0-9_-]{32,}$/` (vai na URL).
+2. **Transporte:** `node:https` com `https.Agent({ pfx: Buffer.from(certificate_p12_base64, "base64"), passphrase, keepAlive: true })`, um agente por `client_id`. Host `pix.api.efipay.com.br` (production) ou `pix-h.api.efipay.com.br` (homologacao). Corpo JSON; resposta vazia → `body: null`. Timeout de 15 s (rejeita).
+3. **Token OAuth:** `POST /oauth/token`, `Authorization: Basic base64(client_id:client_secret)`, corpo `{"grant_type":"client_credentials"}`. Cache por `client_id` até `expires_in − 300` s. Uma resposta 401 numa chamada da API descarta o token e repete a chamada uma vez.
+4. **`createCharge`:** `PUT /v2/cob/<txid>` com `{ calendario: { expiracao }, valor: { original: centsToReais(amountCents) }, chave: pix_key, solicitacaoPagador: description }`, `expiracao = max(60, segundos até expiresAt)`. 200/201 → usa a resposta; 409 → `GET /v2/cob/<txid>` e reaproveita (a cobrança já existia); outro status → lança `Error("efi cob failed: <status>")` (sem corpo na mensagem). Se `valor.original` da cobrança difere do pedido → lança. Com `platformFeeBps > 0`: `PUT /v2/gn/split/cob/<txid>/vinculo/<splitConfigIdFor(schoolId)>` sem corpo; qualquer 2xx ok, senão lança (a cobrança fica sem Pix gravado e a próxima tentativa repete — o Pix só é mostrado depois do split vinculado).
+5. **Mapeamento da cobrança:** `ATIVA` → `pending`; `CONCLUIDA` → `paid` com `paidAt = new Date(pix[0].horario)` e `amountCents = reaisToCents(pix[0].valor)`; `REMOVIDA_PELO_USUARIO_RECEBEDOR` ou `REMOVIDA_PELO_PSP` → `expired`; outro → lança. Fora de `CONCLUIDA`, `amountCents = reaisToCents(valor.original)`. `pixCopyPaste = pixCopiaECola ?? null`; `pixQrPngBase64 = null` (a imagem da Efí é SVG; o app mostra o copia-e-cola).
+6. **`getCharge(txid, accountRef)`:** `GET /v2/cob/<txid>`; 2xx → mapeamento; senão lança.
+7. **`parseWebhook`:** a Efí não assina o corpo. (a) `query.token` comparado em tempo constante com o segredo → senão `invalid_signature`; (b) corpo JSON (inválido → `validation_failed`); sem array `pix` (notificação de teste) → `[]`; (c) para cada item: sem `txid` → `{ eventId: endToEndId, kind: "ignored", chargeId: null }`; com `txid` → `getCharge(txid)` na Efí; pago → `charge_paid` com valor e horário **da consulta** (nunca do corpo); não pago → `ignored`. `eventId = endToEndId`.
+8. **URL do webhook** registrada na Efí: `<API_BASE_URL>/webhooks/payments/efi/<school_id>?token=<segredo>&ignorar=` (a Efí acrescenta `/pix` ao final, que cai no valor de `ignorar`).
+9. **Logs:** o serializer de requisição do Fastify registra só `method`, o caminho sem query string (`url.split("?")[0]`), `hostname` e `remoteAddress` — o token do webhook nunca vai para log. Vale para o logger padrão e para o passado em `buildApp({ logger })` quando for objeto.
+10. **CLI `pnpm --filter @app-lanche/api cli:efi-setup <school_id> <api_base_url>`:** lê a escola com `withTenant`, carrega credenciais e segredo; `PUT /v2/webhook/<encodeURIComponent(pix_key)>` com header `x-skip-mtls-checking: true` e corpo `{ "webhookUrl": <URL da regra 8> }`; se `platform_fee_bps > 0`, exige `EFI_PLATFORM_ACCOUNT` e faz `PUT /v2/gn/split/config/<splitConfigIdFor(school_id)>` com
+   `{ descricao: "Taxa da plataforma", lancamento: { imediato: true }, split: { divisaoTarifa: "assumir_total", minhaParte: { tipo: "porcentagem", valor: bpsToPercent(10000 - fee) }, repasses: [{ tipo: "porcentagem", valor: bpsToPercent(fee), favorecido: { [document_type]: document, conta: account } }] } }`.
+   Imprime só o resultado de cada passo (`webhook: ok`, `split: ok (config sp…)`), nunca a URL com token nem credenciais. Falha → código de saída 1 com o status HTTP.
+
+- [ ] **Step 1: Testes que falham**
+
+`apps/api/src/modules/payments/efi/efi.test.ts`:
+
+```ts
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetEfiForTests, setEfiTransportForTests, type EfiTransport } from "./client";
+import { efiProvider, splitConfigIdFor, txidFor } from "./efiProvider";
+import { bpsToPercent, centsToReais, reaisToCents } from "./money";
+
+const REF = "EFI_TEST_CREDENTIALS";
+const SECRET = "efi-webhook-secret-0123456789abcdefghij";
+const PAYMENT_ID = "0193a3b0-0000-7000-8000-000000000001";
+const SCHOOL_ID = "0193a3b0-0000-7000-8000-0000000000aa";
+const TXID = "0193a3b0000070008000000000000001";
+
+type Call = { method: string; path: string; headers: Record<string, string>; body?: unknown };
+let calls: Call[];
+let routes: Record<string, (call: Call) => { status: number; body: unknown }>;
+
+beforeEach(() => {
+  process.env[REF] = JSON.stringify({
+    client_id: "Client_Id_test",
+    client_secret: "Client_Secret_test",
+    pix_key: "chave-pix-escola",
+    certificate_p12_base64: "AA==",
+  });
+  calls = [];
+  routes = {
+    "POST /oauth/token": () => ({ status: 200, body: { access_token: "tok-1", token_type: "Bearer", expires_in: 3600 } }),
+  };
+  const transport: EfiTransport = async (req) => {
+    const call = { method: req.method, path: req.path, headers: req.headers, body: req.body ? JSON.parse(req.body) : undefined };
+    calls.push(call);
+    const handler = routes[`${req.method} ${req.path}`];
+    if (!handler) throw new Error(`unexpected ${req.method} ${req.path}`);
+    return handler(call);
+  };
+  setEfiTransportForTests(transport);
+});
+
+afterEach(() => {
+  setEfiTransportForTests(null);
+  resetEfiForTests();
+});
+
+const activeCob = { txid: TXID, status: "ATIVA", valor: { original: "13.50" }, pixCopiaECola: "000201EFI" };
+const paidCob = {
+  txid: TXID,
+  status: "CONCLUIDA",
+  valor: { original: "13.50" },
+  pix: [{ endToEndId: "E123", txid: TXID, valor: "13.50", horario: "2030-03-04T10:00:00.000Z" }],
+};
+
+const chargeRequest = (platformFeeBps = 0) => ({
+  paymentId: PAYMENT_ID,
+  schoolId: SCHOOL_ID,
+  amountCents: 1350,
+  expiresAt: new Date(Date.now() + 3_600_000),
+  description: "Lanche escolar",
+  accountRef: REF,
+  platformFeeBps,
+});
+
+describe("efi money helpers", () => {
+  it("converts with integer arithmetic", () => {
+    expect(centsToReais(1350)).toBe("13.50");
+    expect(centsToReais(5)).toBe("0.05");
+    expect(reaisToCents("13.50")).toBe(1350);
+    expect(reaisToCents("0.01")).toBe(1);
+    expect(() => reaisToCents("13.5")).toThrow();
+    expect(() => reaisToCents("1,00")).toThrow();
+    expect(bpsToPercent(1000)).toBe("10.00");
+    expect(bpsToPercent(9000)).toBe("90.00");
+    expect(bpsToPercent(250)).toBe("2.50");
+  });
+
+  it("derives txid and split config ids", () => {
+    expect(txidFor(PAYMENT_ID)).toBe(TXID);
+    expect(splitConfigIdFor(SCHOOL_ID)).toBe("sp0193a3b00000700080000000000000aa");
+  });
+});
+
+describe("efi createCharge", () => {
+  it("authenticates once and creates the charge with our txid", async () => {
+    routes[`PUT /v2/cob/${TXID}`] = () => ({ status: 201, body: activeCob });
+    const charge = await efiProvider.createCharge(chargeRequest());
+    expect(charge).toEqual({ chargeId: TXID, status: "pending", amountCents: 1350, paidAt: null, pixCopyPaste: "000201EFI", pixQrPngBase64: null });
+    await efiProvider.createCharge(chargeRequest());
+    expect(calls.filter((c) => c.path === "/oauth/token")).toHaveLength(1);
+    const oauth = calls.find((c) => c.path === "/oauth/token")!;
+    expect(oauth.headers.authorization).toBe(`Basic ${Buffer.from("Client_Id_test:Client_Secret_test").toString("base64")}`);
+    expect(oauth.body).toEqual({ grant_type: "client_credentials" });
+    const cob = calls.find((c) => c.method === "PUT")!;
+    expect(cob.headers.authorization).toBe("Bearer tok-1");
+    expect(cob.body).toMatchObject({ valor: { original: "13.50" }, chave: "chave-pix-escola", solicitacaoPagador: "Lanche escolar" });
+    expect((cob.body as { calendario: { expiracao: number } }).calendario.expiracao).toBeGreaterThan(3500);
+  });
+
+  it("reuses an existing charge on 409", async () => {
+    routes[`PUT /v2/cob/${TXID}`] = () => ({ status: 409, body: { nome: "txid_duplicado" } });
+    routes[`GET /v2/cob/${TXID}`] = () => ({ status: 200, body: activeCob });
+    expect((await efiProvider.createCharge(chargeRequest())).pixCopyPaste).toBe("000201EFI");
+  });
+
+  it("links the platform split before returning the Pix code", async () => {
+    routes[`PUT /v2/cob/${TXID}`] = () => ({ status: 201, body: activeCob });
+    routes[`PUT /v2/gn/split/cob/${TXID}/vinculo/${splitConfigIdFor(SCHOOL_ID)}`] = () => ({ status: 204, body: null });
+    await efiProvider.createCharge(chargeRequest(1000));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain(`PUT /v2/gn/split/cob/${TXID}/vinculo/${splitConfigIdFor(SCHOOL_ID)}`);
+  });
+
+  it("fails without leaking the response body and refreshes an expired token once", async () => {
+    routes[`PUT /v2/cob/${TXID}`] = () => ({ status: 500, body: { detail: "secret detail" } });
+    await expect(efiProvider.createCharge(chargeRequest())).rejects.toThrow(/^efi cob failed: 500$/);
+
+    let first = true;
+    routes[`PUT /v2/cob/${TXID}`] = () => {
+      if (first) {
+        first = false;
+        return { status: 401, body: null };
+      }
+      return { status: 201, body: activeCob };
+    };
+    await efiProvider.createCharge(chargeRequest());
+    expect(calls.filter((c) => c.path === "/oauth/token")).toHaveLength(2);
+  });
+
+  it("names the missing credential reference, never a value", async () => {
+    await expect(efiProvider.createCharge({ ...chargeRequest(), accountRef: "EFI_MISSING_REF" })).rejects.toThrow(/EFI_MISSING_REF/);
+  });
+});
+
+describe("efi getCharge and parseWebhook", () => {
+  it("maps a concluded charge to paid with the gateway's time and amount", async () => {
+    routes[`GET /v2/cob/${TXID}`] = () => ({ status: 200, body: paidCob });
+    expect(await efiProvider.getCharge(TXID, REF)).toMatchObject({
+      status: "paid",
+      amountCents: 1350,
+      paidAt: new Date("2030-03-04T10:00:00.000Z"),
+    });
+  });
+
+  const hook = (body: unknown, token = SECRET) =>
+    efiProvider.parseWebhook({ headers: {}, query: { token, ignorar: "/pix" }, rawBody: JSON.stringify(body), secret: SECRET, accountRef: REF });
+
+  it("rejects a wrong token and accepts the registration ping", async () => {
+    await expect(hook({ pix: [] }, "wrong-token-0123456789abcdefghijklmn")).rejects.toMatchObject({ code: "invalid_signature" });
+    expect(await hook({ evento: "teste_webhook" })).toEqual([]);
+  });
+
+  it("trusts the charge lookup, not the notification body", async () => {
+    routes[`GET /v2/cob/${TXID}`] = () => ({ status: 200, body: paidCob });
+    const events = await hook({ pix: [{ endToEndId: "E123", txid: TXID, valor: "99.99", horario: "2020-01-01T00:00:00Z" }] });
+    expect(events).toEqual([
+      { eventId: "E123", kind: "charge_paid", chargeId: TXID, amountCents: 1350, paidAt: new Date("2030-03-04T10:00:00.000Z") },
+    ]);
+  });
+
+  it("ignores payments without txid and charges not yet concluded", async () => {
+    routes[`GET /v2/cob/${TXID}`] = () => ({ status: 200, body: activeCob });
+    expect(await hook({ pix: [{ endToEndId: "E1", valor: "1.00" }, { endToEndId: "E2", txid: TXID, valor: "13.50" }] })).toEqual([
+      { eventId: "E1", kind: "ignored", chargeId: null },
+      { eventId: "E2", kind: "ignored", chargeId: TXID },
+    ]);
+  });
+});
+```
+
+`apps/api/src/modules/webhooks/efiWebhook.test.ts` — rota completa com o provedor `efi` (transporte simulado com `setEfiTransportForTests`, como acima):
+1. Escola com `payment_account_ref = "EFI_TEST_CREDENTIALS"` e `payment_webhook_secret_ref = "PAYMENT_WEBHOOK_SECRET_TEST"`; família, dia (`seedServiceDay`) e um checkout pendente criado pela API (provedor padrão `fake`); depois, via `adminDb`, troque o pagamento para `provider = 'efi'` e `provider_charge_id = txidFor(paymentId)`.
+2. `POST /webhooks/payments/efi/<school_id>?token=<segredo>&ignorar=/pix` com o corpo de notificação da Efí → 200, checkout `paid`.
+3. O mesmo corpo de novo → 200 e um único `payment.confirmed` na outbox.
+4. Token errado → 401 e nenhuma linha em `payment_events`.
+5. Um logger de captura (`buildApp({ logger: { level: "info", stream } })`) não contém o segredo em nenhuma linha depois da requisição do item 2.
+
+Em `app.test.ts`: uma requisição `GET /healthz?token=abc123segredo` com logger de captura não registra `abc123segredo`.
+
+Em `config.test.ts`: `PAYMENT_PROVIDER=efi` sobe sem `ENABLE_FAKE_PAYMENTS`; `EFI_ENV` padrão `homologacao`; `EFI_PLATFORM_ACCOUNT` inválido derruba o boot citando o nome; válido vira `{ documentType, document, account }`.
+
+Run: `pnpm --filter @app-lanche/api exec vitest run src/modules/payments/efi src/modules/webhooks src/app.test.ts src/platform/config.test.ts` → FAIL.
+
+- [ ] **Step 2: Implementar**
+
+`apps/api/src/modules/payments/efi/money.ts`:
+
+```ts
+const REAIS = /^(\d+)\.(\d{2})$/;
+
+export function centsToReais(cents: number): string {
+  if (!Number.isSafeInteger(cents) || cents < 0) throw new Error("invalid cents");
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+}
+
+export function reaisToCents(text: string): number {
+  const m = REAIS.exec(text);
+  if (!m) throw new Error("invalid amount format");
+  const cents = Number(m[1]) * 100 + Number(m[2]);
+  if (!Number.isSafeInteger(cents)) throw new Error("invalid amount");
+  return cents;
+}
+
+/** Pontos-base para o percentual com duas casas que a Efí espera ("10.00"). */
+export function bpsToPercent(bps: number): string {
+  if (!Number.isInteger(bps) || bps < 0 || bps > 10_000) throw new Error("invalid bps");
+  return `${Math.floor(bps / 100)}.${String(bps % 100).padStart(2, "0")}`;
+}
+```
+
+`apps/api/src/modules/payments/efi/client.ts`:
+
+```ts
+import https from "node:https";
+import { z } from "zod";
+import { config } from "../../../platform/config";
+import { getSecret } from "../../../platform/secrets";
+
+const Credentials = z.object({
+  client_id: z.string().min(1),
+  client_secret: z.string().min(1),
+  pix_key: z.string().min(1),
+  certificate_p12_base64: z.string().min(1),
+  certificate_passphrase: z.string().optional(),
+});
+export type EfiCredentials = z.infer<typeof Credentials>;
+
+export type EfiTransport = (req: {
+  credentials: EfiCredentials;
+  method: string;
+  path: string;
+  headers: Record<string, string>;
+  body?: string;
+}) => Promise<{ status: number; body: unknown }>;
+
+const HOSTS = { production: "pix.api.efipay.com.br", homologacao: "pix-h.api.efipay.com.br" } as const;
+const TIMEOUT_MS = 15_000;
+const agents = new Map<string, https.Agent>();
+const tokens = new Map<string, { value: string; expiresAt: number }>();
+
+export function loadCredentials(ref: string): EfiCredentials {
+  const raw = getSecret(ref);
+  try {
+    return Credentials.parse(JSON.parse(raw));
+  } catch {
+    throw new Error(`secret ${ref} is not valid Efí credentials JSON`);
+  }
+}
+
+function agentFor(c: EfiCredentials): https.Agent {
+  let agent = agents.get(c.client_id);
+  if (!agent) {
+    agent = new https.Agent({
+      pfx: Buffer.from(c.certificate_p12_base64, "base64"),
+      passphrase: c.certificate_passphrase ?? "",
+      keepAlive: true,
+    });
+    agents.set(c.client_id, agent);
+  }
+  return agent;
+}
+
+const httpsTransport: EfiTransport = (req) =>
+  new Promise((resolve, reject) => {
+    const r = https.request(
+      {
+        host: HOSTS[config().efiEnv],
+        path: req.path,
+        method: req.method,
+        headers: { ...req.headers, ...(req.body ? { "content-type": "application/json" } : {}) },
+        agent: agentFor(req.credentials),
+        timeout: TIMEOUT_MS,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          let body: unknown = null;
+          try {
+            body = text ? JSON.parse(text) : null;
+          } catch {
+            body = null;
+          }
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      },
+    );
+    r.on("timeout", () => r.destroy(new Error("efi request timed out")));
+    r.on("error", reject);
+    if (req.body) r.write(req.body);
+    r.end();
+  });
+
+let transport: EfiTransport = httpsTransport;
+
+export function setEfiTransportForTests(t: EfiTransport | null): void {
+  transport = t ?? httpsTransport;
+}
+
+export function resetEfiForTests(): void {
+  tokens.clear();
+  for (const a of agents.values()) a.destroy();
+  agents.clear();
+}
+
+async function accessToken(c: EfiCredentials): Promise<string> {
+  const cached = tokens.get(c.client_id);
+  // Relógio local só para validade do token OAuth, nunca para regra de negócio.
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const res = await transport({
+    credentials: c,
+    method: "POST",
+    path: "/oauth/token",
+    headers: { authorization: `Basic ${Buffer.from(`${c.client_id}:${c.client_secret}`).toString("base64")}` },
+    body: JSON.stringify({ grant_type: "client_credentials" }),
+  });
+  const parsed = z.object({ access_token: z.string().min(1), expires_in: z.number().int().positive() }).safeParse(res.body);
+  if (res.status !== 200 || !parsed.success) throw new Error(`efi oauth failed: ${res.status}`);
+  tokens.set(c.client_id, { value: parsed.data.access_token, expiresAt: Date.now() + (parsed.data.expires_in - 300) * 1000 });
+  return parsed.data.access_token;
+}
+
+export async function efiCall(
+  c: EfiCredentials,
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: unknown }> {
+  const send = async () =>
+    transport({
+      credentials: c,
+      method,
+      path,
+      headers: { ...headers, authorization: `Bearer ${await accessToken(c)}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const res = await send();
+  if (res.status !== 401) return res;
+  tokens.delete(c.client_id);
+  return send();
+}
+```
+
+`apps/api/src/modules/payments/efi/efiProvider.ts`:
+
+```ts
+import { z } from "zod";
+import { DomainError } from "../../../platform/errors";
+import { safeEqual } from "../../../platform/hmac";
+import type { Charge, ChargeRequest, PaymentProvider, WebhookEvent, WebhookInput } from "../provider";
+import { efiCall, loadCredentials } from "./client";
+import { centsToReais, reaisToCents } from "./money";
+
+export const txidFor = (paymentId: string): string => paymentId.replace(/-/g, "");
+export const splitConfigIdFor = (schoolId: string): string => `sp${schoolId.replace(/-/g, "")}`;
+
+const Cob = z.object({
+  txid: z.string(),
+  status: z.string(),
+  valor: z.object({ original: z.string() }),
+  pixCopiaECola: z.string().optional(),
+  pix: z.array(z.object({ endToEndId: z.string(), valor: z.string(), horario: z.string() })).optional(),
+});
+type Cob = z.infer<typeof Cob>;
+
+const Notification = z.object({
+  pix: z.array(z.object({ endToEndId: z.string().min(1), txid: z.string().optional() })).optional(),
+});
+
+const is2xx = (status: number) => status >= 200 && status < 300;
+
+function credentialsFor(accountRef: string | null) {
+  if (!accountRef) throw new Error("school has no payment account reference");
+  return loadCredentials(accountRef);
+}
+
+function toCharge(cob: Cob): Charge {
+  const base = { chargeId: cob.txid, pixCopyPaste: cob.pixCopiaECola ?? null, pixQrPngBase64: null };
+  if (cob.status === "ATIVA") return { ...base, status: "pending", amountCents: reaisToCents(cob.valor.original), paidAt: null };
+  if (cob.status === "CONCLUIDA") {
+    const pix = cob.pix?.[0];
+    if (!pix) throw new Error("efi concluded charge without pix");
+    return { ...base, status: "paid", amountCents: reaisToCents(pix.valor), paidAt: new Date(pix.horario) };
+  }
+  if (cob.status === "REMOVIDA_PELO_USUARIO_RECEBEDOR" || cob.status === "REMOVIDA_PELO_PSP") {
+    return { ...base, status: "expired", amountCents: reaisToCents(cob.valor.original), paidAt: null };
+  }
+  throw new Error("efi charge in unknown status");
+}
+
+function parseCob(body: unknown): Cob {
+  const parsed = Cob.safeParse(body);
+  if (!parsed.success) throw new Error("efi returned an unexpected charge body");
+  return parsed.data;
+}
+
+export const efiProvider: PaymentProvider = {
+  name: "efi",
+
+  async createCharge(req: ChargeRequest): Promise<Charge> {
+    const c = credentialsFor(req.accountRef);
+    const txid = txidFor(req.paymentId);
+    const expiracao = Math.max(60, Math.floor((req.expiresAt.getTime() - Date.now()) / 1000));
+    const put = await efiCall(c, "PUT", `/v2/cob/${txid}`, {
+      calendario: { expiracao },
+      valor: { original: centsToReais(req.amountCents) },
+      chave: c.pix_key,
+      solicitacaoPagador: req.description,
+    });
+    let cob: Cob;
+    if (is2xx(put.status)) cob = parseCob(put.body);
+    else if (put.status === 409) {
+      const got = await efiCall(c, "GET", `/v2/cob/${txid}`);
+      if (!is2xx(got.status)) throw new Error(`efi cob failed: ${got.status}`);
+      cob = parseCob(got.body);
+    } else throw new Error(`efi cob failed: ${put.status}`);
+    if (cob.valor.original !== centsToReais(req.amountCents)) throw new Error("efi charge amount differs");
+
+    if (req.platformFeeBps > 0) {
+      const link = await efiCall(c, "PUT", `/v2/gn/split/cob/${txid}/vinculo/${splitConfigIdFor(req.schoolId)}`);
+      if (!is2xx(link.status)) throw new Error(`efi split link failed: ${link.status}`);
+    }
+    return toCharge(cob);
+  },
+
+  async getCharge(chargeId: string, accountRef: string | null): Promise<Charge> {
+    const res = await efiCall(credentialsFor(accountRef), "GET", `/v2/cob/${chargeId}`);
+    if (!is2xx(res.status)) throw new Error(`efi cob lookup failed: ${res.status}`);
+    return toCharge(parseCob(res.body));
+  },
+
+  /** A Efí não assina a notificação: exige o token da URL e confirma cada cobrança consultando a própria Efí. */
+  async parseWebhook({ query, rawBody, secret, accountRef }: WebhookInput): Promise<WebhookEvent[]> {
+    if (!safeEqual(query.token ?? "", secret)) throw new DomainError("invalid_signature");
+    let parsed: z.infer<typeof Notification>;
+    try {
+      parsed = Notification.parse(JSON.parse(rawBody));
+    } catch {
+      throw new DomainError("validation_failed");
+    }
+    const events: WebhookEvent[] = [];
+    for (const item of parsed.pix ?? []) {
+      if (!item.txid) {
+        events.push({ eventId: item.endToEndId, kind: "ignored", chargeId: null });
+        continue;
+      }
+      const charge = await this.getCharge(item.txid, accountRef);
+      events.push(
+        charge.status === "paid" && charge.paidAt
+          ? { eventId: item.endToEndId, kind: "charge_paid", chargeId: item.txid, amountCents: charge.amountCents, paidAt: charge.paidAt }
+          : { eventId: item.endToEndId, kind: "ignored", chargeId: item.txid },
+      );
+    }
+    return events;
+  },
+};
+```
+
+(Se o TypeScript reclamar de `this` dentro do objeto literal, chame `efiProvider.getCharge`.)
+
+`registry.ts`: `if (name === "efi") return efiProvider;` antes da checagem do `fake`.
+
+`config.ts`: os campos novos conforme as Interfaces.
+
+`app.ts`: no `logger` padrão e no objeto recebido em `options.logger`, acrescente
+
+```ts
+serializers: {
+  req: (req: { method: string; url: string; hostname?: string; ip?: string }) => ({
+    method: req.method,
+    url: req.url.split("?")[0],
+    hostname: req.hostname,
+    remoteAddress: req.ip,
+  }),
+},
+```
+
+(com `options.logger` objeto, faça `{ ...options.logger, serializers: { ...SERIALIZERS, ...(options.logger.serializers ?? {}) } }`; `true`/`false` ficam como estão).
+
+`apps/api/src/cli/efiSetup.ts`: siga o estilo de `cli/createSchool.ts` (validação de argumentos, `config()`, `closeDb()` no fim, `process.exitCode = 1` em erro) e a regra 10.
+
+`docs/deploy.md` ganha a seção "Efí (Pix)", em português:
+- `PAYMENT_PROVIDER=efi`, `EFI_ENV` (`homologacao` até o piloto; `production` depois), `EFI_PLATFORM_ACCOUNT` (conta Efí da plataforma que recebe o split).
+- Por escola: segredo JSON de credenciais (`client_id`, `client_secret`, `pix_key`, `certificate_p12_base64` = certificado `.p12` em base64, `certificate_passphrase` se houver) mapeado numa variável cujo nome vai em `schools.payment_account_ref`; segredo do webhook (`openssl rand -hex 32`) numa variável cujo nome vai em `schools.payment_webhook_secret_ref`.
+- Escopos que a aplicação da escola precisa ter no painel Efí: `cob.write`, `cob.read`, `pix.read`, `webhook.write`, `webhook.read`, `gn.split.write`, `gn.split.read`.
+- Depois do deploy: `pnpm --filter @app-lanche/api cli:efi-setup <school_id> <URL do Cloud Run>` (registra o webhook com `x-skip-mtls-checking` e cria o split).
+- Checklist de homologação (itens não confirmados em `docs/efi-pix.md`): criar cobrança e pagar no ambiente de homologação; conferir que o webhook chega com `?token=…&ignorar=/pix`; repetir o PUT do mesmo txid (espera-se 409 ou 2xx); conferir o split vinculado; conferir a senha do `.p12`.
+
+- [ ] **Step 3: Rodar e ver passar; commit**
+
+Run: os testes do Step 1 → PASS. Depois `pnpm typecheck && pnpm lint && pnpm test`.
+
+```bash
+git add apps/api docs/efi-pix.md docs/deploy.md
+git commit -m "feat(api): add Efí Pix provider with mTLS client, verified webhook and platform split"
+```
+
+---
+
 ## Fora desta fase
 
-- Adaptador do gateway real (Asaas) e split efetivo — depende da decisão sobre CPF do pagador (decisão 1).
+- Validação do adaptador Efí em homologação com conta e certificado reais (checklist em `docs/deploy.md`, Task 13).
 - Rotas internas do n8n (`schedule/due`, `reminders/*`, `service-days/*/close` interno, `magic-links`), dispatcher da outbox e fechamento de segurança pelo Cloud Scheduler — F3 (reutilizam `closeServiceDay`).
 - Job de conciliação a cada 5 min — F6 (reutiliza `reconcileServiceDay`/`confirmPayment`).
 - Reembolso em dinheiro com OTP — fase da reverificação do responsável.
