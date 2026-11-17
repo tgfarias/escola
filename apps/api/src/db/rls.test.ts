@@ -10,6 +10,7 @@ const TENANT_TABLES = [
   "classes",
   "guardian_students",
   "guardians",
+  "outbox_events",
   "staff_users",
   "students",
 ];

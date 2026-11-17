@@ -68,5 +68,9 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .insertInto("auditLog")
     .values({ id: uuidv7(), schoolId, actorKind: "system", action: "seed" })
     .execute();
+  await db
+    .insertInto("outboxEvents")
+    .values({ id: uuidv7(), schoolId, type: "seed", data: JSON.stringify({}) })
+    .execute();
   return ids;
 }

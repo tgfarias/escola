@@ -56,6 +56,17 @@ export interface GuardianStudents {
   studentId: string;
 }
 
+export interface OutboxEvents {
+  attempts: Generated<number>;
+  data: Json;
+  deliveredAt: Timestamp | null;
+  id: string;
+  nextAttemptAt: Generated<Timestamp>;
+  occurredAt: Generated<Timestamp>;
+  schoolId: string;
+  type: string;
+}
+
 export interface SchemaMigrations {
   appliedAt: Generated<Timestamp>;
   name: string;
@@ -99,6 +110,7 @@ export interface DB {
   classes: Classes;
   guardians: Guardians;
   guardianStudents: GuardianStudents;
+  outboxEvents: OutboxEvents;
   schemaMigrations: SchemaMigrations;
   schools: Schools;
   staffUsers: StaffUsers;
