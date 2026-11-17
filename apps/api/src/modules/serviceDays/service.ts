@@ -55,6 +55,8 @@ export async function closeServiceDay(
     const day = await catalog.lockServiceDayByDate(trx, serviceDate, "update");
     if (!day) throw new DomainError("not_found");
     if (day.status === "closed") return response(trx, day.id, day.closedAt!);
+    // Fechar antes do corte transformaria pagamentos no prazo em crédito atrasado.
+    if (day.beforeCutoff) throw new DomainError("service_day_open");
 
     await orders.expirePendingCheckouts(trx, schoolId, day.id);
     const content = buildManifest(await repo.manifestLines(trx, day.id), await orders.countLateCredited(trx, day.id));

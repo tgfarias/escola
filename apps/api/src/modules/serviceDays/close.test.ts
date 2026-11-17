@@ -29,6 +29,10 @@ async function credit(schoolId: string, guardianId: string, amountCents: number)
   );
 }
 
+async function passCutoff(serviceDayId: string) {
+  await sql`UPDATE service_days SET cutoff_at = now() - interval '1 second' WHERE id = ${serviceDayId}`.execute(adminDb());
+}
+
 describe("closeServiceDay", () => {
   it("freezes the manifest, expires unpaid checkouts and is idempotent", async () => {
     const schoolId = await createSchool();
@@ -56,6 +60,7 @@ describe("closeServiceDay", () => {
     const unpaid = await order(schoolId, eva.guardianId, day.serviceDate, eva.studentIds[0]!, [{ menuItemId: misto!.id, qty: 1 }]);
     expect(unpaid.status).toBe("pending_payment");
 
+    await passCutoff(day.serviceDayId);
     const manifest = await closeServiceDay(schoolId, day.serviceDate, { log });
     expect(manifest).toMatchObject({
       status: "closed",
@@ -87,12 +92,15 @@ describe("closeServiceDay", () => {
     const family = await seedFamily(schoolId, ["Léo"]);
     const created = await order(schoolId, family.guardianId, day.serviceDate, family.studentIds[0]!, [{ menuItemId: day.items[0]!.id, qty: 1 }]);
     const payment = await adminDb().selectFrom("payments").select("providerChargeId").where("checkoutId", "=", created.id).executeTakeFirstOrThrow();
-    fakeMarkPaid(payment.providerChargeId!, new Date(Date.now() - 1000));
+    fakeMarkPaid(payment.providerChargeId!, new Date(Date.now() - 120_000));
+    await passCutoff(day.serviceDayId);
     const manifest = await closeServiceDay(schoolId, day.serviceDate, { log });
     expect(manifest.totals.orders).toBe(1);
   });
 
   it("never puts a payment in both the manifest and the wallet, nor in neither, under concurrency", async () => {
+    let served = 0;
+    let late = 0;
     for (let round = 0; round < 3; round++) {
       const schoolId = await createSchool();
       const day = await seedServiceDay(schoolId);
@@ -103,27 +111,36 @@ describe("closeServiceDay", () => {
         const p = await adminDb().selectFrom("payments").select("id").where("checkoutId", "=", c.id).executeTakeFirstOrThrow();
         pending.push({ checkoutId: c.id, paymentId: p.id, guardianId: family.guardianId });
       }
-      const paidAt = new Date();
-      const confirmations = pending.map((p) =>
-        withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.paymentId, paidAt })),
-      );
-      const half = Math.floor(confirmations.length / 2);
-      const [manifest] = await Promise.all([
-        closeServiceDay(schoolId, day.serviceDate, { log, reconcile: false }),
-        ...confirmations.slice(0, half),
-      ]).then(async (r) => [r[0], await Promise.all(confirmations.slice(half))] as const);
+      await passCutoff(day.serviceDayId);
+      const paidAt = new Date(Date.now() - 120_000);
+      const confirm = (p: (typeof pending)[number]) => withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.paymentId, paidAt }));
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const half = pending.length / 2;
+      const started: Promise<unknown>[] = pending.slice(0, half).map(confirm);
+      await sleep(20);
+      const closing = closeServiceDay(schoolId, day.serviceDate, { log, reconcile: false });
+      started.push(closing);
+      await sleep(20);
+      started.push(...pending.slice(half).map(confirm));
+      const settled = await Promise.allSettled(started);
+      expect(settled.filter((r) => r.status === "rejected")).toEqual([]);
+      const manifest = await closing;
 
       const inManifest = new Set(manifest.by_class.flatMap((c) => c.orders.map((o) => o.order_id)));
       for (const p of pending) {
         const checkout = await adminDb().selectFrom("checkouts").select("status").where("id", "=", p.checkoutId).executeTakeFirstOrThrow();
         const orderRow = await adminDb().selectFrom("orders").select("id").where("checkoutId", "=", p.checkoutId).executeTakeFirstOrThrow();
         const credits = await adminDb().selectFrom("walletEntries").select("id").where("sourceId", "=", p.paymentId).where("kind", "=", "late_payment_credit").execute();
-        const served = inManifest.has(orderRow.id);
-        expect(served !== (credits.length === 1)).toBe(true);
-        expect(checkout.status).toBe(served ? "paid" : "late_credited");
+        const isServed = inManifest.has(orderRow.id);
+        expect(isServed !== (credits.length === 1)).toBe(true);
+        expect(checkout.status).toBe(isServed ? "paid" : "late_credited");
         expect(await walletLedgerMatches(schoolId, p.guardianId)).toBe(true);
+        if (isServed) served += 1;
+        else late += 1;
       }
     }
+    expect(served).toBeGreaterThan(0);
+    expect(late).toBeGreaterThan(0);
   });
 });
 
@@ -135,6 +152,16 @@ describe("service day close routes", () => {
     const before = await buildApp().inject({ method: "GET", url: `/api/admin/v1/service-days/${day.serviceDate}/manifest`, cookies });
     expect(before.statusCode).toBe(409);
     expect(before.json().error.code).toBe("service_day_open");
+    const early = await buildApp().inject({ method: "POST", url: `/api/admin/v1/service-days/${day.serviceDate}/close`, cookies });
+    expect(early.statusCode).toBe(409);
+    expect(early.json().error.code).toBe("service_day_open");
+    const stillOpen = await adminDb().selectFrom("serviceDays").select("status").where("id", "=", day.serviceDayId).executeTakeFirstOrThrow();
+    expect(stillOpen.status).toBe("open");
+    const manifests = await adminDb().selectFrom("manifests").select("id").where("serviceDayId", "=", day.serviceDayId).execute();
+    expect(manifests).toEqual([]);
+    const closedEvents = await adminDb().selectFrom("outboxEvents").select("id").where("schoolId", "=", schoolId).where("type", "=", "service_day.closed").execute();
+    expect(closedEvents).toEqual([]);
+    await passCutoff(day.serviceDayId);
     const closed = await buildApp().inject({ method: "POST", url: `/api/admin/v1/service-days/${day.serviceDate}/close`, cookies });
     expect(closed.statusCode).toBe(200);
     const after = await buildApp().inject({ method: "GET", url: `/api/admin/v1/service-days/${day.serviceDate}/manifest`, cookies });
