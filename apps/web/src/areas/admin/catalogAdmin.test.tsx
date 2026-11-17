@@ -96,6 +96,61 @@ describe("menu admin", () => {
     expect(callOf(fn, "POST /api/admin/v1/menu-items")).toBeUndefined();
   });
 
+  it("uses a new idempotency key after the form was edited, and reuses it on a pure retry", async () => {
+    const replies: Record<string, Reply> = {
+      ...BASE,
+      "GET /api/admin/v1/me": me("secretaria"),
+      "POST /api/admin/v1/menu-items": { status: 409, body: { error: { code: "menu_item_name_taken", message: "x" } } },
+    };
+    const fn = mockApi(replies);
+    renderAdmin();
+    await screen.findByText("Pão — R$ 3,50");
+    const keys = () =>
+      fn.mock.calls
+        .filter((c) => c[1]?.method === "POST")
+        .map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Pão" } });
+    fireEvent.change(screen.getByLabelText("Preço (R$)"), { target: { value: "4,50" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    await screen.findByText("Já existe um item com esse nome.");
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Pão de queijo" } });
+    replies["POST /api/admin/v1/menu-items"] = {
+      status: 200,
+      body: { id: ID_NEW, name: "Pão de queijo", priceCents: 450, active: true },
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    await screen.findByText("Pão de queijo — R$ 4,50");
+    const [first, second] = keys();
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
+  });
+
+  it("reuses the idempotency key when resubmitting unchanged after a network error", async () => {
+    const fn = mockApi({
+      ...BASE,
+      "GET /api/admin/v1/me": me("secretaria"),
+    });
+    fn.mockImplementation(async (url, init) => {
+      const key = `${init?.method ?? "GET"} ${url}`;
+      if (key === "POST /api/admin/v1/menu-items") throw new TypeError("offline");
+      if (key === "GET /api/admin/v1/me") return new Response(JSON.stringify(me("secretaria").body));
+      if (key === "GET /api/admin/v1/menu-items") return new Response(JSON.stringify(MENU.body));
+      return new Response(JSON.stringify(DAYS.body));
+    });
+    renderAdmin();
+    await screen.findByText("Pão — R$ 3,50");
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Bolo" } });
+    fireEvent.change(screen.getByLabelText("Preço (R$)"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    await screen.findByText("Sem conexão. Verifique a internet e tente de novo.");
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    await waitFor(() => expect(fn.mock.calls.filter((c) => c[1]?.method === "POST")).toHaveLength(2));
+    const keys = fn.mock.calls
+      .filter((c) => c[1]?.method === "POST")
+      .map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
   it("deactivates an item", async () => {
     const fn = mockApi({
       ...BASE,

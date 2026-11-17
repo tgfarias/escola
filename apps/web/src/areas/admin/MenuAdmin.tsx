@@ -75,9 +75,15 @@ export function MenuAdmin() {
       <form onSubmit={add}>
         <h3>Novo item</h3>
         <label htmlFor="menu-name">Nome</label>
-        <input id="menu-name" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
+        <input id="menu-name" required maxLength={80} value={name} onChange={(e) => {
+            keyRef.current = null;
+            setName(e.target.value);
+          }} />
         <label htmlFor="menu-price">Preço (R$)</label>
-        <input id="menu-price" required inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} />
+        <input id="menu-price" required inputMode="decimal" value={price} onChange={(e) => {
+            keyRef.current = null;
+            setPrice(e.target.value);
+          }} />
         <button type="submit" disabled={busy}>Adicionar</button>
       </form>
       {error && <p role="alert">{error}</p>}
