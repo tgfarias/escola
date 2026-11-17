@@ -5,6 +5,11 @@ Secret Manager e Firebase Hosting habilitados; `gcloud` e `firebase` autenticado
 
 Variáveis usadas abaixo: `GCP_PROJECT`, `SQL_INSTANCE` (formato `projeto:regiao:instancia`).
 
+`APP_BASE_URL` é a origem pública da PWA: monta os magic links e é a única origem aceita em
+gravações com sessão (proteção contra CSRF). Em produção, `https://<dominio>`; em
+desenvolvimento local, `http://localhost:5173` (a porta do Vite), senão toda gravação feita
+pela PWA responde 403 `origin_rejected`.
+
 ## Segredos (Secret Manager)
 
 `DATABASE_URL` (usuário `app_user`), `INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET`, `SESSION_SECRET`.
