@@ -34,3 +34,20 @@ export const MeResponse = z.object({
   ),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
+
+export const StaffOtpRequest = z.object({ email: z.string().email().max(200) });
+export type StaffOtpRequest = z.infer<typeof StaffOtpRequest>;
+
+export const StaffOtpRequestResponse = z.object({ otpToken: z.string() });
+export type StaffOtpRequestResponse = z.infer<typeof StaffOtpRequestResponse>;
+
+export const StaffOtpVerifyResponse = z.object({ status: z.literal("ok"), role: StaffRole });
+export type StaffOtpVerifyResponse = z.infer<typeof StaffOtpVerifyResponse>;
+
+export const StaffMeResponse = z.object({
+  id: z.string().uuid(),
+  email: z.string(),
+  role: StaffRole,
+  schoolName: z.string(),
+});
+export type StaffMeResponse = z.infer<typeof StaffMeResponse>;

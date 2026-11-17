@@ -8,6 +8,7 @@
     "build": "tsup",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
+    "cli:create-school": "tsx src/cli/createSchool.ts",
     "db:types": "kysely-codegen --dialect postgres --camel-case --out-file src/db/types.ts"
   },
   "dependencies": {

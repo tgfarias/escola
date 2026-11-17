@@ -1,0 +1,142 @@
+import { uuidv7 } from "uuidv7";
+import { describe, expect, it } from "vitest";
+import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
+import { buildApp } from "../../app";
+import { SESSION_COOKIE, signToken } from "../../platform/session";
+import { signOtpToken } from "./otp";
+
+function post(url: string, payload: unknown) {
+  return buildApp().inject({ method: "POST", url, payload: payload as object });
+}
+
+async function otpEvents(schoolId: string) {
+  return adminDb()
+    .selectFrom("outboxEvents")
+    .select("data")
+    .where("schoolId", "=", schoolId)
+    .where("type", "=", "auth.otp_requested")
+    .orderBy("occurredAt", "asc")
+    .execute();
+}
+
+describe("staff authentication", () => {
+  it("logs in with e-mail and code", async () => {
+    const schoolId = await createSchool("Escola Sol");
+    const seed = await seedTenant(schoolId);
+
+    const requested = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
+    expect(requested.statusCode).toBe(200);
+    const { otpToken } = requested.json();
+    const [event] = await otpEvents(schoolId);
+    const data = event!.data as { code: string; channel: string; to: string };
+    expect(data.channel).toBe("email");
+    expect(data.to).toBe(seed.email);
+
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: data.code });
+    expect(verified.statusCode).toBe(200);
+    expect(verified.json()).toEqual({ status: "ok", role: "admin" });
+    const cookie = verified.cookies.find((c) => c.name === SESSION_COOKIE)!;
+    expect(cookie.maxAge).toBe(28_800);
+
+    const me = await buildApp().inject({
+      method: "GET",
+      url: "/api/admin/v1/me",
+      cookies: { [SESSION_COOKIE]: cookie.value },
+    });
+    expect(me.json()).toEqual({ id: seed.staffUserId, email: seed.email, role: "admin", schoolName: "Escola Sol" });
+  });
+
+  it("answers the same way for an unknown e-mail and sends nothing", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const requested = await post("/api/admin/v1/auth/otp/request", { email: `nobody-${uuidv7()}@x.test` });
+    expect(requested.statusCode).toBe(200);
+    expect(typeof requested.json().otpToken).toBe("string");
+    expect(await otpEvents(schoolId)).toEqual([]);
+
+    const known = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
+    expect(known.statusCode).toBe(requested.statusCode);
+    expect(Object.keys(known.json()).sort()).toEqual(Object.keys(requested.json()).sort());
+    expect(Object.keys(known.json())).toEqual(["otpToken"]);
+
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken: requested.json().otpToken, code: "123456" });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+  });
+
+  it("rejects a wrong code", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const { otpToken } = (await post("/api/admin/v1/auth/otp/request", { email: seed.email })).json();
+    const [event] = await otpEvents(schoolId);
+    const code = (event!.data as { code: string }).code;
+    const verified = await post("/api/admin/v1/auth/otp/verify", {
+      otpToken,
+      code: code === "000000" ? "000001" : "000000",
+    });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+  });
+
+  it("does not accept a guardian session on staff routes", async () => {
+    const token = await signToken(
+      "session",
+      { kind: "guardian", sub: uuidv7(), schoolId: uuidv7(), scope: "order" },
+      60,
+    );
+    const res = await buildApp().inject({
+      method: "GET",
+      url: "/api/admin/v1/me",
+      cookies: { [SESSION_COOKIE]: token },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("answers the fourth request in the window like any other but sends nothing", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    for (let i = 0; i < 3; i++) {
+      const res = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
+      expect(res.statusCode).toBe(200);
+    }
+    expect(await otpEvents(schoolId)).toHaveLength(3);
+
+    const fourth = await post("/api/admin/v1/auth/otp/request", { email: seed.email });
+    expect(fourth.statusCode).toBe(200);
+    expect(Object.keys(fourth.json())).toEqual(["otpToken"]);
+    expect(typeof fourth.json().otpToken).toBe("string");
+    expect(await otpEvents(schoolId)).toHaveLength(3);
+
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken: fourth.json().otpToken, code: "123456" });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+  });
+
+  it("does not log in a staff user deactivated after requesting the code", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const { otpToken } = (await post("/api/admin/v1/auth/otp/request", { email: seed.email })).json();
+    const [event] = await otpEvents(schoolId);
+    const code = (event!.data as { code: string }).code;
+    await adminDb().updateTable("staffUsers").set({ active: false }).where("id", "=", seed.staffUserId).execute();
+
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+    expect(verified.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
+  });
+
+  it("rejects a guardian OTP token on the staff verify route", async () => {
+    const otpToken = await signOtpToken({
+      subjectKind: "guardian",
+      schoolId: uuidv7(),
+      challengeId: uuidv7(),
+      subjectId: uuidv7(),
+      deviceHash: "h".repeat(43),
+      scope: "order",
+    });
+    const verified = await post("/api/admin/v1/auth/otp/verify", { otpToken, code: "123456" });
+    expect(verified.statusCode).toBe(401);
+    expect(verified.json().error.code).toBe("otp_invalid");
+  });
+});

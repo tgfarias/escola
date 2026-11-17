@@ -158,3 +158,23 @@ export async function getGuardianWithStudents(trx: Trx, guardianId: string) {
     .execute();
   return { guardian, students };
 }
+
+export async function getStaffUser(trx: Trx, id: string) {
+  return trx
+    .selectFrom("staffUsers")
+    .innerJoin("schools", "schools.id", "staffUsers.schoolId")
+    .select(["staffUsers.id", "staffUsers.email", "staffUsers.role", "schools.name as schoolName"])
+    .where("staffUsers.id", "=", id)
+    .where("staffUsers.active", "=", true)
+    .executeTakeFirst();
+}
+
+/** Trava o usuário da equipe para serializar a contagem de desafios emitidos. */
+export async function lockStaffUser(trx: Trx, id: string) {
+  return trx
+    .selectFrom("staffUsers")
+    .select("id")
+    .where("id", "=", id)
+    .forUpdate()
+    .executeTakeFirstOrThrow();
+}

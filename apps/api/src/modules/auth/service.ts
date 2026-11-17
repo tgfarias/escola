@@ -1,4 +1,4 @@
-import type { MeResponse } from "@app-lanche/contracts";
+import type { MeResponse, StaffMeResponse, StaffRole } from "@app-lanche/contracts";
 import { uuidv7 } from "uuidv7";
 import { withTenant } from "../../db/index";
 import { DomainError } from "../../platform/errors";
@@ -101,4 +101,58 @@ export async function getMe(session: SessionClaims): Promise<MeResponse> {
   const found = await withTenant(session.schoolId, (trx) => repo.getGuardianWithStudents(trx, session.sub));
   if (!found) throw new DomainError("unauthenticated");
   return found;
+}
+
+export async function requestStaffOtp(email: string): Promise<{ otpToken: string }> {
+  const resolved = await repo.resolveStaffEmail(email);
+  if (!resolved) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
+  const challengeId = await withTenant(resolved.schoolId, async (trx) => {
+    await repo.lockStaffUser(trx, resolved.staffUserId);
+    return createChallenge(trx, {
+      schoolId: resolved.schoolId,
+      subjectKind: "staff",
+      subjectId: resolved.staffUserId,
+      channel: "email",
+      to: email.toLowerCase(),
+      firstName: null,
+    });
+  });
+  // Throttled: answer exactly like an unknown e-mail so the response does not reveal the account.
+  if (challengeId === null) return { otpToken: await signOtpToken({ subjectKind: "none" }) };
+  const otpToken = await signOtpToken({
+    subjectKind: "staff",
+    schoolId: resolved.schoolId,
+    challengeId,
+    subjectId: resolved.staffUserId,
+  });
+  return { otpToken };
+}
+
+export async function verifyStaffOtp(input: {
+  otpToken: string;
+  code: string;
+}): Promise<{ claims: SessionClaims; role: StaffRole }> {
+  const payload = await readOtpToken(input.otpToken);
+  if (payload.subjectKind !== "staff") throw new DomainError("otp_invalid");
+  const outcome = await withTenant(payload.schoolId, async (trx) => {
+    const checked = await checkCode(trx, payload.challengeId, input.code, {
+      subjectKind: "staff",
+      subjectId: payload.subjectId,
+    });
+    const staff = checked === "ok" ? await repo.getStaffUser(trx, payload.subjectId) : undefined;
+    return { checked, staff };
+  });
+  assertOtpOk(outcome.checked);
+  if (!outcome.staff) throw new DomainError("otp_invalid");
+  const role = outcome.staff.role as StaffRole;
+  return {
+    role,
+    claims: { kind: "staff", sub: payload.subjectId, schoolId: payload.schoolId, role },
+  };
+}
+
+export async function getStaffMe(session: SessionClaims): Promise<StaffMeResponse> {
+  const staff = await withTenant(session.schoolId, (trx) => repo.getStaffUser(trx, session.sub));
+  if (!staff) throw new DomainError("unauthenticated");
+  return { ...staff, role: staff.role as StaffRole };
 }
