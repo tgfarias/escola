@@ -43,11 +43,14 @@ async function post(envelope: OutboxEnvelope): Promise<PostResult> {
   }
 }
 
-/** Entrega os eventos prontos de uma escola. Nunca lança por falha do n8n. */
+/**
+ * Entrega os eventos prontos de uma escola. Nunca lança por falha do n8n. Erro de transporte ou 5xx
+ * encerra a rodada da escola: os demais eventos arrendados ficam para depois. 4xx é do evento e segue.
+ */
 export async function dispatchSchool(schoolId: string, log: FastifyBaseLogger): Promise<DispatchCounts> {
   const counts: DispatchCounts = { delivered: 0, failed: 0, abandoned: 0 };
   if (!config().n8nEventsUrl) return counts;
-  for (let i = 0; i < MAX_BATCHES_PER_SCHOOL; i += 1) {
+  schoolLoop: for (let i = 0; i < MAX_BATCHES_PER_SCHOOL; i += 1) {
     const events = await withTenant(schoolId, (trx) => repo.claim(trx, BATCH));
     if (events.length === 0) break;
     for (const e of events) {
@@ -73,6 +76,7 @@ export async function dispatchSchool(schoolId: string, log: FastifyBaseLogger): 
         await withTenant(schoolId, (trx) => repo.markAttemptFailed(trx, e.id));
         counts.failed += 1;
         log.warn({ event_id: e.id, event_type: e.type, school_id: schoolId, ...("status" in result ? { status: result.status } : { err_name: result.errName }) }, "outbox delivery failed");
+        if (!("status" in result) || result.status >= 500) break schoolLoop;
       }
     }
     if (events.length < BATCH) break;

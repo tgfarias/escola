@@ -103,8 +103,8 @@ describe("outbox dispatcher", () => {
   });
 
   it("backs off after a failed attempt and keeps the event pending", async () => {
+    // Sem seedTenant: o 5xx encerra a rodada no primeiro evento, que precisa ser este.
     const schoolId = await createSchool();
-    await seedTenant(schoolId);
     const id = await otp(schoolId);
     status = 503;
     const counts = await dispatchSchool(schoolId, log);
@@ -112,6 +112,19 @@ describe("outbox dispatcher", () => {
     const after = await row(id);
     expect(after).toMatchObject({ attempts: 1, deliveredAt: null, failedAt: null, backedOff: true });
     expect(JSON.parse(after.data)).toMatchObject({ code: "123456" });
+  });
+
+  it("stops dispatching a school after n8n answers 5xx", async () => {
+    const schoolId = await createSchool();
+    const ids = [await otp(schoolId), await otp(schoolId), await otp(schoolId)];
+    status = 503;
+    const counts = await dispatchSchool(schoolId, log);
+    expect(counts).toEqual({ delivered: 0, failed: 1, abandoned: 0 });
+    expect(forSchool(schoolId)).toHaveLength(1);
+    const rows = await Promise.all(ids.map(row));
+    expect(rows.map((r) => r.attempts).sort()).toEqual([0, 0, 1]);
+    // Os demais continuam arrendados e voltam numa próxima rodada.
+    expect(rows.every((r) => r.deliveredAt === null && r.failedAt === null && r.backedOff)).toBe(true);
   });
 
   it("abandons an expired OTP without sending it and scrubs it", async () => {
