@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
-import type { Trx } from "../../db/index";
+import { getDb, type Trx } from "../../db/index";
 
 export async function manifestLines(trx: Trx, serviceDayId: string) {
   return trx
@@ -47,4 +47,15 @@ export async function readManifest(trx: Trx, serviceDayId: string) {
 export async function kitchenPhone(trx: Trx): Promise<string | null> {
   const row = await trx.selectFrom("schools").select("kitchenPhone").executeTakeFirst();
   return row?.kitchenPhone ?? null;
+}
+
+/** Agenda de todas as escolas (função SECURITY DEFINER, spec 4.4). */
+export async function listDueActions() {
+  const { rows } = await sql<{
+    action: "send_reminders" | "close_service_day";
+    schoolId: string;
+    serviceDate: string;
+    overdue: boolean;
+  }>`SELECT action, school_id, service_date, overdue FROM list_due_actions()`.execute(getDb());
+  return rows;
 }

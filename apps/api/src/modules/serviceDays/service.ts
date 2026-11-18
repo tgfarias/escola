@@ -79,3 +79,14 @@ export async function getManifest(schoolId: string, serviceDate: string): Promis
     return response(trx, day.id, day.closedAt!);
   });
 }
+
+export type DueAction = {
+  action: "send_reminders" | "close_service_day";
+  schoolId: string;
+  serviceDate: string;
+  overdue: boolean;
+};
+
+export async function listDueActions(): Promise<DueAction[]> {
+  return repo.listDueActions();
+}

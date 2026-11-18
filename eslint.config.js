@@ -6,11 +6,12 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    // getDb ignora o tenant: só a camada db, o repo de auth e testes podem usá-lo (spec 4.4).
+    // getDb ignora o tenant: só a camada db, os repo.ts que chamam funções SECURITY DEFINER e testes podem usá-lo (spec 4.4).
     files: ["apps/api/**/*.ts"],
     ignores: [
       "apps/api/src/db/**",
       "apps/api/src/modules/auth/repo.ts",
+      "apps/api/src/modules/serviceDays/repo.ts",
       "**/*.test.ts",
       "apps/api/test/**",
     ],
@@ -22,7 +23,7 @@ export default tseslint.config(
             {
               group: ["**/db", "**/db/index", "**/db/index.ts"],
               importNames: ["getDb"],
-              message: "getDb só é permitido em src/db, modules/auth/repo.ts e testes. Use withTenant.",
+              message: "getDb só é permitido em src/db, nos repo.ts que chamam funções SECURITY DEFINER e em testes. Use withTenant.",
             },
           ],
         },

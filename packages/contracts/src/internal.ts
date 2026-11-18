@@ -19,3 +19,11 @@ export const InternalMagicLinkResponse = z.object({
   expires_at: IsoDateTime,
 });
 export type InternalMagicLinkResponse = z.infer<typeof InternalMagicLinkResponse>;
+
+export const DueActionName = z.enum(["send_reminders", "close_service_day"]);
+
+/** GET /internal/v1/schedule/due */
+export const ScheduleDueResponse = z.object({
+  due: z.array(z.object({ action: DueActionName, school_id: Uuid, service_date: IsoDate })),
+});
+export type ScheduleDueResponse = z.infer<typeof ScheduleDueResponse>;
