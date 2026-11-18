@@ -6,3 +6,5 @@ dev-dist/
 *.log
 .firebase/
 coverage/
+test-results/
+playwright-report/

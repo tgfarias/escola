@@ -21,3 +21,27 @@ jobs:
       - run: pnpm --filter @app-lanche/web build
       - run: pnpm --filter @app-lanche/api build
       - run: docker build -f apps/api/Dockerfile -t app-lanche-api .
+
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: docker compose up -d db
+      - run: until docker compose exec -T db pg_isready -U postgres; do sleep 1; done
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore

@@ -10,7 +10,8 @@
     "dev": "pnpm -r --parallel dev",
     "test": "pnpm -r test",
     "test:api": "pnpm --filter @app-lanche/api test",
-    "typecheck": "pnpm -r typecheck",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "typecheck": "pnpm -r typecheck && tsc -p e2e/tsconfig.json",
     "lint": "eslint .",
     "db:up": "docker compose up -d db",
     "db:migrate": "tsx db/migrate.ts",
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "eslint": "^10.15.0",

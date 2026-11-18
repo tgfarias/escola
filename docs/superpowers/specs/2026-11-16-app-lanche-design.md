@@ -659,7 +659,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
   - webhook duplicado e fora de ordem;
   - invariantes do ledger: saldo igual à soma dos lançamentos.
 - Contratos: os exemplos JSON desta spec viram fixtures validadas pelos schemas zod.
-- KDS: Playwright com rede desligada — marcar entregas offline, religar, verificar sincronização sem perda nem duplicata.
+- KDS: Playwright com rede desligada (`pnpm test:e2e`, Postgres do compose, PWA de produção com service worker) — marcar entregas offline, recarregar offline, religar, verificar sincronização sem perda nem duplicata e a visão de um segundo tablet.
 
 ## 14. Fases de desenvolvimento
 
