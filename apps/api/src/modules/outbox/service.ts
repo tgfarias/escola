@@ -101,3 +101,29 @@ export async function dispatchOutbox(opts: { log: FastifyBaseLogger; schoolIds?:
   }
   return result;
 }
+
+const running = new Map<string, { again: boolean }>();
+
+/** Disparo imediato após um commit: não bloqueia a requisição; repete se outro kick chegar durante o envio. */
+export function kickOutbox(schoolId: string, log: FastifyBaseLogger): void {
+  if (!config().n8nEventsUrl) return;
+  const state = running.get(schoolId);
+  if (state) {
+    state.again = true;
+    return;
+  }
+  const mine = { again: false };
+  running.set(schoolId, mine);
+  void (async () => {
+    try {
+      do {
+        mine.again = false;
+        await dispatchSchool(schoolId, log);
+      } while (mine.again);
+    } catch (err) {
+      log.warn({ school_id: schoolId, err_name: err instanceof Error ? err.name : "UnknownError" }, "outbox kick failed");
+    } finally {
+      running.delete(schoolId);
+    }
+  })();
+}

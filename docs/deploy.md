@@ -111,6 +111,24 @@ Checklist de homologação (itens não confirmados em `docs/efi-pix.md`):
 - conferir o split vinculado;
 - conferir a senha do `.p12`.
 
+## Jobs e n8n
+
+Variáveis novas (todas via `--set-secrets`, como as demais):
+
+- `JOBS_TOKEN` (obrigatória, mínimo 32 caracteres): token das rotas `/jobs/v1/**`.
+- `N8N_EVENTS_URL` e `N8N_HMAC_SECRET` (devem vir juntas): destino e segredo de assinatura da outbox. Sem elas a outbox fica pendente.
+
+Cloud Scheduler (região `southamerica-east1`, fuso `America/Sao_Paulo`), alvo HTTP na URL do Cloud Run (não a do Hosting), método `POST`, cabeçalho `X-Job-Token: <JOBS_TOKEN>`:
+
+- `outbox-dispatch`: `* * * * *` para `/jobs/v1/outbox/dispatch`;
+- `safety-close`: `*/5 * * * *` para `/jobs/v1/service-days/safety-close`.
+
+```bash
+gcloud scheduler jobs create http outbox-dispatch --schedule="* * * * *" \
+  --uri="$RUN_URL/jobs/v1/outbox/dispatch" --http-method=POST \
+  --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
+```
+
 ## Web
 
 ```bash

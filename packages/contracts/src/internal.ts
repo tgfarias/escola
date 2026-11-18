@@ -60,3 +60,14 @@ export type DeliveryResult = z.infer<typeof DeliveryResult>;
 
 export const DeliveriesRequest = z.object({ results: z.array(DeliveryResult).min(1).max(200) }).strict();
 export type DeliveriesRequest = z.infer<typeof DeliveriesRequest>;
+
+export const JobDispatchResponse = z.object({
+  schools: z.number().int().nonnegative(),
+  delivered: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  abandoned: z.number().int().nonnegative(),
+});
+export type JobDispatchResponse = z.infer<typeof JobDispatchResponse>;
+
+export const SafetyCloseResponse = z.object({ closed: z.number().int().nonnegative(), failed: z.number().int().nonnegative() });
+export type SafetyCloseResponse = z.infer<typeof SafetyCloseResponse>;

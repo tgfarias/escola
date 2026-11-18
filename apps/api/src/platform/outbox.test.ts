@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
 import { adminDb, createSchool } from "../../test/helpers";
 import { withTenant } from "../db/index";
-import { enqueueEvent } from "./outbox";
+import { enqueueEvent, setOutboxKickHandler } from "./outbox";
 
 const event = {
   type: "auth.otp_requested" as const,
@@ -61,5 +61,27 @@ describe("enqueueEvent", () => {
       .where("schoolId", "=", schoolId)
       .execute();
     expect(rows).toEqual([]);
+  });
+
+  it("kicks the dispatcher only after the transaction commits", async () => {
+    const schoolId = await createSchool();
+    const kicked: string[] = [];
+    setOutboxKickHandler((id) => kicked.push(id));
+    try {
+      await withTenant(schoolId, async (trx) => {
+        await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-01", orders: 0, late_credits: 0 } });
+        expect(kicked).toEqual([]);
+      });
+      expect(kicked).toEqual([schoolId]);
+      await expect(
+        withTenant(schoolId, async (trx) => {
+          await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-02", orders: 0, late_credits: 0 } });
+          throw new Error("rollback");
+        }),
+      ).rejects.toThrow("rollback");
+      expect(kicked).toEqual([schoolId]);
+    } finally {
+      setOutboxKickHandler(() => undefined);
+    }
   });
 });

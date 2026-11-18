@@ -139,6 +139,24 @@ describe("buildApp", () => {
     await expect(register()).rejects.toThrow(/must use auth "webhook"/);
   });
 
+  it("refuses a /jobs/ route that is not declared job", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.post("/jobs/v1/x", { config: { auth: "public" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/must use auth "job"/);
+  });
+
+  it("refuses a job route outside /jobs/", async () => {
+    const app = buildApp();
+    const register = async () => {
+      app.post("/api/v1/x", { config: { auth: "job" } }, async () => ({}));
+      await app.ready();
+    };
+    await expect(register()).rejects.toThrow(/must live under \/jobs\//);
+  });
+
   it("refuses a webhook route outside /webhooks/", async () => {
     const app = buildApp();
     const register = async () => {

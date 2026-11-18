@@ -1,15 +1,15 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { sql } from "kysely";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { uuidv7 } from "uuidv7";
 import { adminDb, createSchool, seedTenant } from "../../../test/helpers";
 import { withTenant } from "../../db/index";
 import { config, resetConfigForTests } from "../../platform/config";
 import { signInternal } from "../../platform/hmac";
-import { enqueueEvent } from "../../platform/outbox";
+import { enqueueEvent, setOutboxKickHandler } from "../../platform/outbox";
 import * as repo from "./repo";
-import { dispatchOutbox, dispatchSchool } from "./service";
+import { dispatchOutbox, dispatchSchool, kickOutbox } from "./service";
 
 const SECRET = "test-n8n-hmac-secret-with-at-least-32-chars";
 const log = { warn: () => undefined, info: () => undefined, error: () => undefined } as never;
@@ -226,6 +226,18 @@ describe("outbox dispatcher", () => {
       process.env.N8N_EVENTS_URL = saved;
       process.env.N8N_HMAC_SECRET = savedSecret;
       resetConfigForTests();
+    }
+  });
+
+  it("delivers right after commit when kicked", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    setOutboxKickHandler((id) => kickOutbox(id, log));
+    try {
+      const id = await otp(schoolId);
+      await vi.waitFor(() => expect(forSchool(schoolId).some((e) => e.id === id)).toBe(true), { timeout: 5000 });
+    } finally {
+      setOutboxKickHandler(() => undefined);
     }
   });
 });

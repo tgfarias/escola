@@ -90,3 +90,22 @@ export type DueAction = {
 export async function listDueActions(): Promise<DueAction[]> {
   return repo.listDueActions();
 }
+
+/** Fecha dias que passaram 10 min do corte sem o n8n fechar (spec 5.6). `schoolIds` restringe (testes). */
+export async function safetyClose(opts: { log: FastifyBaseLogger; schoolIds?: string[] }): Promise<{ closed: number; failed: number }> {
+  const due = (await listDueActions()).filter(
+    (d) => d.action === "close_service_day" && d.overdue && (!opts.schoolIds || opts.schoolIds.includes(d.schoolId)),
+  );
+  let closed = 0;
+  let failed = 0;
+  for (const d of due) {
+    try {
+      await closeServiceDay(d.schoolId, d.serviceDate, { log: opts.log });
+      closed += 1;
+    } catch (err) {
+      failed += 1;
+      opts.log.error({ school_id: d.schoolId, service_date: d.serviceDate, err_name: err instanceof Error ? err.name : "UnknownError" }, "safety close failed");
+    }
+  }
+  return { closed, failed };
+}

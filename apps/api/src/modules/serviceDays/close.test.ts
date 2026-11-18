@@ -1,13 +1,13 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, staffCookie, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, seedTenant, staffCookie, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeMarkPaid, fakeReset } from "../payments/fakeProvider";
 import { confirmPayment } from "../payments/service";
 import { postEntry } from "../wallet/service";
-import { closeServiceDay } from "./service";
+import { closeServiceDay, safetyClose } from "./service";
 
 afterEach(() => fakeReset());
 const log = buildApp().log;
@@ -173,5 +173,18 @@ describe("service day close routes", () => {
     const kitchen = await staffCookie(schoolId, "cozinha");
     expect((await buildApp().inject({ method: "POST", url: `/api/admin/v1/service-days/${day.serviceDate}/close`, cookies: kitchen.cookies })).statusCode).toBe(403);
     expect((await buildApp().inject({ method: "POST", url: "/api/admin/v1/service-days/2031-01-01/close", cookies })).statusCode).toBe(404);
+  });
+});
+
+describe("safetyClose", () => {
+  it("closes only days 10 minutes past the cutoff", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const overdue = await seedServiceDay(schoolId, { serviceDate: "2031-08-01", cutoffInMinutes: -11 });
+    const frozen = await seedServiceDay(schoolId, { serviceDate: "2031-08-02", cutoffInMinutes: -7 });
+    const result = await safetyClose({ log, schoolIds: [schoolId] });
+    expect(result).toEqual({ closed: 1, failed: 0 });
+    const days = await adminDb().selectFrom("serviceDays").select(["id", "status"]).where("id", "in", [overdue.serviceDayId, frozen.serviceDayId]).execute();
+    expect(Object.fromEntries(days.map((d) => [d.id, d.status]))).toEqual({ [overdue.serviceDayId]: "closed", [frozen.serviceDayId]: "open" });
   });
 });

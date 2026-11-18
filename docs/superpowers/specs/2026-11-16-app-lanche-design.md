@@ -36,7 +36,7 @@ Cloud Run: apps/api (Fastify)
    ├── Cloud SQL PostgreSQL (fonte única da verdade, RLS)
    ├── Cloud Storage (PDFs, bucket privado, prefixo por escola)
    ├── Secret Manager (segredos HMAC, chaves do gateway)
-   └── Cloud Scheduler (dispatcher da outbox, conciliação, fechamento de segurança)
+   └── Cloud Scheduler (dispatcher da outbox e fechamento de segurança em `/jobs/v1/**` com `X-Job-Token`; conciliação na F6)
         ▲                         │ eventos (outbox, HMAC)
         │ REST interno (HMAC)     ▼
       n8n (VPS, Docker) ──► API do WhatsApp
@@ -176,7 +176,7 @@ Fechamento `closeServiceDay(school, date)`:
 4. grava o romaneio congelado em `manifests` (JSON, versão 1);
 5. marca `closed` e emite `service_day.closed`.
 
-O fechamento é disparado pelo n8n em `freeze_at`. Um Cloud Scheduler fecha qualquer dia que passou 10 min do corte, caso o n8n esteja fora.
+O fechamento é disparado pelo n8n em `freeze_at`. Um Cloud Scheduler chama `POST /jobs/v1/service-days/safety-close` a cada 5 min e fecha qualquer dia que passou 10 min do corte, caso o n8n esteja fora.
 
 Cancelamento pelo responsável: permitido enquanto o dia está `open` e antes de `cutoff_at`. Checkout `paid` → `cancelled`, e o valor do checkout vira crédito na carteira (`cancel_credit`). Checkout `pending_payment` → `expired` (pedidos `expired`, pagamento `expired`, `hold_release`), para o aluno poder receber outro pedido; se esse Pix for pago depois, vira crédito tardio. Estorno em dinheiro só por pedido à secretaria, com OTP, lançado como `refund` e executado no gateway.
 
@@ -286,10 +286,7 @@ A escola vem sempre do caminho, coberto pela assinatura HMAC; os corpos não ace
 
 Eventos são gravados em `outbox_events` na mesma transação da mudança de estado. Um dispatcher (Cloud Scheduler a cada minuto, mais disparo imediato após o commit) faz `POST` no webhook do n8n, com retry exponencial por até 24 h. O n8n deduplica por `id`.
 
-Pendências do dispatcher (fase F3):
-
-- Sob RLS ele não consegue listar escolas com eventos pendentes; precisa de uma quinta função `SECURITY DEFINER`, `list_schools_with_pending_events()`, somada às quatro da seção 4.4.
-- Após entregar um `auth.otp_requested`, apaga `data` do evento, para o código e o destino não ficarem guardados em claro.
+O dispatcher usa a função `list_schools_with_pending_events()` (quinta consulta sem tenant, além das quatro da seção 4.4), reserva eventos com `FOR UPDATE SKIP LOCKED` e arrendamento de 2 min, e envia fora de transação. Retry: `next_attempt_at = now() + min(2^tentativas, 60) min`; depois de 24 h o evento é abandonado (`failed_at`). Após entregar um `auth.otp_requested`, o `data` vira `{}`; um OTP vencido não é enviado e também é apagado. O disparo imediato roda depois do commit (`afterCommit`); o job de 1 min (`POST /jobs/v1/outbox/dispatch`) garante a entrega.
 
 ```json
 { "id": "0193…", "type": "payment.late_credited", "school_id": "0193…",
@@ -675,7 +672,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
 
-Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limpeza do código do OTP na outbox antes de qualquer envio real (F3); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
+Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
 
 Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
 

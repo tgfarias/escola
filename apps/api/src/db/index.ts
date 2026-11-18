@@ -29,14 +29,38 @@ export function getDb(): Kysely<DB> {
   return db;
 }
 
+const commitHooks = new WeakMap<Trx, Array<() => void>>();
+
+/** Agenda `fn` para depois do commit da transação de `withTenant`; não roda se ela desfizer. */
+export function afterCommit(trx: Trx, fn: () => void): void {
+  const hooks = commitHooks.get(trx);
+  if (hooks) hooks.push(fn);
+  else commitHooks.set(trx, [fn]);
+}
+
 /** Único caminho para ler ou gravar dados de uma escola. */
 export async function withTenant<T>(schoolId: string, fn: (trx: Trx) => Promise<T>): Promise<T> {
-  return getDb()
-    .transaction()
-    .execute(async (trx) => {
-      await sql`SELECT set_config('app.school_id', ${schoolId}, true)`.execute(trx);
-      return fn(trx);
-    });
+  let current: Trx | undefined;
+  try {
+    const result = await getDb()
+      .transaction()
+      .execute(async (trx) => {
+        current = trx;
+        await sql`SELECT set_config('app.school_id', ${schoolId}, true)`.execute(trx);
+        return fn(trx);
+      });
+    const hooks = current && commitHooks.get(current);
+    for (const hook of hooks ?? []) {
+      try {
+        hook();
+      } catch {
+        // Gancho é melhor esforço; quem precisa de garantia usa o job.
+      }
+    }
+    return result;
+  } finally {
+    if (current) commitHooks.delete(current);
+  }
 }
 
 export async function closeDb(): Promise<void> {

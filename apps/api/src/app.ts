@@ -13,12 +13,17 @@ import { webhookRoutes } from "./modules/webhooks/routes";
 import { walletRoutes } from "./modules/wallet/routes";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
+import { verifyJobRequest } from "./platform/jobAuth";
+import { setOutboxKickHandler } from "./platform/outbox";
+import { jobRoutes } from "./modules/jobs/routes";
+import { kickOutbox } from "./modules/outbox/service";
 import { authenticate, type GuardianScope, type SessionClaims, type StaffRole } from "./platform/session";
 
 export type RouteAuth =
   | "public"
   | "internal"
   | "webhook"
+  | "job"
   | { kind: "guardian" | "staff" | "kitchen"; scope?: GuardianScope; roles?: StaffRole[] };
 
 declare module "fastify" {
@@ -75,7 +80,7 @@ function loggerOptions(logger: FastifyServerOptions["logger"]): FastifyServerOpt
   if (logger === undefined) {
     return {
       level: process.env.LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info"),
-      redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['x-signature']"],
+      redact: ["req.headers.authorization", "req.headers.cookie", "req.headers['x-signature']", "req.headers['x-job-token']"],
       serializers: LOG_SERIALIZERS,
     };
   }
@@ -87,6 +92,8 @@ function loggerOptions(logger: FastifyServerOptions["logger"]): FastifyServerOpt
 
 export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = {}): FastifyInstance {
   const app = Fastify({ logger: loggerOptions(options.logger) });
+
+  setOutboxKickHandler((schoolId) => kickOutbox(schoolId, app.log));
 
   app.register(cookie);
 
@@ -123,6 +130,14 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
     if (webhookAuth && !webhookPrefix) {
       throw new Error(`route ${String(route.method)} ${route.url} uses auth "webhook" and must live under /webhooks/`);
     }
+    const jobPrefix = route.url.startsWith("/jobs/");
+    const jobAuth = route.config.auth === "job";
+    if (jobPrefix && !jobAuth) {
+      throw new Error(`route ${String(route.method)} ${route.url} is under /jobs/ and must use auth "job"`);
+    }
+    if (jobAuth && !jobPrefix) {
+      throw new Error(`route ${String(route.method)} ${route.url} uses auth "job" and must live under /jobs/`);
+    }
   });
 
   app.addHook("onSend", async (req, reply) => {
@@ -132,6 +147,7 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.addHook("preHandler", async (req) => {
     const auth = req.routeOptions.config.auth;
     if (auth === "internal") verifyInternalRequest(req);
+    else if (auth === "job") verifyJobRequest(req);
     else if (typeof auth === "object") {
       assertSameOrigin(req);
       req.session = await authenticateWithDatabase(req, auth);
@@ -177,5 +193,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(serviceDayRoutes);
   app.register(internalRoutes);
   app.register(webhookRoutes);
+  app.register(jobRoutes);
   return app;
 }
