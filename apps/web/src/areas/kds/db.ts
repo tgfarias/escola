@@ -35,6 +35,7 @@ export async function setMeta(key: string, value: string): Promise<void> {
 
 /** CLAUDE.md 33: uma transação atualiza orderState e insere na outbox. */
 export async function markOrder(orderId: string, serviceDate: string, delivered: boolean): Promise<void> {
+  // If the clock stepped backward the event is still queued; the server applies the same newest-wins rule.
   const ev: DeliveryEvent = {
     eventId: crypto.randomUUID(),
     orderId,
