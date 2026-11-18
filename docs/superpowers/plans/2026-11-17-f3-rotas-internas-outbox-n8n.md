@@ -33,7 +33,7 @@
 
 1. **`school_id` no caminho das rotas internas.** A spec 6.2 mostrava `school_id` no corpo de `reminders/prepare` e `magic-links`, contrariando a 4.4 e a regra 2 do CLAUDE.md. Os caminhos passam a ser `POST /internal/v1/schools/{school_id}/reminders/prepare`, `POST /internal/v1/schools/{school_id}/reminders/{batch_id}/deliveries` e `POST /internal/v1/schools/{school_id}/magic-links`; os corpos são `strict()` (um `school_id` no corpo é recusado com 400). `close` e `manifest` mantêm os caminhos da spec.
 2. **Rotas internas são naturalmente idempotentes.** `prepare` reutiliza o lote `(school_id, service_date)` e pula quem já está `sent`; `deliveries` é `UPDATE` por `(batch_id, guardian_id)`; `close` devolve o mesmo romaneio; `magic-links` emite um link novo e reutilizável. Guardar a resposta em `idempotency_keys` gravaria tokens de magic link em claro. O n8n envia `Idempotency-Key` (spec 6.1) e a API o ignora.
-3. **Lembrete vence em `cutoff_at - schools.reminder_lead_minutes`** (coluna nova, padrão 720 = 12 h antes do corte, entre 30 e 2880). Sai da agenda quando o lote do dia tem `completed_at` (última página servida), quando o corte passa ou quando o dia fecha.
+3. **Lembrete vence em `cutoff_at - schools.reminder_lead_minutes`** (coluna nova, padrão 720 = 12 h antes do corte, entre 30 e 2880). Sai da agenda quando o lote do dia tem `completed_at`, quando o corte passa ou quando o dia fecha. O lote só é concluído quando um `prepare` não tem mais ninguém a devolver: quem foi entregue ao n8n e nunca teve resultado (`prepared`) volta na próxima rodada; quem teve `sent` ou `failed` não volta (falha não é repetida automaticamente).
 4. **`list_due_actions()` não recebe parâmetro**: usa `now()` do banco (regra 15). Devolve `(action, school_id, service_date, overdue)`; `overdue = now() >= cutoff_at + 10 min` alimenta o fechamento de segurança e não sai na rota do n8n.
 5. **Magic link com validade do banco.** `createMagicLink` deixa de receber `expiresAt`: escopo `order` vale até o `cutoff_at` do dia (que precisa estar `open` e antes do corte, senão `cutoff_passed`), escopo `documents` vale `now() + 7 days`. `order` exige `service_date`; `documents` não aceita.
 6. **Jobs do Cloud Scheduler em `/jobs/v1/**`** com `X-Job-Token` comparado em tempo constante com `JOBS_TOKEN` (≥ 32 caracteres, obrigatório). O Cloud Scheduler não calcula HMAC com timestamp, e verificar OIDC exigiria dependência nova. As rotas só fazem o que o próprio agendador faria (despachar a outbox, fechar dias vencidos), então um replay do token não causa dano além de antecipar o trabalho.
@@ -2540,8 +2540,11 @@ describe("n8n workflows", () => {
     expect(msg.params[4]).toMatch(/^https:\/\/app\.test\/l#/);
     const delivery = await adminDb().selectFrom("messageDeliveries").select(["status", "waMessageId"]).where("guardianId", "=", fam.guardianId).executeTakeFirstOrThrow();
     expect(delivery).toEqual({ status: "sent", waMessageId: "wamid.1" });
-    const again = await h.run(code("schedule.json", "Run due actions"));
-    expect(again).toEqual([{ json: { idle: true } }]);
+    // Segunda rodada: ninguém a lembrar, o lote é concluído; terceira: fora da agenda.
+    const second = await h.run(code("schedule.json", "Run due actions"));
+    expect(second).toEqual([{ json: expect.objectContaining({ action: "send_reminders", ok: true, sent: 0, failed: 0 }) }]);
+    const third = await h.run(code("schedule.json", "Run due actions"));
+    expect(third).toEqual([{ json: { idle: true } }]);
     expect(h.whatsapp).toHaveLength(1);
     expect(day.serviceDate).toBe("2031-09-01");
   });
