@@ -268,7 +268,7 @@ Resposta: `204`.
   "late_credits": 3 }
 ```
 
-Idempotente: a repetição devolve o mesmo romaneio. O n8n formata o resumo e envia ao WhatsApp da cozinha como contingência.
+Idempotente: a repetição devolve o mesmo romaneio. O resumo para o WhatsApp da cozinha (contingência) sai do evento `service_day.closed`, qualquer que seja o fechamento (n8n, equipe ou fechamento de segurança): o n8n lê o romaneio pela rota `manifest` e o formata.
 
 **`GET /internal/v1/service-days/{school_id}/{date}/manifest`** — mesmo corpo do `close`; `409` se o dia ainda está aberto.
 
