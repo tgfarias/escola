@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "db:up": "docker compose up -d db",
     "db:migrate": "tsx db/migrate.ts",
-    "db:types": "pnpm --filter @app-lanche/api db:types"
+    "db:types": "pnpm --filter @app-lanche/api db:types",
+    "n8n:build": "node n8n/build.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
