@@ -5,7 +5,8 @@ import { config } from "./platform/config";
 import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
-import { loadActiveStaff } from "./modules/auth/service";
+import { loadActiveKitchenDevice, loadActiveStaff } from "./modules/auth/service";
+import { kdsRoutes } from "./modules/kds/routes";
 import { internalRoutes } from "./modules/internal/routes";
 import { ordersRoutes } from "./modules/orders/routes";
 import { serviceDayRoutes } from "./modules/serviceDays/routes";
@@ -52,12 +53,16 @@ function assertSameOrigin(req: FastifyRequest): void {
   if (site !== undefined && site !== "same-origin") throw new DomainError("origin_rejected");
 }
 
-/** Validates the session cookie; for staff, re-reads `active` and the role so a change applies immediately. */
+/** Validates the session cookie; for staff, re-reads `active` and the role; for kitchen, that the device is still paired and not revoked. Changes apply immediately. */
 async function authenticateWithDatabase(
   req: FastifyRequest,
   auth: Exclude<RouteAuth, string>,
 ): Promise<SessionClaims> {
   const claims = await authenticate(req, auth);
+  if (claims.kind === "kitchen") {
+    if (!(await loadActiveKitchenDevice(claims.schoolId, claims.sub))) throw new DomainError("unauthenticated");
+    return claims;
+  }
   if (claims.kind !== "staff") return claims;
   const staff = await loadActiveStaff(claims.schoolId, claims.sub);
   if (!staff) throw new DomainError("unauthenticated");
@@ -194,5 +199,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(internalRoutes);
   app.register(webhookRoutes);
   app.register(jobRoutes);
+  app.register(kdsRoutes);
   return app;
 }

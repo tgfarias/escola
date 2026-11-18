@@ -3,7 +3,7 @@ import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, seedTenant } from "../../test/helpers";
 import { buildApp } from "../app";
-import { SESSION_COOKIE, issueSession, signToken, type SessionClaims } from "./session";
+import { SESSION_COOKIE, authenticate, issueSession, signToken, type SessionClaims } from "./session";
 
 const guardian: SessionClaims = { kind: "guardian", sub: uuidv7(), schoolId: uuidv7(), scope: "order" };
 const staff: SessionClaims = { kind: "staff", sub: uuidv7(), schoolId: uuidv7(), role: "secretaria" };
@@ -77,7 +77,7 @@ describe("session guard", () => {
   });
 
   it("rejects a validly signed token with an unknown kind", async () => {
-    const token = await signToken("session", { kind: "kitchen", sub: uuidv7(), schoolId: uuidv7() }, 60);
+    const token = await signToken("session", { kind: "robot", sub: uuidv7(), schoolId: uuidv7() }, 60);
     const res = await app().inject({ method: "GET", url: "/api/v1/g", cookies: { [SESSION_COOKIE]: token } });
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("unauthenticated");
@@ -121,5 +121,21 @@ describe("session guard", () => {
     const res = await app().inject({ method: "POST", url: "/api/v1/login" });
     const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE)!;
     expect(cookie).toMatchObject({ httpOnly: true, secure: true, sameSite: "Lax", path: "/", maxAge: 7200 });
+  });
+  it("accepts a kitchen token up to 90 days past its expiry and nothing else past expiry", async () => {
+    const schoolId = crypto.randomUUID();
+    const sub = crypto.randomUUID();
+    const expired = async (kind: "kitchen" | "staff", secondsAgo: number) => {
+      const now = Math.floor(Date.now() / 1000);
+      return new SignJWT({ kind, sub, schoolId, role: "admin", purpose: "session" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt(now - secondsAgo - 60)
+        .setExpirationTime(now - secondsAgo)
+        .sign(new TextEncoder().encode(process.env.SESSION_SECRET));
+    };
+    const req = (token: string) => ({ cookies: { [SESSION_COOKIE]: token } }) as never;
+    await expect(authenticate(req(await expired("kitchen", 10 * 86400)), { kind: "kitchen" })).resolves.toMatchObject({ kind: "kitchen", sub });
+    await expect(authenticate(req(await expired("kitchen", 91 * 86400)), { kind: "kitchen" })).rejects.toMatchObject({ code: "unauthenticated" });
+    await expect(authenticate(req(await expired("staff", 10)), { kind: "staff" })).rejects.toMatchObject({ code: "unauthenticated" });
   });
 });

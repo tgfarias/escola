@@ -17,6 +17,24 @@ export async function resolveStaffEmail(
   return rows[0];
 }
 
+export async function resolvePairingCode(codeHash: string): Promise<{ schoolId: string; deviceId: string } | undefined> {
+  const { rows } = await sql<{ schoolId: string; deviceId: string }>`
+    SELECT school_id, device_id FROM resolve_pairing_code(${codeHash})`.execute(getDb());
+  return rows[0];
+}
+
+export async function activeKitchenDevice(trx: Trx, deviceId: string): Promise<boolean> {
+  const row = await trx
+    .selectFrom("devices")
+    .select("id")
+    .where("id", "=", deviceId)
+    .where("kind", "=", "kitchen")
+    .where("revokedAt", "is", null)
+    .where("pairingCodeHash", "is", null)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
 /** Grava o link com a validade calculada pelo banco; undefined quando não há dia aberto antes do corte. */
 export async function insertMagicLink(
   trx: Trx,

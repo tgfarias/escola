@@ -189,6 +189,11 @@ export async function loadActiveStaff(schoolId: string, staffUserId: string): Pr
   return row ? { role: row.role as StaffRole } : undefined;
 }
 
+/** True while the kitchen device is paired and not revoked. */
+export async function loadActiveKitchenDevice(schoolId: string, deviceId: string): Promise<boolean> {
+  return withTenant(schoolId, (trx) => repo.activeKitchenDevice(trx, deviceId));
+}
+
 export async function getStaffMe(session: SessionClaims): Promise<StaffMeResponse> {
   const staff = await withTenant(session.schoolId, (trx) => repo.getStaffUser(trx, session.sub));
   if (!staff) throw new DomainError("unauthenticated");
@@ -196,6 +201,8 @@ export async function getStaffMe(session: SessionClaims): Promise<StaffMeRespons
 }
 
 export { createMagicLink };
+export { hashToken };
+export const resolvePairingCode = repo.resolvePairingCode;
 
 /** POST /internal/v1/schools/:school_id/magic-links — reenvio avulso pelo n8n. */
 export async function issueMagicLink(

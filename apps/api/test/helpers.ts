@@ -254,6 +254,16 @@ export async function staffCookie(
   return { cookies: { [SESSION_COOKIE]: token }, staffUserId };
 }
 
+/** Cookie de tablet pareado; cria o dispositivo pareado se não for informado. */
+export async function kitchenCookie(schoolId: string, deviceId?: string): Promise<{ cookies: Record<string, string>; deviceId: string }> {
+  const id = deviceId ?? uuidv7();
+  if (!deviceId) {
+    await adminDb().insertInto("devices").values({ id, schoolId, kind: "kitchen" }).execute();
+  }
+  const token = await signToken("session", { kind: "kitchen", sub: id, schoolId }, 3600);
+  return { cookies: { [SESSION_COOKIE]: token }, deviceId: id };
+}
+
 let phoneSeq = 0;
 
 export async function seedFamily(
