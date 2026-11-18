@@ -6,8 +6,12 @@ export default defineConfig({
   testDir: ".",
   timeout: 60_000,
   workers: 1,
+  retries: 0,
+  forbidOnly: !!process.env.CI,
   globalSetup: "./global-setup.ts",
   use: { baseURL: "http://localhost:4173", timezoneId: "America/Sao_Paulo", trace: "retain-on-failure", ...devices["Desktop Chrome"] },
+  // Os webServers sobem antes do globalSetup recriar o banco: a API só abre conexões com o Postgres
+  // na primeira requisição (pool preguiçoso), e o /healthz não toca o banco.
   webServer: [
     {
       command: "pnpm --filter @app-lanche/api exec tsx src/server.ts",

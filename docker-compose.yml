@@ -6,6 +6,10 @@ services:
       POSTGRES_DB: app_lanche
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+      interval: 1s
+      retries: 30
     volumes:
       - dbdata:/var/lib/postgresql/data
 volumes:
