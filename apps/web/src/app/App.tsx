@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router";
+import { lazy, Suspense, useEffect } from "react";
+import { Link, Route, Routes, useNavigate } from "react-router";
 import { AdminHome } from "../areas/admin/AdminHome";
 import { AdminLogin } from "../areas/admin/AdminLogin";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
@@ -10,10 +10,30 @@ import { WalletPage } from "../areas/guardian/WalletPage";
 const KdsApp = lazy(() => import("../areas/kds/KdsApp"));
 
 function Home() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    let active = true;
+    // The installed PWA opens at "/": a paired kitchen tablet goes straight to the KDS. The sync module is loaded
+    // on demand so the guardian bundle does not carry Dexie; a browser without IndexedDB simply stays here.
+    void (async () => {
+      try {
+        const { isPaired } = await import("../areas/kds/sync");
+        if ((await isPaired()) && active) navigate("/kds", { replace: true });
+      } catch {
+        // No local store: not a paired tablet.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
   return (
     <main>
       <h1>App Lanche</h1>
       <p>Abra o link que a escola enviou pelo WhatsApp.</p>
+      <p>
+        <Link to="/kds">Tablet da cozinha</Link>
+      </p>
     </main>
   );
 }
