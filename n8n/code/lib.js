@@ -41,6 +41,7 @@ async function api(ctx, method, path, payload) {
     json: false,
     returnFullResponse: true,
     ignoreHttpStatusErrors: true,
+    timeout: 20000,
   });
   return { status: res.statusCode, body: parseBody(res.body) };
 }
@@ -53,26 +54,32 @@ function ensureOk(res, what) {
   return res.body;
 }
 
-/** WhatsApp Cloud API, mensagem de modelo. Parâmetros sem quebra de linha. */
+/** WhatsApp Cloud API, mensagem de modelo. Parâmetros sem quebra de linha. Nunca lança: erro de transporte vira `send_failed`. */
 async function whatsapp(ctx, to, template, params, extraComponents) {
   const components = [
     { type: "body", parameters: params.map((p) => ({ type: "text", text: String(p).replace(/\s+/g, " ").trim() })) },
     ...(extraComponents || []),
   ];
-  const res = await ctx.helpers.httpRequest({
-    method: "POST",
-    url: `https://graph.facebook.com/${$env.WHATSAPP_API_VERSION || "v21.0"}/${$env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-    headers: { authorization: `Bearer ${$env.WHATSAPP_TOKEN}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: String(to).replace(/^\+/, ""),
-      type: "template",
-      template: { name: template, language: { code: "pt_BR" }, components },
-    }),
-    json: false,
-    returnFullResponse: true,
-    ignoreHttpStatusErrors: true,
-  });
+  let res;
+  try {
+    res = await ctx.helpers.httpRequest({
+      method: "POST",
+      url: `https://graph.facebook.com/${$env.WHATSAPP_API_VERSION || "v21.0"}/${$env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+      headers: { authorization: `Bearer ${$env.WHATSAPP_TOKEN}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: String(to).replace(/^\+/, ""),
+        type: "template",
+        template: { name: template, language: { code: "pt_BR" }, components },
+      }),
+      json: false,
+      returnFullResponse: true,
+      ignoreHttpStatusErrors: true,
+      timeout: 15000,
+    });
+  } catch {
+    return { ok: false, error: "send_failed" };
+  }
   const body = parseBody(res.body);
   if (res.statusCode >= 200 && res.statusCode < 300) {
     const id = body && body.messages && body.messages[0] && body.messages[0].id;

@@ -3,12 +3,8 @@ async function closeDay(ctx, a) {
   const res = await api(ctx, "POST", `/internal/v1/service-days/${a.school_id}/${a.service_date}/close`);
   if (res.status === 409) return { closed: false, reason: res.body && res.body.error ? res.body.error.code : "conflict" };
   const m = ensureOk(res, "close");
-  if (m.kitchen_phone && $env.WA_TEMPLATE_KITCHEN) {
-    const items = m.totals.by_item.map((i) => `${i.qty}x ${i.item}`).join("; ") || "nenhum item";
-    const sent = await whatsapp(ctx, m.kitchen_phone, $env.WA_TEMPLATE_KITCHEN, [dayMonth(a.service_date), m.totals.orders, items]);
-    return { closed: true, orders: m.totals.orders, kitchen_notified: sent.ok };
-  }
-  return { closed: true, orders: m.totals.orders, kitchen_notified: false };
+  // O resumo da cozinha sai do evento service_day.closed (fluxo de eventos), qualquer que seja o fechamento.
+  return { closed: true, orders: m.totals.orders };
 }
 
 async function sendReminders(ctx, a) {

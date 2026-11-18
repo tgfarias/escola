@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app";
 import { resetConfigForTests } from "../src/platform/config";
 import { signedEventRequest } from "../src/modules/outbox/service";
-import { adminDb, createSchool, seedFamily, seedServiceDay } from "./helpers";
+import { adminDb, createSchool, internalRequest, seedFamily, seedServiceDay } from "./helpers";
 
 const ROOT = join(__dirname, "..", "..", "..", "n8n");
 const require_ = createRequire(import.meta.url);
@@ -33,6 +33,8 @@ const ENV = {
 
 type Sent = { to: string; template: string; params: string[]; components: { type: string; sub_type?: string; index?: string; parameters: { text: string }[] }[] };
 const FAIL_PHONE = "5511900000999";
+/** Número para o qual o envio falha no transporte (exceção, sem resposta HTTP). */
+const THROW_PHONE = "5511900000998";
 
 /** Executa um Code node como o n8n: `this.helpers`, `$env`, `$input`, `$getWorkflowStaticData`, `require`. */
 function harness(onlySchool: string) {
@@ -48,6 +50,7 @@ function harness(onlySchool: string) {
           params: msg.template.components[0].parameters.map((p: { text: string }) => p.text),
           components: msg.template.components,
         });
+        if (msg.to === THROW_PHONE) throw new Error("socket hang up");
         if (msg.to === FAIL_PHONE) return { statusCode: 400, body: JSON.stringify({ error: { code: 131026 } }), headers: {} };
         return { statusCode: 200, body: JSON.stringify({ messages: [{ id: `wamid.${whatsapp.length}` }] }), headers: {} };
       }
@@ -107,14 +110,14 @@ describe("n8n workflows", () => {
     expect(h.whatsapp).toHaveLength(1);
   });
 
-  it("closes the day and sends the kitchen summary", async () => {
+  it("closes the day without sending WhatsApp (the summary comes from the event)", async () => {
     const schoolId = await createSchool();
     await adminDb().updateTable("schools").set({ kitchenPhone: "+5511988880000" }).where("id", "=", schoolId).execute();
     await seedServiceDay(schoolId, { serviceDate: "2031-09-02", cutoffInMinutes: -6 });
     const h = harness(schoolId);
     const out = await h.run(code("schedule.json", "Run due actions"));
-    expect(out[0]!.json).toMatchObject({ action: "close_service_day", ok: true, closed: true, kitchen_notified: true });
-    expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511988880000", template: "resumo_cozinha", params: ["02/09", "0", "nenhum item"] })]);
+    expect(out[0]!.json).toEqual({ action: "close_service_day", school_id: schoolId, service_date: "2031-09-02", ok: true, closed: true, orders: 0 });
+    expect(h.whatsapp).toEqual([]);
     const day = await adminDb().selectFrom("serviceDays").select("status").where("schoolId", "=", schoolId).where("serviceDate", "=", "2031-09-02").executeTakeFirstOrThrow();
     expect(day.status).toBe("closed");
   });
@@ -131,6 +134,21 @@ describe("n8n workflows", () => {
     const rows = await adminDb().selectFrom("messageDeliveries").select(["guardianId", "status", "error"]).where("schoolId", "=", schoolId).execute();
     expect(rows.find((r) => r.guardianId === ok.guardianId)?.status).toBe("sent");
     expect(rows.find((r) => r.guardianId === bad.guardianId)).toMatchObject({ status: "failed", error: "invalid_number" });
+    expect(rows).toHaveLength(2);
+  });
+
+  it("records a failed delivery and keeps going when the WhatsApp request throws", async () => {
+    const schoolId = await createSchool();
+    const ok = await seedFamily(schoolId, ["Léo"]);
+    const bad = await seedFamily(schoolId, ["Bia"]);
+    await adminDb().updateTable("guardians").set({ phoneE164: `+${THROW_PHONE}` }).where("id", "=", bad.guardianId).execute();
+    await seedServiceDay(schoolId, { serviceDate: "2031-09-08", cutoffInMinutes: 60 });
+    const h = harness(schoolId);
+    const out = await h.run(code("schedule.json", "Run due actions"));
+    expect(out).toEqual([{ json: expect.objectContaining({ action: "send_reminders", ok: true, sent: 1, failed: 1 }) }]);
+    const rows = await adminDb().selectFrom("messageDeliveries").select(["guardianId", "status", "error"]).where("schoolId", "=", schoolId).execute();
+    expect(rows.find((r) => r.guardianId === ok.guardianId)?.status).toBe("sent");
+    expect(rows.find((r) => r.guardianId === bad.guardianId)).toMatchObject({ status: "failed", error: "send_failed" });
     expect(rows).toHaveLength(2);
   });
 
@@ -167,6 +185,26 @@ describe("n8n workflows", () => {
       expect(out).toEqual([{ json: { ok: true, type: "auth.otp_requested", email: null } }]);
       expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511999990001", template: "codigo_acesso", params: ["123456"] })]);
       expect(h.whatsapp[0]!.components[1]).toEqual({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "123456" }] });
+      const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
+      expect(dup[0]!.json).toMatchObject({ duplicate: true });
+      expect(h.whatsapp).toHaveLength(1);
+    });
+
+    it("sends the kitchen summary from service_day.closed and deduplicates", async () => {
+      const schoolId = await createSchool();
+      await adminDb().updateTable("schools").set({ kitchenPhone: "+5511988880000" }).where("id", "=", schoolId).execute();
+      await seedServiceDay(schoolId, { serviceDate: "2031-09-09", cutoffInMinutes: -6 });
+      const closed = await buildApp().inject(internalRequest("POST", `/internal/v1/service-days/${schoolId}/2031-09-09/close`));
+      expect(closed.statusCode).toBe(200);
+      const req = await withN8n(async () =>
+        signedEventRequest({ ...envelope(crypto.randomUUID(), "service_day.closed", { service_date: "2031-09-09", orders: 0, late_credits: 0 }), school_id: schoolId }),
+      );
+      const h = harness(schoolId);
+      const staticData = {};
+      const input = { json: { headers: req.headers } };
+      const out = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
+      expect(out).toEqual([{ json: { ok: true, type: "service_day.closed", email: null } }]);
+      expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511988880000", template: "resumo_cozinha", params: ["09/09", "0", "nenhum item"] })]);
       const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(dup[0]!.json).toMatchObject({ duplicate: true });
       expect(h.whatsapp).toHaveLength(1);

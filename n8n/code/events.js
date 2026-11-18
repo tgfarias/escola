@@ -43,8 +43,17 @@ switch (event.type) {
   case "payment.late_credited":
     await send.call(this, d.phone, $env.WA_TEMPLATE_LATE_CREDIT, [d.first_name, brl(d.amount_cents), brl(d.wallet_balance_cents)]);
     break;
+  case "service_day.closed": {
+    // Resumo da cozinha para qualquer fechamento (n8n, segurança, equipe); falha → 500 → nova tentativa da outbox.
+    const m = ensureOk(await api(this, "GET", `/internal/v1/service-days/${event.school_id}/${d.service_date}/manifest`), "manifest");
+    if (m.kitchen_phone && $env.WA_TEMPLATE_KITCHEN) {
+      const items = m.totals.by_item.map((i) => `${i.qty}x ${i.item}`).join("; ") || "nenhum item";
+      await send.call(this, m.kitchen_phone, $env.WA_TEMPLATE_KITCHEN, [dayMonth(d.service_date), m.totals.orders, items]);
+    }
+    break;
+  }
   default:
-    // service_day.closed e tipos futuros: aceitos sem mensagem.
+    // Tipos futuros: aceitos sem mensagem.
     break;
 }
 // E-mail sai no nó seguinte; não entra na deduplicação (código repetido é inofensivo).

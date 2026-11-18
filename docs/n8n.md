@@ -26,6 +26,12 @@ O n8n roda em VPS externa e fala com a API por REST + HMAC (spec 6). Há dois fl
 
 Configure também a credencial SMTP no nó "Send e-mail".
 
+## Comportamento dos fluxos
+
+- Agenda (a cada 5 min): envia lembretes e fecha o dia vencido. O fechamento não manda mensagem.
+- Eventos: o resumo da cozinha sai do evento `service_day.closed`, qualquer que seja o fechamento (fluxo do n8n, fechamento de segurança ou equipe). O fluxo lê o romaneio em `GET /internal/v1/service-days/{school_id}/{date}/manifest`; falha na leitura ou no envio responde 500 e a outbox tenta de novo.
+- Tempo limite: 20 s por chamada à API e 15 s por envio ao WhatsApp. Um envio de lembrete que falha no transporte (tempo esgotado, conexão recusada) é registrado como `failed` com `error: "send_failed"`, e a página segue com os demais responsáveis.
+
 ## Modelos do WhatsApp (idioma `pt_BR`)
 
 Parâmetros na ordem; nenhum contém quebra de linha.
@@ -46,7 +52,6 @@ O fluxo de eventos não guarda histórico de execuções, de propósito: o corpo
 
 Limitações conhecidas:
 - A deduplicação por static data pode falhar sob execuções concorrentes do mesmo id de evento. O arrendamento do dispatcher torna isso raro; o pior caso é uma mensagem duplicada.
-- Falha ao enviar o resumo da cozinha não é repetida. O KDS é o canal principal.
 
 ## Na API
 
