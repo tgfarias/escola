@@ -1669,9 +1669,25 @@ export default function KdsApp() {
   const [params] = useSearchParams();
   const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : today();
   const [paired, setPaired] = useState<boolean | null>(null);
-  useEffect(() => void sync.isPaired().then(setPaired), []);
+  const [authLost, setAuthLost] = useState(false);
+  useEffect(() => {
+    void sync.isPaired().then(setPaired);
+    // Tablet revogado ou sessão perdida: mostra o pareamento de novo, mantendo a outbox (sync.pair não a apaga).
+    const t = window.setInterval(() => void sync.isAuthLost().then(setAuthLost), 5000);
+    void sync.isAuthLost().then(setAuthLost);
+    return () => window.clearInterval(t);
+  }, []);
   if (paired === null) return null;
-  if (!paired) return <KdsPair onPaired={() => setPaired(true)} />;
+  if (!paired || authLost) {
+    return (
+      <>
+        {paired && authLost && (
+          <p role="alert">Este tablet foi desconectado. Peça um novo código à secretaria; as entregas ainda não enviadas serão mantidas.</p>
+        )}
+        <KdsPair onPaired={() => { setAuthLost(false); setPaired(true); }} />
+      </>
+    );
+  }
   return <KdsBoard serviceDate={serviceDate} onUnpaired={() => setPaired(false)} />;
 }
 ```
