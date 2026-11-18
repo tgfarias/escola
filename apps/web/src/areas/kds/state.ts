@@ -10,6 +10,16 @@ export function isNewer(a: { occurredAt: string; eventId: string }, b: { occurre
   return a.eventId > b.eventId;
 }
 
+/**
+ * Instante de um toque: max(agora, último estado + 1 ms). Um toque sempre substitui o que a tela mostra,
+ * mesmo que o estado atual venha de um tablet com o relógio adiantado.
+ */
+export function nextOccurredAt(nowIso: string, currentIso: string | undefined): string {
+  const now = Date.parse(nowIso);
+  if (currentIso === undefined) return new Date(now).toISOString();
+  return new Date(Math.max(now, Date.parse(currentIso) + 1)).toISOString();
+}
+
 /** Novo estado do pedido após o evento, ou undefined se o estado atual já é mais recente. */
 export function mergeEvent(current: OrderState | undefined, ev: DeliveryEvent, serviceDate: string): OrderState | undefined {
   if (current && !isNewer(ev, current)) return undefined;

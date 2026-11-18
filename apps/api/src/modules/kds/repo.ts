@@ -35,6 +35,12 @@ export async function revokeKitchenDevice(trx: Trx, deviceId: string): Promise<"
   return row ? "already" : "missing";
 }
 
+/** Relógio do banco: única fonte de tempo para as regras (CLAUDE.md 15). */
+export async function dbNow(trx: Trx): Promise<Date> {
+  const { rows } = await sql<{ now: Date }>`SELECT now() AS now`.execute(trx);
+  return rows[0]!.now;
+}
+
 /** Pedidos do lote que aceitam entrega: existem, dia fechado, estado confirmado ou entregue. Trava os dias antes (FOR SHARE). */
 export async function deliverableOrders(trx: Trx, orderIds: string[]): Promise<Set<string>> {
   if (orderIds.length === 0) return new Set();

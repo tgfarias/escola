@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { KdsManifestResponse } from "@app-lanche/contracts";
-import { mergeEvent, type DeliveryEvent, type OrderState } from "./state";
+import { mergeEvent, nextOccurredAt, type DeliveryEvent, type OrderState } from "./state";
 
 export type ManifestRow = KdsManifestResponse & { fetchedAt: string };
 export type OutboxRow = DeliveryEvent & { serviceDate: string };
@@ -35,15 +35,16 @@ export async function setMeta(key: string, value: string): Promise<void> {
 
 /** CLAUDE.md 33: uma transação atualiza orderState e insere na outbox. */
 export async function markOrder(orderId: string, serviceDate: string, delivered: boolean): Promise<void> {
-  // If the clock stepped backward the event is still queued; the server applies the same newest-wins rule.
-  const ev: DeliveryEvent = {
-    eventId: crypto.randomUUID(),
-    orderId,
-    type: delivered ? "delivered" : "undelivered",
-    occurredAt: new Date().toISOString(),
-  };
   await kdsDb.transaction("rw", kdsDb.orderState, kdsDb.outbox, async () => {
-    const next = mergeEvent(await kdsDb.orderState.get(orderId), ev, serviceDate);
+    const current = await kdsDb.orderState.get(orderId);
+    // The tap must supersede the state on screen even if that state came from a tablet with a clock ahead.
+    const ev: DeliveryEvent = {
+      eventId: crypto.randomUUID(),
+      orderId,
+      type: delivered ? "delivered" : "undelivered",
+      occurredAt: nextOccurredAt(new Date().toISOString(), current?.occurredAt),
+    };
+    const next = mergeEvent(current, ev, serviceDate);
     if (next) await kdsDb.orderState.put(next);
     await kdsDb.outbox.add({ ...ev, serviceDate });
   });

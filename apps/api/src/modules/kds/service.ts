@@ -72,11 +72,16 @@ export async function revokeDevice(session: SessionClaims, deviceId: string): Pr
   });
 }
 
+const MAX_CLOCK_AHEAD_MS = 5 * 60_000;
+
 export async function recordEvents(schoolId: string, deviceId: string, body: KdsEventsRequest): Promise<KdsEventsResponse> {
   return withTenant(schoolId, async (trx) => {
-    const orderIds = [...new Set(body.events.map((e) => e.orderId))];
+    // A tablet clock more than 5 min ahead of the database would let its events win over every later tap.
+    const latestAllowed = (await repo.dbNow(trx)).getTime() + MAX_CLOCK_AHEAD_MS;
+    const inTime = body.events.filter((e) => Date.parse(e.occurredAt) <= latestAllowed);
+    const orderIds = [...new Set(inTime.map((e) => e.orderId))];
     const deliverable = await repo.deliverableOrders(trx, orderIds);
-    const ok = body.events.filter((e) => deliverable.has(e.orderId));
+    const ok = inTime.filter((e) => deliverable.has(e.orderId));
     await repo.insertEvents(trx, schoolId, deviceId, ok);
     const present = await repo.existingEventIds(trx, ok.map((e) => e.eventId));
     await repo.applyLatestState(trx, [...new Set(ok.map((e) => e.orderId))]);

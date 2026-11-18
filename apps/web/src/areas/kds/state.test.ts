@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunk, isNewer, mergeEvent } from "./state";
+import { chunk, isNewer, mergeEvent, nextOccurredAt } from "./state";
 
 const at = (s: string) => `2031-11-05T10:00:${s}.000Z`;
 
@@ -28,5 +28,21 @@ describe("kds state", () => {
   it("chunks batches of 100", () => {
     expect(chunk(Array.from({ length: 250 }, (_, i) => i), 100).map((c) => c.length)).toEqual([100, 100, 50]);
     expect(chunk([], 100)).toEqual([]);
+  });
+});
+
+describe("nextOccurredAt", () => {
+  const now = "2031-11-05T10:00:00.000Z";
+
+  it("uses now when the order has no state yet", () => {
+    expect(nextOccurredAt(now, undefined)).toBe(now);
+  });
+
+  it("uses now when the current state is in the past", () => {
+    expect(nextOccurredAt(now, "2031-11-05T09:59:00.000Z")).toBe(now);
+  });
+
+  it("goes 1 ms past a current state that is 20 minutes in the future", () => {
+    expect(nextOccurredAt(now, "2031-11-05T10:20:00.000Z")).toBe("2031-11-05T10:20:00.001Z");
   });
 });

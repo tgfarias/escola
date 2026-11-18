@@ -7,6 +7,9 @@ import { SESSION_COOKIE } from "../../platform/session";
 import { closeServiceDay } from "../serviceDays/service";
 
 const log = { warn: () => undefined, info: () => undefined, error: () => undefined } as never;
+// Events must not be ahead of the database clock, so their instants are relative to an hour ago.
+const BASE_MS = Date.now() - 60 * 60_000;
+const t = (seconds: number) => new Date(BASE_MS + seconds * 1000).toISOString();
 const ev = (orderId: string, type: "delivered" | "undelivered", at: string, eventId = uuidv7()) => ({ eventId, orderId, type, occurredAt: at });
 
 async function closedDay(schoolId: string, date: string, names = ["Léo", "Bia"]) {
@@ -49,9 +52,9 @@ describe("kds events", () => {
     const { orderIds } = await closedDay(schoolId, "2031-11-05");
     const [a, b] = orderIds as [string, string];
     const batch = [
-      ev(a, "delivered", "2031-11-05T10:00:00Z"),
-      ev(b, "delivered", "2031-11-05T10:00:01Z"),
-      ev(b, "undelivered", "2031-11-05T10:00:05Z"),
+      ev(a, "delivered", t(0)),
+      ev(b, "delivered", t(1)),
+      ev(b, "undelivered", t(5)),
     ];
     const app = buildApp();
     const first = await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: batch } });
@@ -73,13 +76,13 @@ describe("kds events", () => {
     const { cookies } = await kitchenCookie(schoolId);
     const { orderIds } = await closedDay(schoolId, "2031-11-06", ["Léo"]);
     const order = orderIds[0]!;
-    const at = "2031-11-06T10:00:00Z";
+    const at = t(0);
     const low = "00000000-0000-7000-8000-000000000001";
     const high = "ffffffff-ffff-7fff-bfff-ffffffffffff";
     const app = buildApp();
     await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [ev(order, "delivered", at, high)] } });
     await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [ev(order, "undelivered", at, low)] } });
-    await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [ev(order, "undelivered", "2031-11-06T09:00:00Z")] } });
+    await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [ev(order, "undelivered", t(-3600))] } });
     const row = await adminDb().selectFrom("orders").select("status").where("id", "=", order).executeTakeFirstOrThrow();
     expect(row.status).toBe("delivered");
   });
@@ -92,9 +95,9 @@ describe("kds events", () => {
     const { cookies } = await kitchenCookie(schoolId);
     const open = await seedClosedDayWithOrders(schoolId, { serviceDate: "2031-11-07", studentNames: ["Léo"] });
     const batch = [
-      ev(open.orderIds[0]!, "delivered", "2031-11-07T10:00:00Z"),
-      ev(uuidv7(), "delivered", "2031-11-07T10:00:00Z"),
-      ev(seedOther.orderId, "delivered", "2031-11-07T10:00:00Z"),
+      ev(open.orderIds[0]!, "delivered", t(0)),
+      ev(uuidv7(), "delivered", t(0)),
+      ev(seedOther.orderId, "delivered", t(0)),
     ];
     const res = await buildApp().inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: batch } });
     expect(res.statusCode).toBe(200);
@@ -110,14 +113,14 @@ describe("kds events", () => {
     const t2 = await kitchenCookie(schoolId);
     const { orderIds } = await closedDay(schoolId, "2031-11-10");
     const app = buildApp();
-    const e1 = ev(orderIds[0]!, "delivered", "2031-11-10T10:00:00Z");
+    const e1 = ev(orderIds[0]!, "delivered", t(0));
     await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies: t1.cookies, payload: { events: [e1] } });
     const all = await app.inject({ method: "GET", url: "/api/kds/v1/changes?date=2031-11-10", cookies: t2.cookies });
     expect(all.statusCode).toBe(200);
     expect(all.json().events).toEqual([{ ...e1, occurredAt: new Date(e1.occurredAt).toISOString(), deviceId: t1.deviceId }]);
     const cursor = all.json().cursor as string;
     expect(cursor).toBeTruthy();
-    const e2 = ev(orderIds[1]!, "delivered", "2031-11-10T10:01:00Z");
+    const e2 = ev(orderIds[1]!, "delivered", t(60));
     await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies: t1.cookies, payload: { events: [e2] } });
     const since = await app.inject({ method: "GET", url: `/api/kds/v1/changes?date=2031-11-10&since=${encodeURIComponent(cursor)}`, cookies: t2.cookies });
     const ids = since.json().events.map((e: { eventId: string }) => e.eventId);
@@ -135,7 +138,7 @@ describe("kds events", () => {
     const kb = await kitchenCookie(b);
     const { orderIds } = await closedDay(a, "2031-11-11", ["Léo"]);
     const app = buildApp();
-    await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies: ka.cookies, payload: { events: [ev(orderIds[0]!, "delivered", "2031-11-11T10:00:00Z")] } });
+    await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies: ka.cookies, payload: { events: [ev(orderIds[0]!, "delivered", t(0))] } });
     const res = await app.inject({ method: "GET", url: "/api/kds/v1/changes?date=2031-11-11", cookies: kb.cookies });
     expect(res.json().events).toEqual([]);
   });
@@ -174,10 +177,33 @@ describe("kds events", () => {
     const { cookies } = await kitchenCookie(schoolId);
     const { orderIds } = await closedDay(schoolId, "2031-11-14", ["Léo"]);
     await adminDb().updateTable("orders").set({ status: "cancelled" }).where("id", "=", orderIds[0]!).execute();
-    const e = ev(orderIds[0]!, "delivered", "2031-11-14T10:00:00Z");
+    const e = ev(orderIds[0]!, "delivered", t(0));
     const res = await buildApp().inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [e] } });
     expect(res.json()).toEqual({ accepted: [], rejected: [e.eventId] });
     const rows = await adminDb().selectFrom("deliveryEvents").select("eventId").where("eventId", "=", e.eventId).execute();
     expect(rows).toHaveLength(0);
+  });
+  it("rejects and does not store an event more than 5 minutes ahead of the database clock", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const { cookies } = await kitchenCookie(schoolId);
+    const { orderIds } = await closedDay(schoolId, "2031-11-15", ["Léo"]);
+    const e = ev(orderIds[0]!, "delivered", new Date(Date.now() + 10 * 60_000).toISOString());
+    const res = await buildApp().inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [e] } });
+    expect(res.json()).toEqual({ accepted: [], rejected: [e.eventId] });
+    const rows = await adminDb().selectFrom("deliveryEvents").select("eventId").where("eventId", "=", e.eventId).execute();
+    expect(rows).toHaveLength(0);
+    const order = await adminDb().selectFrom("orders").select("status").where("id", "=", orderIds[0]!).executeTakeFirstOrThrow();
+    expect(order.status).toBe("confirmed");
+  });
+
+  it("accepts an event 1 minute ahead of the database clock", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const { cookies } = await kitchenCookie(schoolId);
+    const { orderIds } = await closedDay(schoolId, "2031-11-16", ["Léo"]);
+    const e = ev(orderIds[0]!, "delivered", new Date(Date.now() + 60_000).toISOString());
+    const res = await buildApp().inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [e] } });
+    expect(res.json()).toEqual({ accepted: [e.eventId], rejected: [] });
   });
 });
