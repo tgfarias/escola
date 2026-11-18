@@ -6,6 +6,7 @@ import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveStaff } from "./modules/auth/service";
+import { internalRoutes } from "./modules/internal/routes";
 import { ordersRoutes } from "./modules/orders/routes";
 import { serviceDayRoutes } from "./modules/serviceDays/routes";
 import { webhookRoutes } from "./modules/webhooks/routes";
@@ -174,6 +175,7 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(walletRoutes);
   app.register(ordersRoutes);
   app.register(serviceDayRoutes);
+  app.register(internalRoutes);
   app.register(webhookRoutes);
   return app;
 }

@@ -51,11 +51,11 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 
 ### 4.1 Magic link do responsável
 
-1. O n8n pede o link ao backend (`POST /internal/v1/reminders/prepare` ou `POST /internal/v1/magic-links`). O n8n nunca gera token.
+1. O n8n pede o link ao backend (`POST /internal/v1/schools/{school_id}/reminders/prepare` ou `POST /internal/v1/schools/{school_id}/magic-links`). O n8n nunca gera token.
 2. O backend gera 32 bytes aleatórios (base64url) e grava em `magic_links` apenas o SHA-256, com `school_id`, `guardian_id`, `scope`, `service_date` e `expires_at`.
 3. A URL é `https://<app>/l#<token>`. O token fica no fragmento: não vai para logs de servidor, referrer nem para o crawler de preview do WhatsApp.
 4. O PWA lê o fragmento, apaga-o do histórico (`history.replaceState`) e chama `POST /api/v1/auth/exchange`. Nenhuma rota `GET` altera estado.
-5. O link vale até o corte do `service_date` (escopo `order`) ou 7 dias (escopo `documents`) e é reutilizável.
+5. O link vale até o corte do `service_date` (escopo `order`) ou 7 dias (escopo `documents`) e é reutilizável. A validade é calculada pelo banco (`cutoff_at` do dia ou `now() + 7 dias`).
 
 ### 4.2 Vínculo ao aparelho e OTP
 
@@ -230,23 +230,23 @@ Erros seguem `{ "error": { "code": "…", "message": "…" } }` com códigos est
 ] }
 ```
 
-**`POST /internal/v1/reminders/prepare`**
+**`POST /internal/v1/schools/{school_id}/reminders/prepare`**
 
 ```json
-{ "school_id": "0193…", "service_date": "2026-11-17", "cursor": null }
+{ "service_date": "2026-11-17", "cursor": null }
 ```
 ```json
 { "batch_id": "0193…", "next_cursor": null,
   "recipients": [
     { "guardian_id": "0193…", "phone": "+5511999990000", "first_name": "Ana",
       "students": ["Léo", "Bia"], "link_url": "https://app.example/l#Zk3…",
-      "wallet_balance_cents": 1200, "cutoff_at": "2026-11-17T07:30:00-03:00" }
+      "wallet_balance_cents": 1200, "cutoff_at": "2026-11-17T07:30:00-03:00", "cutoff_local_time": "07:30" }
   ] }
 ```
 
 Páginas de até 200 destinatários. Responsáveis que já têm pedido confirmado para todos os filhos naquela data não entram. Repetir a chamada para o mesmo lote não reenvia quem já consta como `sent` em `message_deliveries`.
 
-**`POST /internal/v1/reminders/{batch_id}/deliveries`**
+**`POST /internal/v1/schools/{school_id}/reminders/{batch_id}/deliveries`**
 
 ```json
 { "results": [ { "guardian_id": "0193…", "status": "sent", "wa_message_id": "wamid.X" },
@@ -271,14 +271,16 @@ Idempotente: a repetição devolve o mesmo romaneio. O n8n formata o resumo e en
 
 **`GET /internal/v1/service-days/{school_id}/{date}/manifest`** — mesmo corpo do `close`; `409` se o dia ainda está aberto.
 
-**`POST /internal/v1/magic-links`** — reenvio avulso.
+**`POST /internal/v1/schools/{school_id}/magic-links`** — reenvio avulso.
 
 ```json
-{ "school_id": "0193…", "guardian_id": "0193…", "scope": "order", "service_date": "2026-11-17" }
+{ "guardian_id": "0193…", "scope": "order", "service_date": "2026-11-17" }
 ```
 ```json
 { "link_url": "https://app.example/l#Zk3…", "expires_at": "2026-11-17T07:30:00-03:00" }
 ```
+
+A escola vem sempre do caminho, coberto pela assinatura HMAC; os corpos não aceitam `school_id`.
 
 ### 6.3 Node → n8n (outbox)
 
@@ -673,7 +675,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
 
-Pendências registradas para fases futuras: criação de magic link com validade calculada pelo banco (`/internal/v1/magic-links` e lembretes, F3); rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limpeza do código do OTP na outbox antes de qualquer envio real (F3); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
+Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limpeza do código do OTP na outbox antes de qualquer envio real (F3); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
 
 Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
 

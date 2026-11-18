@@ -1,7 +1,9 @@
 import { CamelCasePlugin, Kysely, PostgresDialect, sql } from "kysely";
+import type { InjectOptions } from "fastify";
 import pg from "pg";
 import { uuidv7 } from "uuidv7";
 import type { DB } from "../src/db/types";
+import { signInternal } from "../src/platform/hmac";
 import { SESSION_COOKIE, signToken, type StaffRole } from "../src/platform/session";
 
 let admin: Kysely<DB> | undefined;
@@ -303,4 +305,22 @@ export async function walletLedgerMatches(schoolId: string, guardianId: string):
     WHERE w.school_id = ${schoolId} AND w.guardian_id = ${guardianId}
     GROUP BY w.balance_cents`.execute(adminDb());
   return rows.length === 0 || rows[0]!.balance === rows[0]!.total;
+}
+
+/** Requisição n8n → API assinada como na spec 6.1. */
+export function internalRequest(method: "GET" | "POST", url: string, payload?: unknown): InjectOptions {
+  const body = payload === undefined ? "" : JSON.stringify(payload);
+  const timestamp = new Date().toISOString();
+  return {
+    method,
+    url,
+    headers: {
+      authorization: `Bearer ${process.env.INTERNAL_SERVICE_TOKEN}`,
+      "x-timestamp": timestamp,
+      "x-signature": signInternal(process.env.INTERNAL_HMAC_SECRET!, { method, path: url, timestamp, body }),
+      "idempotency-key": crypto.randomUUID(),
+      ...(body === "" ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === "" ? {} : { payload: body }),
+  };
 }

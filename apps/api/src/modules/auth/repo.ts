@@ -17,6 +17,7 @@ export async function resolveStaffEmail(
   return rows[0];
 }
 
+/** Grava o link com a validade calculada pelo banco; undefined quando não há dia aberto antes do corte. */
 export async function insertMagicLink(
   trx: Trx,
   row: {
@@ -26,10 +27,27 @@ export async function insertMagicLink(
     tokenHash: string;
     scope: "order" | "documents";
     serviceDate: string | null;
-    expiresAt: Date;
   },
-): Promise<void> {
-  await trx.insertInto("magicLinks").values(row).execute();
+): Promise<Date | undefined> {
+  const { rows } = await sql<{ expiresAt: Date }>`
+    INSERT INTO magic_links (id, school_id, guardian_id, token_hash, scope, service_date, expires_at)
+    SELECT ${row.id}::uuid, ${row.schoolId}::uuid, ${row.guardianId}::uuid, ${row.tokenHash}::text, ${row.scope}::text,
+           ${row.serviceDate}::date, e.expires_at
+    FROM (
+      SELECT CASE
+        WHEN ${row.scope}::text = 'documents' THEN now() + interval '7 days'
+        ELSE (SELECT d.cutoff_at FROM service_days d
+              WHERE d.service_date = ${row.serviceDate}::date AND d.status = 'open' AND d.cutoff_at > now())
+      END AS expires_at
+    ) e
+    WHERE e.expires_at IS NOT NULL
+    RETURNING expires_at`.execute(trx);
+  return rows[0]?.expiresAt;
+}
+
+export async function guardianExists(trx: Trx, guardianId: string): Promise<boolean> {
+  const row = await trx.selectFrom("guardians").select("id").where("id", "=", guardianId).executeTakeFirst();
+  return row !== undefined;
 }
 
 /** Insere o desafio com validade de 5 minutos pelo relógio do banco e devolve o vencimento. */

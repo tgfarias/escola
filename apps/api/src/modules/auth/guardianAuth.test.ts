@@ -1,24 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, dropSeedChallenges, seedTenant } from "../../../test/helpers";
+import { uuidv7 } from "uuidv7";
+import { adminDb, createSchool, dropSeedChallenges, seedServiceDay, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { SESSION_COOKIE, signToken } from "../../platform/session";
 import { createMagicLink } from "./magicLink";
-import { hashToken } from "./tokens";
+import { generateToken, hashToken } from "./tokens";
 
 const DEVICE_A = "a".repeat(43);
 const DEVICE_B = "b".repeat(43);
 
-async function setup(expiresInMs = 3_600_000, scope: "order" | "documents" = "order") {
+async function setup(expired = false, scope: "order" | "documents" = "order") {
   const schoolId = await createSchool();
   const seed = await seedTenant(schoolId);
+  if (expired) {
+    const token = generateToken();
+    await adminDb()
+      .insertInto("magicLinks")
+      .values({
+        id: uuidv7(),
+        schoolId,
+        guardianId: seed.guardianId,
+        tokenHash: hashToken(token),
+        scope,
+        serviceDate: scope === "order" ? "2030-03-04" : null,
+        expiresAt: new Date(Date.now() - 1000),
+      })
+      .execute();
+    return { schoolId, seed, token };
+  }
+  const day = scope === "order" ? await seedServiceDay(schoolId, { cutoffInMinutes: 60 }) : undefined;
   const link = await withTenant(schoolId, (trx) =>
-    createMagicLink(trx, {
-      schoolId,
-      guardianId: seed.guardianId,
-      scope,
-      expiresAt: new Date(Date.now() + expiresInMs),
-    }),
+    createMagicLink(trx, { schoolId, guardianId: seed.guardianId, scope, serviceDate: day?.serviceDate }),
   );
   return { schoolId, seed, token: link.url.split("#")[1]! };
 }
@@ -112,14 +125,14 @@ describe("guardian authentication", () => {
   });
 
   it("rejects an expired link", async () => {
-    const { token } = await setup(-1000);
+    const { token } = await setup(true);
     const res = await exchange(token, DEVICE_A);
     expect(res.statusCode).toBe(401);
     expect(res.json().error.code).toBe("invalid_token");
   });
 
   it("answers unknown and expired tokens identically", async () => {
-    const { token } = await setup(-1000);
+    const { token } = await setup(true);
     const expired = await exchange(token, DEVICE_A);
     const unknown = await exchange("x".repeat(43), DEVICE_A);
     expect(expired.statusCode).toBe(unknown.statusCode);
@@ -158,7 +171,7 @@ describe("guardian authentication", () => {
   });
 
   it("returns the documents scope for a documents link", async () => {
-    const { token } = await setup(3_600_000, "documents");
+    const { token } = await setup(false, "documents");
     const res = await exchange(token, DEVICE_A);
     expect(res.json()).toEqual({ status: "ok", scope: "documents" });
   });

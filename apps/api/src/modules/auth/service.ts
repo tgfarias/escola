@@ -1,8 +1,15 @@
-import type { MeResponse, StaffMeResponse, StaffRole } from "@app-lanche/contracts";
+import type {
+  InternalMagicLinkRequest,
+  InternalMagicLinkResponse,
+  MeResponse,
+  StaffMeResponse,
+  StaffRole,
+} from "@app-lanche/contracts";
 import { uuidv7 } from "uuidv7";
 import { withTenant } from "../../db/index";
 import { DomainError } from "../../platform/errors";
 import type { GuardianScope, SessionClaims } from "../../platform/session";
+import { createMagicLink } from "./magicLink";
 import { assertOtpOk, checkCode, createChallenge, inertStaffPayload, readOtpToken, signOtpToken } from "./otp";
 import * as wallet from "../wallet/service";
 import * as repo from "./repo";
@@ -186,4 +193,23 @@ export async function getStaffMe(session: SessionClaims): Promise<StaffMeRespons
   const staff = await withTenant(session.schoolId, (trx) => repo.getStaffUser(trx, session.sub));
   if (!staff) throw new DomainError("unauthenticated");
   return { ...staff, role: staff.role as StaffRole };
+}
+
+export { createMagicLink };
+
+/** POST /internal/v1/schools/:school_id/magic-links — reenvio avulso pelo n8n. */
+export async function issueMagicLink(
+  schoolId: string,
+  body: InternalMagicLinkRequest,
+): Promise<InternalMagicLinkResponse> {
+  return withTenant(schoolId, async (trx) => {
+    if (!(await repo.guardianExists(trx, body.guardian_id))) throw new DomainError("not_found");
+    const link = await createMagicLink(trx, {
+      schoolId,
+      guardianId: body.guardian_id,
+      scope: body.scope,
+      serviceDate: body.service_date,
+    });
+    return { link_url: link.url, expires_at: link.expiresAt.toISOString() };
+  });
 }
