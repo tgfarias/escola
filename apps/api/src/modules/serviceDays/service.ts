@@ -1,4 +1,4 @@
-import type { ManifestContent, ManifestResponse } from "@app-lanche/contracts";
+import type { KdsManifestResponse, ManifestContent, ManifestResponse } from "@app-lanche/contracts";
 import type { FastifyBaseLogger } from "fastify";
 import { withTenant, type Trx } from "../../db/index";
 import { DomainError } from "../../platform/errors";
@@ -77,6 +77,20 @@ export async function getManifest(schoolId: string, serviceDate: string): Promis
     if (!day) throw new DomainError("not_found");
     if (day.status !== "closed") throw new DomainError("service_day_open");
     return response(trx, day.id, day.closedAt!);
+  });
+}
+
+/** KDS: romaneio congelado ou, com o dia aberto, a prévia dos pedidos já confirmados. */
+export async function kdsManifest(schoolId: string, serviceDate: string): Promise<KdsManifestResponse> {
+  return withTenant(schoolId, async (trx) => {
+    const day = await catalog.lockServiceDayByDate(trx, serviceDate, "share");
+    if (!day) throw new DomainError("not_found");
+    if (day.status === "closed") {
+      const manifest = await repo.readManifest(trx, day.id);
+      return { serviceDate, status: "closed", manifestVersion: manifest.version, content: JSON.parse(manifest.content) as ManifestContent };
+    }
+    const content = buildManifest(await repo.manifestLines(trx, day.id), await orders.countLateCredited(trx, day.id));
+    return { serviceDate, status: "open", manifestVersion: null, content };
   });
 }
 

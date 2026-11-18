@@ -1,4 +1,11 @@
-import { PAIRING_ALPHABET, type KitchenDeviceListResponse, type PairingCodeResponse } from "@app-lanche/contracts";
+import {
+  PAIRING_ALPHABET,
+  type KdsChangesResponse,
+  type KdsEventsRequest,
+  type KdsEventsResponse,
+  type KitchenDeviceListResponse,
+  type PairingCodeResponse,
+} from "@app-lanche/contracts";
 import { randomInt } from "node:crypto";
 import { uuidv7 } from "uuidv7";
 import { withTenant } from "../../db/index";
@@ -63,4 +70,27 @@ export async function revokeDevice(session: SessionClaims, deviceId: string): Pr
       await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "kds.device_revoked", detail: { device_id: deviceId } });
     }
   });
+}
+
+export async function recordEvents(schoolId: string, deviceId: string, body: KdsEventsRequest): Promise<KdsEventsResponse> {
+  return withTenant(schoolId, async (trx) => {
+    const orderIds = [...new Set(body.events.map((e) => e.orderId))];
+    const deliverable = await repo.deliverableOrders(trx, orderIds);
+    const ok = body.events.filter((e) => deliverable.has(e.orderId));
+    await repo.insertEvents(trx, schoolId, deviceId, ok);
+    const present = await repo.existingEventIds(trx, ok.map((e) => e.eventId));
+    await repo.applyLatestState(trx, [...new Set(ok.map((e) => e.orderId))]);
+    return {
+      accepted: body.events.filter((e) => present.has(e.eventId)).map((e) => e.eventId),
+      rejected: body.events.filter((e) => !present.has(e.eventId)).map((e) => e.eventId),
+    };
+  });
+}
+
+export async function changes(schoolId: string, serviceDate: string, since: string | null): Promise<KdsChangesResponse> {
+  const rows = await withTenant(schoolId, (trx) => repo.changesSince(trx, serviceDate, since));
+  return {
+    events: rows.map((r) => ({ eventId: r.eventId, orderId: r.orderId, type: r.type, occurredAt: r.occurredAt.toISOString(), deviceId: r.deviceId })),
+    cursor: rows.length > 0 ? rows[rows.length - 1]!.receivedAt : since,
+  };
 }

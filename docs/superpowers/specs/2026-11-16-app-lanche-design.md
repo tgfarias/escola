@@ -328,10 +328,10 @@ O dispatcher usa a função `list_schools_with_pending_events()` (quinta consult
 3. Marcar ou desmarcar "entregue" é uma transação IndexedDB que atualiza `orderState` e insere na `outbox`:
    `{ event_id, order_id, type: "delivered" | "undelivered", occurred_at, device_id }`.
 4. Sincronização: no evento `online`, a cada 15 s e quando a aba volta ao foco. A Background Sync API não é usada (ausente no Safari/iOS).
-   - `POST /api/kds/v1/events` com até 100 eventos; o servidor insere com `ON CONFLICT (event_id) DO NOTHING` e devolve os `event_id` aceitos; o cliente remove só esses.
-   - `GET /api/kds/v1/changes?since=<cursor>` traz eventos de outros tablets.
+   - `POST /api/kds/v1/events` com até 100 eventos; o servidor insere com `ON CONFLICT (event_id) DO NOTHING` e devolve `accepted` (gravados agora ou antes) e `rejected` (pedido inexistente, dia ainda aberto ou pedido sem entrega); o cliente remove os dois. Entrega só é aceita depois do fechamento.
+   - `GET /api/kds/v1/changes?date=<data>&since=<cursor>` traz eventos de outros tablets; o cursor é o `received_at` do último evento e o servidor repete o último minuto (o cliente deduplica por `event_id`).
 5. Estado de um pedido: o do evento com maior `occurred_at`; empate resolvido por `event_id`.
-6. Token de dispositivo expirado com outbox pendente: o servidor aceita os eventos se o dispositivo ainda está ativo em `devices` e renova o token.
+6. Token de dispositivo expirado com outbox pendente: o servidor aceita os eventos se o dispositivo ainda está ativo em `devices` e renova o token (token `kitchen` vencido há até 90 dias).
 
 ### 7.4 Proteções
 
@@ -673,7 +673,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
 
-Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); índice único próprio para códigos de pareamento da cozinha (F4); limite de requisições por IP (F6).
+Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limite de requisições por IP (F6).
 
 Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
 

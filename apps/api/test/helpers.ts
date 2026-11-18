@@ -349,3 +349,23 @@ export function internalRequest(method: "GET" | "POST", url: string, payload?: u
     ...(body === "" ? {} : { payload: body }),
   };
 }
+
+/** Dia já fechado com um pedido confirmado (1x primeiro item) por aluno; romaneio gravado como o fechamento faria. */
+export async function seedClosedDayWithOrders(
+  schoolId: string,
+  opts: { serviceDate: string; studentNames: string[] },
+): Promise<{ serviceDayId: string; orderIds: string[] }> {
+  const day = await seedServiceDay(schoolId, { serviceDate: opts.serviceDate, cutoffInMinutes: -30 });
+  const fam = await seedFamily(schoolId, opts.studentNames);
+  const db = adminDb();
+  const checkoutId = uuidv7();
+  await db.insertInto("checkouts").values({ id: checkoutId, schoolId, guardianId: fam.guardianId, serviceDayId: day.serviceDayId, status: "paid", totalCents: 900 * fam.studentIds.length }).execute();
+  const orderIds: string[] = [];
+  for (const studentId of fam.studentIds) {
+    const orderId = uuidv7();
+    await db.insertInto("orders").values({ id: orderId, schoolId, checkoutId, studentId, serviceDate: opts.serviceDate, status: "confirmed" }).execute();
+    await db.insertInto("orderItems").values({ id: uuidv7(), schoolId, orderId, menuItemId: day.items[0]!.id, qty: 1, unitPriceCents: 900 }).execute();
+    orderIds.push(orderId);
+  }
+  return { serviceDayId: day.serviceDayId, orderIds };
+}

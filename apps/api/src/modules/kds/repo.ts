@@ -34,3 +34,67 @@ export async function revokeKitchenDevice(trx: Trx, deviceId: string): Promise<"
   const row = await trx.selectFrom("devices").select("id").where("id", "=", deviceId).where("kind", "=", "kitchen").executeTakeFirst();
   return row ? "already" : "missing";
 }
+
+/** Pedidos do lote que aceitam entrega: existem, dia fechado, estado confirmado ou entregue. Trava os dias antes (FOR SHARE). */
+export async function deliverableOrders(trx: Trx, orderIds: string[]): Promise<Set<string>> {
+  if (orderIds.length === 0) return new Set();
+  await sql`
+    SELECT d.id FROM service_days d
+    WHERE d.id IN (SELECT c.service_day_id FROM orders o JOIN checkouts c ON c.id = o.checkout_id WHERE o.id = ANY(${orderIds}::uuid[]))
+    ORDER BY d.id FOR SHARE`.execute(trx);
+  const { rows } = await sql<{ id: string }>`
+    SELECT o.id FROM orders o
+    JOIN checkouts c ON c.id = o.checkout_id
+    JOIN service_days d ON d.id = c.service_day_id
+    WHERE o.id = ANY(${orderIds}::uuid[]) AND d.status = 'closed' AND o.status IN ('confirmed', 'delivered')
+    ORDER BY o.id FOR UPDATE OF o`.execute(trx);
+  return new Set(rows.map((r) => r.id));
+}
+
+export async function insertEvents(
+  trx: Trx,
+  schoolId: string,
+  deviceId: string,
+  events: { eventId: string; orderId: string; type: string; occurredAt: string }[],
+): Promise<void> {
+  if (events.length === 0) return;
+  await trx
+    .insertInto("deliveryEvents")
+    .values(events.map((e) => ({ eventId: e.eventId, schoolId, orderId: e.orderId, deviceId, type: e.type, occurredAt: new Date(e.occurredAt) })))
+    .onConflict((oc) => oc.column("eventId").doNothing())
+    .execute();
+}
+
+/** event_ids do lote que existem nesta escola (inseridos agora ou antes). */
+export async function existingEventIds(trx: Trx, eventIds: string[]): Promise<Set<string>> {
+  if (eventIds.length === 0) return new Set();
+  const rows = await trx.selectFrom("deliveryEvents").select("eventId").where("eventId", "in", eventIds).execute();
+  return new Set(rows.map((r) => r.eventId));
+}
+
+/** Aplica o evento vencedor (maior occurred_at, empate pelo maior event_id) a cada pedido. */
+export async function applyLatestState(trx: Trx, orderIds: string[]): Promise<void> {
+  if (orderIds.length === 0) return;
+  await sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (order_id) order_id, type
+      FROM delivery_events
+      WHERE order_id = ANY(${orderIds}::uuid[])
+      ORDER BY order_id, occurred_at DESC, event_id::text DESC
+    )
+    UPDATE orders o SET status = CASE WHEN l.type = 'delivered' THEN 'delivered' ELSE 'confirmed' END
+    FROM latest l
+    WHERE o.id = l.order_id
+      AND ((l.type = 'delivered' AND o.status = 'confirmed') OR (l.type = 'undelivered' AND o.status = 'delivered'))`.execute(trx);
+}
+
+export async function changesSince(trx: Trx, serviceDate: string, since: string | null) {
+  const { rows } = await sql<{ eventId: string; orderId: string; type: "delivered" | "undelivered"; occurredAt: Date; deviceId: string; receivedAt: string }>`
+    SELECT e.event_id, e.order_id, e.type, e.occurred_at, e.device_id, e.received_at::text AS received_at
+    FROM delivery_events e JOIN orders o ON o.id = e.order_id
+    WHERE o.service_date = ${serviceDate}::date
+      AND (${since}::timestamptz IS NULL OR e.received_at > ${since}::timestamptz - interval '1 minute')
+    ORDER BY e.received_at, e.event_id
+    LIMIT 1000`.execute(trx);
+  return rows;
+}
