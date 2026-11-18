@@ -29,7 +29,8 @@ export async function apiFetch<T>(
   } catch {
     throw new ApiError(0, "network_error");
   }
-  const json: unknown = await res.json().catch(() => null);
+  // 204 has no body: validate undefined against the schema (z.undefined() passes, object schemas fail).
+  const json: unknown = res.status === 204 ? undefined : await res.json().catch(() => null);
   if (!res.ok) {
     const parsed = ErrorResponse.safeParse(json);
     throw new ApiError(res.status, parsed.success ? parsed.data.error.code : "internal_error");

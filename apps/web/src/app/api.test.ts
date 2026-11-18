@@ -20,6 +20,11 @@ describe("apiFetch", () => {
     await expect(apiFetch("/api/v1/x", z.object({ ok: z.boolean() }))).resolves.toEqual({ ok: true });
   });
 
+  it("returns undefined for a 204 without a body", async () => {
+    mockResponse(new Response(null, { status: 204 }));
+    await expect(apiFetch("/api/v1/x", z.undefined(), { method: "POST" })).resolves.toBeUndefined();
+  });
+
   it("sends JSON bodies with credentials", async () => {
     const fn = mockFetch(200, {});
     await apiFetch("/api/v1/x", z.object({}), { method: "POST", body: { a: 1 } });

@@ -3,6 +3,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { staffErrorMessage } from "../../ui/messages";
+import { KitchenDevicesAdmin } from "./KitchenDevicesAdmin";
 import { MenuAdmin } from "./MenuAdmin";
 import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
 
@@ -91,6 +92,7 @@ export function AdminHome() {
         <>
           <MenuAdmin />
           <ServiceDaysAdmin />
+          <KitchenDevicesAdmin />
         </>
       )}
     </main>
