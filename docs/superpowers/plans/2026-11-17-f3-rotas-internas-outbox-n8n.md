@@ -710,6 +710,7 @@ git commit -m "feat(api): compute magic link expiry in the database and add the 
 - Modify: `apps/api/src/modules/serviceDays/repo.ts`, `apps/api/src/modules/serviceDays/service.ts`
 - Modify: `apps/api/src/modules/internal/routes.ts`
 - Create: `apps/api/src/modules/internal/schedule.test.ts`
+- Modify: `eslint.config.js` (libera `getDb` em `apps/api/src/modules/serviceDays/repo.ts`)
 
 **Interfaces:**
 - Consumes: `internalRoutes`, `INTERNAL`, `internalRequest` (Task 2); `closeServiceDay`, `getManifest` (F2).
@@ -856,12 +857,14 @@ const DayParams = z.object({ school_id: Uuid, date: IsoDate });
 
 (imports: `IsoDate`, `ScheduleDueResponse` de `@app-lanche/contracts`; `* as serviceDays from "../serviceDays/service"`.)
 
+Em `eslint.config.js`, acrescente `"apps/api/src/modules/serviceDays/repo.ts"` aos `ignores` da regra de `getDb` e troque a mensagem por `"getDb só é permitido em src/db, nos repo.ts que chamam funções SECURITY DEFINER e em testes. Use withTenant."` (atualize também o comentário acima da regra).
+
 - [ ] **Step 4: Rodar e commitar**
 
 Run: `pnpm --filter @app-lanche/contracts test && pnpm --filter @app-lanche/api test -- src/modules/internal src/modules/serviceDays && pnpm typecheck && pnpm lint` → PASS.
 
 ```bash
-git add packages/contracts/src apps/api/src/modules/serviceDays apps/api/src/modules/internal
+git add packages/contracts/src apps/api/src/modules/serviceDays apps/api/src/modules/internal eslint.config.js
 git commit -m "feat(api): expose the agenda, close and manifest routes to n8n"
 ```
 
@@ -1289,6 +1292,7 @@ git commit -m "feat(api): prepare reminder pages with magic links and record del
 - Modify: `apps/api/src/platform/config.ts`, `apps/api/src/platform/config.test.ts`
 - Create: `apps/api/src/modules/outbox/repo.ts`, `apps/api/src/modules/outbox/service.ts`, `apps/api/src/modules/outbox/dispatch.test.ts`
 - Modify: `apps/api/test/setupEnv.ts` (`JOBS_TOKEN`)
+- Modify: `eslint.config.js` (libera `getDb` em `apps/api/src/modules/outbox/repo.ts`)
 
 **Interfaces:**
 - Consumes: `signInternal` (`platform/hmac`); `OutboxEnvelope` (contracts); `list_schools_with_pending_events()` (Task 1).
@@ -1595,6 +1599,8 @@ export async function abandon(trx: Trx, id: string): Promise<void> {
 }
 ```
 
+Em `eslint.config.js`, acrescente `"apps/api/src/modules/outbox/repo.ts"` aos `ignores` da regra de `getDb`.
+
 - [ ] **Step 4: Serviço**
 
 `apps/api/src/modules/outbox/service.ts`:
@@ -1700,7 +1706,7 @@ export async function dispatchOutbox(opts: { log: FastifyBaseLogger; schoolIds?:
 Run: `pnpm --filter @app-lanche/api test -- src/modules/outbox src/platform && pnpm typecheck && pnpm lint` → PASS. Rode também a suíte inteira da API uma vez (`pnpm test:api`): os testes de OTP leem o código em `outbox_events.data` e precisam continuar passando (o dispatcher não roda neles porque `N8N_EVENTS_URL` não está definido no ambiente de teste).
 
 ```bash
-git add apps/api/src/platform/config.ts apps/api/src/platform/config.test.ts apps/api/src/modules/outbox apps/api/test/setupEnv.ts
+git add apps/api/src/platform/config.ts apps/api/src/platform/config.test.ts apps/api/src/modules/outbox apps/api/test/setupEnv.ts eslint.config.js
 git commit -m "feat(api): dispatch outbox events to n8n with backoff and OTP scrubbing"
 ```
 
@@ -2064,7 +2070,7 @@ git commit -m "feat(api): add scheduler job routes, post-commit outbox kick and 
 - Create: `n8n/build.mjs`
 - Create: `n8n/workflows/schedule.json`, `n8n/workflows/events.json` (gerados pelo build a partir do esqueleto abaixo)
 - Create: `apps/api/test/n8n.test.ts`
-- Modify: `package.json` (script `n8n:build`), `eslint.config.*` (ignorar `n8n/code/**`)
+- Modify: `package.json` (script `n8n:build`), `eslint.config.js` (ignorar `n8n/code/**`)
 - Create: `docs/n8n.md`
 
 **Interfaces:**
@@ -2428,7 +2434,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 }
 ```
 
-`package.json` (raiz): `"n8n:build": "node n8n/build.mjs"`. No `eslint.config.*`, acrescente `"n8n/code/**"` aos `ignores` globais (os Code nodes usam `return`/`await` no topo e globais do n8n).
+`package.json` (raiz): `"n8n:build": "node n8n/build.mjs"`. No `eslint.config.js`, acrescente `"n8n/code/**"` aos `ignores` globais (os Code nodes usam `return`/`await` no topo e globais do n8n).
 
 Rode `pnpm n8n:build` e confira que os dois JSON têm `jsCode` preenchido.
 
@@ -2636,7 +2642,7 @@ Run: `pnpm --filter @app-lanche/api test -- test/n8n` → PASS.
 Run: `pnpm typecheck && pnpm lint && pnpm test` → PASS.
 
 ```bash
-git add n8n package.json eslint.config.* apps/api/test/n8n.test.ts docs/n8n.md
+git add n8n package.json eslint.config.js apps/api/test/n8n.test.ts docs/n8n.md
 git commit -m "feat(n8n): add the schedule and outbox event workflows with tested code nodes"
 ```
 
