@@ -35,7 +35,8 @@ export async function prepareReminders(schoolId: string, body: RemindersPrepareR
       });
     }
     await repo.markPrepared(trx, schoolId, batchId, page.map((g) => g.guardianId));
-    if (!hasMore) await repo.completeBatch(trx, batchId);
+    // O lote só termina quando não sobra ninguém a lembrar: quem foi entregue e não reportado volta na próxima chamada.
+    if (page.length === 0 && body.cursor === null) await repo.completeBatch(trx, batchId);
     return { batch_id: batchId, next_cursor: hasMore ? page[page.length - 1]!.guardianId : null, recipients };
   });
 }

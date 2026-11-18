@@ -9,7 +9,7 @@ export async function ensureBatch(trx: Trx, schoolId: string, serviceDate: strin
     .values({ id: uuidv7(), schoolId, serviceDate })
     .onConflict((oc) => oc.columns(["schoolId", "serviceDate"]).doNothing())
     .execute();
-  const row = await trx.selectFrom("reminderBatches").select("id").where("serviceDate", "=", serviceDate).executeTakeFirstOrThrow();
+  const row = await trx.selectFrom("reminderBatches").select("id").where("schoolId", "=", schoolId).where("serviceDate", "=", serviceDate).executeTakeFirstOrThrow();
   return row.id;
 }
 
@@ -20,7 +20,7 @@ export async function batchExists(trx: Trx, batchId: string): Promise<boolean> {
 
 /**
  * Responsáveis com ao menos um filho ativo sem pedido confirmado/entregue na data, que ainda não
- * constam como `sent` no lote; ordenados por id a partir do cursor. Traz `limit + 1` para saber se há próxima página.
+ * constam como `sent` ou `failed` no lote; ordenados por id a partir do cursor. Traz `limit + 1` para saber se há próxima página.
  */
 export async function candidates(trx: Trx, input: { batchId: string; serviceDate: string; cursor: string | null; limit: number }) {
   const { rows } = await sql<{ guardianId: string; phone: string; firstName: string; students: string[] }>`
@@ -37,7 +37,7 @@ export async function candidates(trx: Trx, input: { batchId: string; serviceDate
     WHERE (${input.cursor}::uuid IS NULL OR g.id > ${input.cursor}::uuid)
       AND NOT EXISTS (
         SELECT 1 FROM message_deliveries md
-        WHERE md.batch_id = ${input.batchId}::uuid AND md.guardian_id = g.id AND md.status = 'sent')
+        WHERE md.batch_id = ${input.batchId}::uuid AND md.guardian_id = g.id AND md.status IN ('sent', 'failed'))
     GROUP BY g.id
     HAVING bool_or(o.ordered IS NULL)
     ORDER BY g.id

@@ -18,7 +18,8 @@ describe("reminders", () => {
     const schoolId = await createSchool();
     const fam = await seedFamily(schoolId, ["Léo", "Bia"]);
     const day = await seedServiceDay(schoolId, { serviceDate: "2031-05-05", cutoffInMinutes: 60 });
-    const res = await buildApp().inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }));
+    const app = buildApp();
+    const res = await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }));
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.next_cursor).toBeNull();
@@ -31,7 +32,30 @@ describe("reminders", () => {
     expect(link.expiresAt.toISOString()).toBe(new Date(r.cutoff_at).toISOString());
     const batch = await adminDb().selectFrom("reminderBatches").select(["id", "completedAt"]).where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
     expect(batch.id).toBe(body.batch_id);
-    expect(batch.completedAt).not.toBeNull();
+    expect(batch.completedAt).toBeNull();
+    const del = await app.inject(
+      internalRequest("POST", `/internal/v1/schools/${schoolId}/reminders/${body.batch_id}/deliveries`, {
+        results: [{ guardian_id: fam.guardianId, status: "sent", wa_message_id: "wamid.Z" }],
+      }),
+    );
+    expect(del.statusCode).toBe(204);
+    const again = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(again).toEqual({ batch_id: body.batch_id, next_cursor: null, recipients: [] });
+    const done = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(done.completedAt).not.toBeNull();
+  });
+
+  it("redoes guardians handed out but never reported", async () => {
+    const schoolId = await createSchool();
+    const fam = await seedFamily(schoolId, ["Léo"]);
+    const day = await seedServiceDay(schoolId, { serviceDate: "2031-05-15", cutoffInMinutes: 60 });
+    const app = buildApp();
+    const first = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    const second = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(second.batch_id).toBe(first.batch_id);
+    expect(second.recipients.map((r: { guardian_id: string }) => r.guardian_id)).toEqual([fam.guardianId]);
+    const batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(batch.completedAt).toBeNull();
   });
 
   it("formats the local cutoff in the school's timezone", async () => {
@@ -74,10 +98,15 @@ describe("reminders", () => {
     expect(second.recipients).toHaveLength(1);
     expect(second.next_cursor).toBeNull();
     batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
-    expect(batch.completedAt).not.toBeNull();
+    expect(batch.completedAt).toBeNull();
+    const third = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(third.batch_id).toBe(first.batch_id);
+    expect(third.recipients).toHaveLength(200);
+    batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(batch.completedAt).toBeNull();
   }, 60_000);
 
-  it("never resends to a guardian already marked sent, and failed stays retryable", async () => {
+  it("never resends to a guardian already reported sent or failed", async () => {
     const schoolId = await createSchool();
     const sent = await seedFamily(schoolId, ["Léo"]);
     const failed = await seedFamily(schoolId, ["Bia"]);
@@ -107,7 +136,10 @@ describe("reminders", () => {
       ].sort((a, b) => a.guardianId.localeCompare(b.guardianId)),
     );
     const again = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
-    expect(again.recipients.map((r: { guardian_id: string }) => r.guardian_id)).toEqual([failed.guardianId]);
+    expect(again.recipients).toEqual([]);
+    expect(again.next_cursor).toBeNull();
+    const batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(batch.completedAt).not.toBeNull();
   });
 
   it("answers 404 for a batch of another school and ignores guardians not in the batch", async () => {
