@@ -30,14 +30,16 @@ export function signedEventRequest(envelope: OutboxEnvelope): { url: string; hea
   };
 }
 
-async function post(envelope: OutboxEnvelope): Promise<number | null> {
+type PostResult = { status: number } | { errName: string };
+
+async function post(envelope: OutboxEnvelope): Promise<PostResult> {
   const req = signedEventRequest(envelope);
   try {
     const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body, signal: AbortSignal.timeout(TIMEOUT_MS) });
     await res.arrayBuffer().catch(() => undefined);
-    return res.status;
-  } catch {
-    return null;
+    return { status: res.status };
+  } catch (err) {
+    return { errName: err instanceof Error ? err.name : "UnknownError" };
   }
 }
 
@@ -49,26 +51,28 @@ export async function dispatchSchool(schoolId: string, log: FastifyBaseLogger): 
     const events = await withTenant(schoolId, (trx) => repo.claim(trx, BATCH));
     if (events.length === 0) break;
     for (const e of events) {
-      if (e.abandon) {
+      const leased = await withTenant(schoolId, (trx) => repo.release(trx, e.id, e.lease));
+      if (!leased) continue;
+      if (leased.abandon) {
         await withTenant(schoolId, (trx) => repo.abandon(trx, e.id));
         counts.abandoned += 1;
         log.warn({ event_id: e.id, event_type: e.type, school_id: schoolId }, "outbox event abandoned");
         continue;
       }
-      const status = await post({
+      const result = await post({
         id: e.id,
         type: e.type,
         school_id: schoolId,
         occurred_at: e.occurredAt.toISOString(),
         data: JSON.parse(e.data) as Record<string, unknown>,
       });
-      if (status !== null && status >= 200 && status < 300) {
+      if ("status" in result && result.status >= 200 && result.status < 300) {
         await withTenant(schoolId, (trx) => repo.markDelivered(trx, e.id));
         counts.delivered += 1;
       } else {
         await withTenant(schoolId, (trx) => repo.markAttemptFailed(trx, e.id));
         counts.failed += 1;
-        log.warn({ event_id: e.id, event_type: e.type, school_id: schoolId, status }, "outbox delivery failed");
+        log.warn({ event_id: e.id, event_type: e.type, school_id: schoolId, ...("status" in result ? { status: result.status } : { err_name: result.errName }) }, "outbox delivery failed");
       }
     }
     if (events.length < BATCH) break;
@@ -83,8 +87,14 @@ export async function dispatchOutbox(opts: { log: FastifyBaseLogger; schoolIds?:
   const pending = await repo.listSchoolsWithPendingEvents();
   const schools = opts.schoolIds ? pending.filter((id) => opts.schoolIds!.includes(id)) : pending;
   for (const schoolId of schools) {
-    const c = await dispatchSchool(schoolId, opts.log);
     result.schools += 1;
+    let c: DispatchCounts;
+    try {
+      c = await dispatchSchool(schoolId, opts.log);
+    } catch (err) {
+      opts.log.error({ school_id: schoolId, err_name: err instanceof Error ? err.name : "UnknownError" }, "outbox dispatch failed for school");
+      continue;
+    }
     result.delivered += c.delivered;
     result.failed += c.failed;
     result.abandoned += c.abandoned;

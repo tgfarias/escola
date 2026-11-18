@@ -8,7 +8,14 @@ export type ClaimedEvent = {
   occurredAt: Date;
   /** Mais de 24 h sem entrega, ou OTP já vencido: não deve ser enviado. */
   abandon: boolean;
+  /** Valor exato de next_attempt_at gravado pelo arrendamento (texto preserva microssegundos). */
+  lease: string;
 };
+
+const ABANDON_EXPR = sql`coalesce(
+  occurred_at < now() - interval '24 hours'
+    OR (type = 'auth.otp_requested' AND (data->>'expires_at')::timestamptz <= now()),
+  false)`;
 
 /** Escolas com eventos prontos (função SECURITY DEFINER, spec 6.3). */
 export async function listSchoolsWithPendingEvents(): Promise<string[]> {
@@ -32,9 +39,22 @@ export async function claim(trx: Trx, limit: number): Promise<ClaimedEvent[]> {
     UPDATE outbox_events o SET next_attempt_at = now() + interval '2 minutes'
     FROM c WHERE o.id = c.id
     RETURNING o.id, o.type, o.data::text AS data, o.occurred_at,
-      (o.occurred_at < now() - interval '24 hours'
-        OR (o.type = 'auth.otp_requested' AND (o.data->>'expires_at')::timestamptz <= now())) AS abandon`.execute(trx);
+      coalesce(o.occurred_at < now() - interval '24 hours'
+        OR (o.type = 'auth.otp_requested' AND (o.data->>'expires_at')::timestamptz <= now()), false) AS abandon,
+      o.next_attempt_at::text AS lease`.execute(trx);
   return rows.sort((a, b) => (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * Renova o arrendamento do evento logo antes de enviar. Sem linha de volta, outro dispatcher o tomou
+ * (ou já foi concluído): quem chamou deve pular. `abandon` é reavaliado agora.
+ */
+export async function release(trx: Trx, id: string, lease: string): Promise<{ abandon: boolean } | undefined> {
+  const { rows } = await sql<{ abandon: boolean }>`
+    UPDATE outbox_events SET next_attempt_at = now() + interval '2 minutes'
+    WHERE id = ${id} AND next_attempt_at = ${lease}::timestamptz AND delivered_at IS NULL AND failed_at IS NULL
+    RETURNING ${ABANDON_EXPR} AS abandon`.execute(trx);
+  return rows[0];
 }
 
 const SCRUB_OTP = sql`CASE WHEN type = 'auth.otp_requested' THEN '{}'::jsonb ELSE data END`;

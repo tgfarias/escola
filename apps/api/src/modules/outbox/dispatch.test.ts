@@ -8,6 +8,7 @@ import { withTenant } from "../../db/index";
 import { config, resetConfigForTests } from "../../platform/config";
 import { signInternal } from "../../platform/hmac";
 import { enqueueEvent } from "../../platform/outbox";
+import * as repo from "./repo";
 import { dispatchOutbox, dispatchSchool } from "./service";
 
 const SECRET = "test-n8n-hmac-secret-with-at-least-32-chars";
@@ -146,6 +147,53 @@ describe("outbox dispatcher", () => {
     await Promise.all([dispatchSchool(schoolId, log), dispatchSchool(schoolId, log), dispatchSchool(schoolId, log)]);
     const sentIds = forSchool(schoolId).map((e) => e.id).filter((id) => ids.includes(id));
     expect(sentIds.sort()).toEqual([...ids].sort());
+  });
+
+  it("does not let a stalled dispatcher release an event that was re-claimed", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const id = await otp(schoolId);
+    const stalled = await withTenant(schoolId, (trx) => repo.claim(trx, 50));
+    const held = stalled.find((e) => e.id === id)!;
+    expect(held).toBeDefined();
+    await adminDb().updateTable("outboxEvents").set({ nextAttemptAt: sql`now() - interval '1 second'` }).where("id", "=", id).execute();
+    await dispatchSchool(schoolId, log);
+    expect(forSchool(schoolId).filter((e) => e.id === id)).toHaveLength(1);
+    expect(await withTenant(schoolId, (trx) => repo.release(trx, id, held.lease))).toBeUndefined();
+  });
+
+  it("abandons an OTP that expires between claim and send", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const id = await otp(schoolId);
+    const claimed = (await withTenant(schoolId, (trx) => repo.claim(trx, 50))).find((e) => e.id === id)!;
+    expect(claimed.abandon).toBe(false);
+    await adminDb()
+      .updateTable("outboxEvents")
+      .set({ data: sql`jsonb_set(data, '{expires_at}', to_jsonb((now() - interval '1 second')::text))` })
+      .where("id", "=", id)
+      .execute();
+    expect(await withTenant(schoolId, (trx) => repo.release(trx, id, claimed.lease))).toEqual({ abandon: true });
+  });
+
+  it("abandons and scrubs on a failed attempt when the event is older than 24 hours", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const id = uuidv7();
+    await adminDb()
+      .insertInto("outboxEvents")
+      .values({
+        id,
+        schoolId,
+        type: "auth.otp_requested",
+        data: JSON.stringify({ channel: "whatsapp", to: "+5511999990001", first_name: "Ana", code: "123456", expires_at: "2099-01-01T00:00:00Z" }),
+        occurredAt: sql`now() - interval '25 hours'`,
+      })
+      .execute();
+    await withTenant(schoolId, (trx) => repo.markAttemptFailed(trx, id));
+    const after = await row(id);
+    expect(after.failedAt).not.toBeNull();
+    expect(JSON.parse(after.data)).toEqual({});
   });
 
   it("dispatches only the listed schools when asked", async () => {
