@@ -84,8 +84,9 @@ async function whatsapp(ctx, to, template, params, extraComponents) {
 
 /** Centavos inteiros → "R$ 1.234,56" (sem ponto flutuante). */
 function brl(cents) {
-  const reais = String(Math.trunc(cents / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `R$ ${reais},${String(Math.abs(cents % 100)).padStart(2, "0")}`;
+  const abs = Math.abs(cents);
+  const reais = String(Math.trunc(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${cents < 0 ? "-" : ""}R$ ${reais},${String(abs % 100).padStart(2, "0")}`;
 }
 
 function joinNames(names) {

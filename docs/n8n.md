@@ -34,12 +34,19 @@ Parâmetros na ordem; nenhum contém quebra de linha.
   Texto: "Olá, {{1}}! O lanche de {{2}} pode ser pedido até as {{3}}. Seu saldo é {{4}}. Acesse: {{5}}"
 - Resumo da cozinha (utility): `{{1}}` data, `{{2}}` total de pedidos, `{{3}}` itens.
   Texto: "Lanches de {{1}}: {{2}} pedidos. Itens: {{3}}."
-- Código de acesso (authentication): `{{1}}` código, com botão de copiar código.
-  Texto: "{{1}} é o seu código de acesso."
+- Código de acesso: categoria "authentication" com botão de copiar código (o texto dos modelos de autenticação é fixo da Meta).
 - Pedido confirmado (utility): `{{1}}` nome, `{{2}}` filhos, `{{3}}` data, `{{4}}` total.
   Texto: "Olá, {{1}}! Pagamento confirmado: lanche de {{2}} em {{3}}, total {{4}}."
 - Crédito atrasado (utility): `{{1}}` nome, `{{2}}` valor, `{{3}}` saldo.
   Texto: "Olá, {{1}}! O pagamento chegou depois do horário de corte. Creditamos {{2}} na sua carteira. Saldo: {{3}}."
+
+## Dados pessoais no n8n
+
+O fluxo de eventos não guarda histórico de execuções, de propósito: o corpo do webhook e a saída do Code node trazem código OTP, telefone e nomes, que a API apaga depois da entrega (regra 28 do CLAUDE.md). Por isso `events.json` vem com `saveDataSuccessExecution` e `saveDataErrorExecution` em `none`, `saveManualExecutions` e `saveExecutionProgress` desligados. Nunca ligue o histórico nesse fluxo para depurar; use um evento de teste sem dados reais. Recomenda-se também `EXECUTIONS_DATA_PRUNE=true` com `EXECUTIONS_DATA_MAX_AGE` curto (poucas horas) no contêiner.
+
+Limitações conhecidas:
+- A deduplicação por static data pode falhar sob execuções concorrentes do mesmo id de evento. O arrendamento do dispatcher torna isso raro; o pior caso é uma mensagem duplicada.
+- Falha ao enviar o resumo da cozinha não é repetida. O KDS é o canal principal.
 
 ## Na API
 
@@ -53,4 +60,6 @@ Não foi possível verificar sem um n8n real (o teste usa um harness que executa
 - O Webhook v2 com `rawBody` entrega o corpo em `binary.data`, legível por `getBinaryDataBuffer(0, "data")`.
 - Com `responseMode: "lastNode"`, um erro no Code node responde 500 e o ramo falso do IF responde 200.
 - O caminho recebido atrás do proxy da VPS bate com `APP_LANCHE_EVENTS_PATH`.
+- Os Code nodes podem rodar em task runners (padrão nas versões recentes do n8n): `NODE_FUNCTION_ALLOW_BUILTIN` e o acesso a variáveis de ambiente precisam estar configurados também no runner.
+- As configurações de execução do fluxo de eventos realmente impedem o salvamento depois da importação.
 - Os modelos aprovados aceitam o link como parâmetro de texto.

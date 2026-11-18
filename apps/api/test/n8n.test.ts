@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
@@ -30,7 +31,8 @@ const ENV = {
   WA_TEMPLATE_LATE_CREDIT: "credito_atrasado",
 };
 
-type Sent = { to: string; template: string; params: string[] };
+type Sent = { to: string; template: string; params: string[]; components: { type: string; sub_type?: string; index?: string; parameters: { text: string }[] }[] };
+const FAIL_PHONE = "5511900000999";
 
 /** Executa um Code node como o n8n: `this.helpers`, `$env`, `$input`, `$getWorkflowStaticData`, `require`. */
 function harness(onlySchool: string) {
@@ -44,7 +46,9 @@ function harness(onlySchool: string) {
           to: msg.to,
           template: msg.template.name,
           params: msg.template.components[0].parameters.map((p: { text: string }) => p.text),
+          components: msg.template.components,
         });
+        if (msg.to === FAIL_PHONE) return { statusCode: 400, body: JSON.stringify({ error: { code: 131026 } }), headers: {} };
         return { statusCode: 200, body: JSON.stringify({ messages: [{ id: `wamid.${whatsapp.length}` }] }), headers: {} };
       }
       const path = o.url.slice(ENV.APP_LANCHE_API_URL.length);
@@ -83,7 +87,7 @@ describe("n8n workflows", () => {
   it("sends reminders once and records deliveries", async () => {
     const schoolId = await createSchool();
     const fam = await seedFamily(schoolId, ["Léo", "Bia"]);
-    const day = await seedServiceDay(schoolId, { serviceDate: "2031-09-01", cutoffInMinutes: 60 });
+    await seedServiceDay(schoolId, { serviceDate: "2031-09-01", cutoffInMinutes: 60 });
     const h = harness(schoolId);
     const out = await h.run(code("schedule.json", "Run due actions"));
     expect(out).toEqual([{ json: expect.objectContaining({ action: "send_reminders", school_id: schoolId, ok: true, sent: 1, failed: 0 }) }]);
@@ -101,7 +105,6 @@ describe("n8n workflows", () => {
     const third = await h.run(code("schedule.json", "Run due actions"));
     expect(third).toEqual([{ json: { idle: true } }]);
     expect(h.whatsapp).toHaveLength(1);
-    expect(day.serviceDate).toBe("2031-09-01");
   });
 
   it("closes the day and sends the kitchen summary", async () => {
@@ -111,9 +114,24 @@ describe("n8n workflows", () => {
     const h = harness(schoolId);
     const out = await h.run(code("schedule.json", "Run due actions"));
     expect(out[0]!.json).toMatchObject({ action: "close_service_day", ok: true, closed: true, kitchen_notified: true });
-    expect(h.whatsapp).toEqual([{ to: "5511988880000", template: "resumo_cozinha", params: ["02/09", "0", "nenhum item"] }]);
+    expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511988880000", template: "resumo_cozinha", params: ["02/09", "0", "nenhum item"] })]);
     const day = await adminDb().selectFrom("serviceDays").select("status").where("schoolId", "=", schoolId).where("serviceDate", "=", "2031-09-02").executeTakeFirstOrThrow();
     expect(day.status).toBe("closed");
+  });
+
+  it("records a failed delivery when WhatsApp rejects the number", async () => {
+    const schoolId = await createSchool();
+    const ok = await seedFamily(schoolId, ["Léo"]);
+    const bad = await seedFamily(schoolId, ["Bia"]);
+    await adminDb().updateTable("guardians").set({ phoneE164: `+${FAIL_PHONE}` }).where("id", "=", bad.guardianId).execute();
+    await seedServiceDay(schoolId, { serviceDate: "2031-09-05", cutoffInMinutes: 60 });
+    const h = harness(schoolId);
+    const out = await h.run(code("schedule.json", "Run due actions"));
+    expect(out).toEqual([{ json: expect.objectContaining({ action: "send_reminders", ok: true, sent: 1, failed: 1 }) }]);
+    const rows = await adminDb().selectFrom("messageDeliveries").select(["guardianId", "status", "error"]).where("schoolId", "=", schoolId).execute();
+    expect(rows.find((r) => r.guardianId === ok.guardianId)?.status).toBe("sent");
+    expect(rows.find((r) => r.guardianId === bad.guardianId)).toMatchObject({ status: "failed", error: "invalid_number" });
+    expect(rows).toHaveLength(2);
   });
 
   describe("events", () => {
@@ -147,7 +165,8 @@ describe("n8n workflows", () => {
       const input = { json: { headers: req.headers } };
       const out = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(out).toEqual([{ json: { ok: true, type: "auth.otp_requested", email: null } }]);
-      expect(h.whatsapp).toEqual([{ to: "5511999990001", template: "codigo_acesso", params: ["123456"] }]);
+      expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511999990001", template: "codigo_acesso", params: ["123456"] })]);
+      expect(h.whatsapp[0]!.components[1]).toEqual({ type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "123456" }] });
       const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(dup[0]!.json).toMatchObject({ duplicate: true });
       expect(h.whatsapp).toHaveLength(1);
@@ -158,6 +177,16 @@ describe("n8n workflows", () => {
       const h = harness(crypto.randomUUID());
       await expect(
         h.run(code("events.json", "Verify and send"), { input: { json: { headers: req.headers } }, raw: req.body.replace('"orders":1', '"orders":2') }),
+      ).rejects.toThrow("invalid signature");
+    });
+
+    it("rejects a stale timestamp even with a valid signature", async () => {
+      const req = await withN8n(async () => signedEventRequest(envelope(crypto.randomUUID(), "service_day.closed", { service_date: "2031-09-03", orders: 1, late_credits: 0 })));
+      const timestamp = new Date(Date.now() - 10 * 60_000).toISOString();
+      const signature = createHmac("sha256", ENV.APP_LANCHE_EVENTS_SECRET).update(`POST\n${ENV.APP_LANCHE_EVENTS_PATH}\n${timestamp}\n${req.body}`).digest("hex");
+      const h = harness(crypto.randomUUID());
+      await expect(
+        h.run(code("events.json", "Verify and send"), { input: { json: { headers: { ...req.headers, "x-timestamp": timestamp, "x-signature": signature } } }, raw: req.body }),
       ).rejects.toThrow("invalid signature");
     });
 
@@ -173,7 +202,7 @@ describe("n8n workflows", () => {
         signedEventRequest(envelope(crypto.randomUUID(), "payment.confirmed", { guardian_id: crypto.randomUUID(), phone: "+5511999990002", first_name: "Ana", checkout_id: crypto.randomUUID(), service_date: "2031-09-04", students: ["Léo", "Bia"], total_cents: 123456 })),
       );
       await h.run(code("events.json", "Verify and send"), { input: { json: { headers: payReq.headers } }, raw: payReq.body });
-      expect(h.whatsapp).toEqual([{ to: "5511999990002", template: "pedido_confirmado", params: ["Ana", "Léo e Bia", "04/09", "R$ 1.234,56"] }]);
+      expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511999990002", template: "pedido_confirmado", params: ["Ana", "Léo e Bia", "04/09", "R$ 1.234,56"] })]);
     });
   });
 });
