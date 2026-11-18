@@ -29,6 +29,9 @@ const Env = z.object({
       }
     }),
   ENABLE_FAKE_PAYMENTS: z.enum(["true", "false"]).default("false"),
+  JOBS_TOKEN: secret,
+  N8N_EVENTS_URL: z.url().optional(),
+  N8N_HMAC_SECRET: secret.optional(),
 });
 
 export interface Config {
@@ -41,6 +44,9 @@ export interface Config {
   fakePaymentsEnabled: boolean;
   efiEnv: "production" | "homologacao";
   efiPlatformAccount: { documentType: "cpf" | "cnpj"; document: string; account: string } | null;
+  jobsToken: string;
+  n8nEventsUrl: string | null;
+  n8nHmacSecret: string | null;
 }
 
 let cached: Config | undefined;
@@ -56,6 +62,9 @@ export function config(): Config {
   const env = parsed.data;
   if (env.PAYMENT_PROVIDER === "fake" && env.ENABLE_FAKE_PAYMENTS !== "true") {
     throw new Error("invalid environment: PAYMENT_PROVIDER");
+  }
+  if ((env.N8N_EVENTS_URL === undefined) !== (env.N8N_HMAC_SECRET === undefined)) {
+    throw new Error("invalid environment: N8N_EVENTS_URL, N8N_HMAC_SECRET");
   }
   cached = {
     databaseUrl: env.DATABASE_URL,
@@ -73,6 +82,9 @@ export function config(): Config {
           account: env.EFI_PLATFORM_ACCOUNT.account,
         }
       : null,
+    jobsToken: env.JOBS_TOKEN,
+    n8nEventsUrl: env.N8N_EVENTS_URL ?? null,
+    n8nHmacSecret: env.N8N_HMAC_SECRET ?? null,
   };
   return cached;
 }

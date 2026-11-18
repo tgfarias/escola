@@ -7,6 +7,7 @@ const valid = {
   INTERNAL_HMAC_SECRET: "h".repeat(32),
   SESSION_SECRET: "e".repeat(32),
   APP_BASE_URL: "https://app.example.com",
+  JOBS_TOKEN: "j".repeat(32),
 };
 
 describe("config", () => {
@@ -38,7 +39,23 @@ describe("config", () => {
       fakePaymentsEnabled: true,
       efiEnv: "homologacao",
       efiPlatformAccount: null,
+      jobsToken: "j".repeat(32),
+      n8nEventsUrl: null,
+      n8nHmacSecret: null,
     });
+  });
+
+  it("requires JOBS_TOKEN with at least 32 characters", () => {
+    setEnv({ JOBS_TOKEN: "short" });
+    expect(() => config()).toThrow("invalid environment: JOBS_TOKEN");
+  });
+
+  it("requires the n8n URL and secret together", () => {
+    setEnv({ N8N_EVENTS_URL: "https://n8n.example.com/webhook/app-lanche-events" });
+    expect(() => config()).toThrow("invalid environment: N8N_EVENTS_URL, N8N_HMAC_SECRET");
+    resetConfigForTests();
+    setEnv({ N8N_EVENTS_URL: "https://n8n.example.com/webhook/app-lanche-events", N8N_HMAC_SECRET: "n".repeat(32) });
+    expect(config()).toMatchObject({ n8nEventsUrl: "https://n8n.example.com/webhook/app-lanche-events", n8nHmacSecret: "n".repeat(32) });
   });
 
   it("refuses the fake payment provider unless ENABLE_FAKE_PAYMENTS is true", () => {

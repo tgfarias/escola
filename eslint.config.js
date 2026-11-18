@@ -12,6 +12,7 @@ export default tseslint.config(
       "apps/api/src/db/**",
       "apps/api/src/modules/auth/repo.ts",
       "apps/api/src/modules/serviceDays/repo.ts",
+      "apps/api/src/modules/outbox/repo.ts",
       "**/*.test.ts",
       "apps/api/test/**",
     ],
