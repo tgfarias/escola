@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { decodeJwt } from "jose";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, seedTenant, staffCookie } from "../../../test/helpers";
 import { buildApp } from "../../app";
@@ -35,7 +36,10 @@ describe("kitchen pairing", () => {
     const paired = await app.inject({ method: "POST", url: "/api/kds/v1/pair", headers: ORIGIN, payload: { code: code.toLowerCase() } });
     expect(paired.statusCode).toBe(200);
     expect(paired.json()).toEqual({ deviceId });
-    expect(paired.cookies.find((c) => c.name === SESSION_COOKIE)?.maxAge).toBe(30 * 24 * 60 * 60);
+    const kitchenCookie = paired.cookies.find((c) => c.name === SESSION_COOKIE)!;
+    expect(kitchenCookie.maxAge).toBe((30 + 90) * 86400);
+    const jwt = decodeJwt(kitchenCookie.value);
+    expect(jwt.exp! - jwt.iat!).toBe(30 * 86400);
     const after = await adminDb().selectFrom("devices").select(["pairingCodeHash", "pairingExpiresAt"]).where("id", "=", deviceId).executeTakeFirstOrThrow();
     expect(after).toEqual({ pairingCodeHash: null, pairingExpiresAt: null });
 

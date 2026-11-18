@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { RouteAuth } from "../../app";
 import { idempotencyKeyFrom } from "../../platform/idempotency";
-import { issueSession, KITCHEN_SESSION_TTL } from "../../platform/session";
+import { issueSession, KITCHEN_GRACE_SECONDS, KITCHEN_SESSION_TTL } from "../../platform/session";
 import * as serviceDays from "../serviceDays/service";
 import * as service from "./service";
 
@@ -16,9 +16,14 @@ const ChangesQuery = z.object({
   since: z.string().min(1).max(64).regex(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)$/).optional(),
 });
 
-/** Toda resposta ao tablet renova a sessão por mais 30 dias (spec 4.3). */
+/**
+ * Toda resposta ao tablet renova a sessão por mais 30 dias (spec 4.3). O cookie dura 30 + 90 dias para que o
+ * navegador ainda o envie durante a carência de um tablet que ficou offline (spec 7.3, item 6).
+ */
 export async function renewKitchen(reply: FastifyReply, schoolId: string, deviceId: string): Promise<void> {
-  await issueSession(reply, { kind: "kitchen", sub: deviceId, schoolId }, KITCHEN_SESSION_TTL);
+  await issueSession(reply, { kind: "kitchen", sub: deviceId, schoolId }, KITCHEN_SESSION_TTL, {
+    cookieMaxAge: KITCHEN_SESSION_TTL + KITCHEN_GRACE_SECONDS,
+  });
 }
 
 export async function kdsRoutes(app: FastifyInstance): Promise<void> {

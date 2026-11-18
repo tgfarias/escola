@@ -79,6 +79,7 @@ export async function issueSession(
   reply: FastifyReply,
   claims: SessionClaims,
   ttlSeconds: number,
+  opts: { cookieMaxAge?: number } = {},
 ): Promise<void> {
   const token = await signToken("session", claims, ttlSeconds);
   reply.setCookie(SESSION_COOKIE, token, {
@@ -86,7 +87,7 @@ export async function issueSession(
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: ttlSeconds,
+    maxAge: opts.cookieMaxAge ?? ttlSeconds,
   });
 }
 

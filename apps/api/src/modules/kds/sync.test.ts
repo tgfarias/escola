@@ -29,7 +29,7 @@ describe("kds manifest", () => {
     await closeServiceDay(schoolId, "2031-11-03", { log, reconcile: false });
     const closed = await app.inject({ method: "GET", url: "/api/kds/v1/manifest/2031-11-03", cookies });
     expect(closed.json()).toMatchObject({ status: "closed", manifestVersion: 1 });
-    expect(closed.cookies.find((c) => c.name === SESSION_COOKIE)?.maxAge).toBe(30 * 24 * 60 * 60);
+    expect(closed.cookies.find((c) => c.name === SESSION_COOKIE)?.maxAge).toBe((30 + 90) * 86400);
   });
 
   it("answers 404 for a day without service", async () => {
