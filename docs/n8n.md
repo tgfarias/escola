@@ -17,7 +17,7 @@ O n8n roda em VPS externa e fala com a API por REST + HMAC (spec 6). Há dois fl
 | `APP_LANCHE_SERVICE_TOKEN` | igual a `INTERNAL_SERVICE_TOKEN` da API |
 | `APP_LANCHE_HMAC_SECRET` | igual a `INTERNAL_HMAC_SECRET` da API |
 | `APP_LANCHE_EVENTS_SECRET` | igual a `N8N_HMAC_SECRET` da API |
-| `APP_LANCHE_EVENTS_PATH` | `pathname` de `N8N_EVENTS_URL`, ex. `/webhook/app-lanche-events` |
+| `APP_LANCHE_EVENTS_PATH` | caminho **mais a query string** de `N8N_EVENTS_URL` (exatamente o que a API assina), ex. `/webhook/app-lanche-events` ou `/webhook/app-lanche-events?x=1` |
 | `WHATSAPP_TOKEN` | token da WhatsApp Cloud API |
 | `WHATSAPP_PHONE_NUMBER_ID` | id do número remetente |
 | `WHATSAPP_API_VERSION` | opcional, padrão `v21.0` |

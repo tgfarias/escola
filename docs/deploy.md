@@ -12,10 +12,12 @@ pela PWA responde 403 `origin_rejected`.
 
 ## Segredos (Secret Manager)
 
-`DATABASE_URL` (usuário `app_user`), `INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET`, `SESSION_SECRET`.
+`DATABASE_URL` (usuário `app_user`), `INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET`, `SESSION_SECRET`,
+`JOBS_TOKEN`, `N8N_EVENTS_URL`, `N8N_HMAC_SECRET` (os três últimos descritos em "Jobs e n8n").
 
-`INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET` e `SESSION_SECRET` devem ter no mínimo 32 caracteres
+`INTERNAL_SERVICE_TOKEN`, `INTERNAL_HMAC_SECRET`, `SESSION_SECRET` e `JOBS_TOKEN` devem ter no mínimo 32 caracteres
 (por exemplo `openssl rand -hex 32`); a API recusa iniciar com valores mais curtos ou ausentes.
+`N8N_HMAC_SECRET` segue a mesma regra de tamanho quando presente.
 
 ## Migrações
 
@@ -45,7 +47,7 @@ gcloud builds submit --project "$GCP_PROJECT" --tag "$IMAGE" --dockerfile apps/a
 gcloud run deploy app-lanche-api --project "$GCP_PROJECT" --region southamerica-east1 \
   --image "$IMAGE" \
   --add-cloudsql-instances "$SQL_INSTANCE" \
-  --set-secrets DATABASE_URL=DATABASE_URL:latest,INTERNAL_SERVICE_TOKEN=INTERNAL_SERVICE_TOKEN:latest,INTERNAL_HMAC_SECRET=INTERNAL_HMAC_SECRET:latest,SESSION_SECRET=SESSION_SECRET:latest \
+  --set-secrets DATABASE_URL=DATABASE_URL:latest,INTERNAL_SERVICE_TOKEN=INTERNAL_SERVICE_TOKEN:latest,INTERNAL_HMAC_SECRET=INTERNAL_HMAC_SECRET:latest,SESSION_SECRET=SESSION_SECRET:latest,JOBS_TOKEN=JOBS_TOKEN:latest,N8N_EVENTS_URL=N8N_EVENTS_URL:latest,N8N_HMAC_SECRET=N8N_HMAC_SECRET:latest \
   --set-env-vars APP_BASE_URL=https://<dominio>,DB_POOL_MAX=5 \
   --concurrency 80 --max-instances 5 --allow-unauthenticated
 ```
@@ -127,7 +129,15 @@ Cloud Scheduler (região `southamerica-east1`, fuso `America/Sao_Paulo`), alvo H
 gcloud scheduler jobs create http outbox-dispatch --schedule="* * * * *" \
   --uri="$RUN_URL/jobs/v1/outbox/dispatch" --http-method=POST \
   --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
+gcloud scheduler jobs create http safety-close --schedule="*/5 * * * *" \
+  --uri="$RUN_URL/jobs/v1/service-days/safety-close" --http-method=POST \
+  --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
 ```
+
+Disparo imediato da outbox: depois do commit, a API envia os eventos da escola sem esperar o job,
+mas esse envio roda depois da resposta. Com a limitação de CPU padrão do Cloud Run, ele pode ficar
+parado até a próxima requisição à instância; o job de 1 min garante a entrega. Com
+`--no-cpu-throttling` no `gcloud run deploy` o envio é imediato, a um custo maior.
 
 ## Web
 

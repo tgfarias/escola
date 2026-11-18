@@ -44,7 +44,7 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 ```
 
 - Rotas `/api/**` são acessadas pelo navegador via Hosting.
-- Rotas `/internal/v1/**` e `/webhooks/**` são acessadas pela URL do Cloud Run, sem passar pelo Hosting.
+- Rotas `/internal/v1/**`, `/jobs/v1/**` e `/webhooks/**` são acessadas pela URL do Cloud Run, sem passar pelo Hosting.
 - Toda resposta de `/api/**` leva `Cache-Control: private, no-store`.
 
 ## 4. Autenticação e multi-tenant
@@ -87,11 +87,12 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 - O papel de banco da aplicação não tem `BYPASSRLS` nem é dono das tabelas. Migrações usam outro papel.
 - Chaves estrangeiras entre tabelas de tenant são compostas `(school_id, id)`.
 - Jobs que percorrem várias escolas iteram escola a escola, cada uma em seu `withTenant`.
-- Antes de existir sessão, o tenant ainda é desconhecido. Só quatro funções `SECURITY DEFINER` consultam sem tenant, cada uma devolvendo o mínimo necessário para então abrir o `withTenant`:
+- Antes de existir sessão, o tenant ainda é desconhecido. Só estas funções `SECURITY DEFINER` consultam sem tenant, cada uma devolvendo o mínimo necessário para então abrir o `withTenant`:
   - `resolve_magic_link(token_hash)` → `school_id`, `magic_link_id`;
   - `resolve_pairing_code(code_hash)` → `school_id`, `device_id`;
   - `resolve_staff_email(email)` → `school_id`, `staff_user_id`;
-  - `list_due_actions(now)` → escolas e datas com lembrete ou fechamento vencido.
+  - `list_due_actions()` (sem parâmetro, relógio do banco) → ação, escola, data e se o fechamento está atrasado;
+  - `list_schools_with_pending_events()` → escolas com eventos prontos (dispatcher, seção 6.3).
 - O webhook de pagamento não precisa de resolução: cada subconta é configurada com a URL `/webhooks/payments/:provider/:school_id` e um token próprio, validado contra o segredo daquela escola.
 - Objetos no Cloud Storage ficam em `schools/<school_id>/…`; o download é sempre por URL assinada de 5 min emitida após checar a sessão.
 

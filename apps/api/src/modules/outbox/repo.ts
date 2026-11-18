@@ -19,6 +19,7 @@ const ABANDON_EXPR = sql`coalesce(
 
 /** Escolas com eventos prontos (função SECURITY DEFINER, spec 6.3). */
 export async function listSchoolsWithPendingEvents(): Promise<string[]> {
+  // getDb() só para a chamada da função SECURITY DEFINER; todo o resto usa withTenant.
   const { rows } = await sql<{ schoolId: string }>`SELECT school_id FROM list_schools_with_pending_events()`.execute(getDb());
   return rows.map((r) => r.schoolId);
 }

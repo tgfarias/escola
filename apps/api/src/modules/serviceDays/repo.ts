@@ -51,6 +51,7 @@ export async function kitchenPhone(trx: Trx): Promise<string | null> {
 
 /** Agenda de todas as escolas (função SECURITY DEFINER, spec 4.4). */
 export async function listDueActions() {
+  // getDb() só para a chamada da função SECURITY DEFINER; todo o resto usa withTenant.
   const { rows } = await sql<{
     action: "send_reminders" | "close_service_day";
     schoolId: string;
