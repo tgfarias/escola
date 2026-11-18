@@ -20,7 +20,8 @@ export async function batchExists(trx: Trx, batchId: string): Promise<boolean> {
 
 /**
  * Responsáveis com ao menos um filho ativo sem pedido confirmado/entregue na data, que ainda não
- * constam como `sent` ou `failed` no lote; ordenados por id a partir do cursor. Traz `limit + 1` para saber se há próxima página.
+ * constam como `sent` ou `failed` no lote nem como `prepared` há menos de 15 min (arrendamento de
+ * uma execução anterior do n8n); ordenados por id a partir do cursor. Traz `limit + 1` para saber se há próxima página.
  */
 export async function candidates(trx: Trx, input: { batchId: string; serviceDate: string; cursor: string | null; limit: number }) {
   const { rows } = await sql<{ guardianId: string; phone: string; firstName: string; students: string[] }>`
@@ -37,7 +38,8 @@ export async function candidates(trx: Trx, input: { batchId: string; serviceDate
     WHERE (${input.cursor}::uuid IS NULL OR g.id > ${input.cursor}::uuid)
       AND NOT EXISTS (
         SELECT 1 FROM message_deliveries md
-        WHERE md.batch_id = ${input.batchId}::uuid AND md.guardian_id = g.id AND md.status IN ('sent', 'failed'))
+        WHERE md.batch_id = ${input.batchId}::uuid AND md.guardian_id = g.id
+          AND (md.status IN ('sent', 'failed') OR (md.status = 'prepared' AND md.updated_at > now() - interval '15 minutes')))
     GROUP BY g.id
     HAVING bool_or(o.ordered IS NULL)
     ORDER BY g.id
@@ -45,13 +47,26 @@ export async function candidates(trx: Trx, input: { batchId: string; serviceDate
   return rows;
 }
 
+/** Arrenda os responsáveis da página por 15 min; um `prepared` com arrendamento vencido é renovado. */
 export async function markPrepared(trx: Trx, schoolId: string, batchId: string, guardianIds: string[]): Promise<void> {
   if (guardianIds.length === 0) return;
   await trx
     .insertInto("messageDeliveries")
     .values(guardianIds.map((guardianId) => ({ id: uuidv7(), schoolId, batchId, guardianId })))
-    .onConflict((oc) => oc.columns(["schoolId", "batchId", "guardianId"]).doNothing())
+    .onConflict((oc) =>
+      oc
+        .columns(["schoolId", "batchId", "guardianId"])
+        .doUpdateSet({ updatedAt: sql`now()` })
+        .where("messageDeliveries.status", "=", "prepared")
+        .where("messageDeliveries.updatedAt", "<=", sql<Date>`now() - interval '15 minutes'`),
+    )
     .execute();
+}
+
+/** Há responsável entregue ao n8n ainda sem resultado no lote? */
+export async function hasPrepared(trx: Trx, batchId: string): Promise<boolean> {
+  const row = await trx.selectFrom("messageDeliveries").select("id").where("batchId", "=", batchId).where("status", "=", "prepared").limit(1).executeTakeFirst();
+  return row !== undefined;
 }
 
 export async function completeBatch(trx: Trx, batchId: string): Promise<void> {

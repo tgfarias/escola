@@ -244,7 +244,7 @@ Erros seguem `{ "error": { "code": "…", "message": "…" } }` com códigos est
   ] }
 ```
 
-Páginas de até 200 destinatários. Responsáveis que já têm pedido confirmado para todos os filhos naquela data não entram. Repetir a chamada para o mesmo lote não reenvia quem já consta como `sent` em `message_deliveries`.
+Páginas de até 200 destinatários. Responsáveis que já têm pedido confirmado para todos os filhos naquela data não entram. Repetir a chamada para o mesmo lote não reenvia quem já consta como `sent` em `message_deliveries`. Um responsável entregue ao n8n e ainda sem resultado (`prepared`) só volta a uma página 15 min depois, para que execuções sobrepostas não repitam a mensagem; o lote só é concluído quando não resta ninguém a lembrar nem resultado pendente.
 
 **`POST /internal/v1/schools/{school_id}/reminders/{batch_id}/deliveries`**
 

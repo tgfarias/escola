@@ -45,15 +45,37 @@ describe("reminders", () => {
     expect(done.completedAt).not.toBeNull();
   });
 
-  it("redoes guardians handed out but never reported", async () => {
+  it("does not hand out a guardian again while a previous run holds it", async () => {
     const schoolId = await createSchool();
-    const fam = await seedFamily(schoolId, ["Léo"]);
+    await seedFamily(schoolId, ["Léo"]);
     const day = await seedServiceDay(schoolId, { serviceDate: "2031-05-15", cutoffInMinutes: 60 });
     const app = buildApp();
     const first = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(first.recipients).toHaveLength(1);
+    const second = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(second).toEqual({ batch_id: first.batch_id, next_cursor: null, recipients: [] });
+    const batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    expect(batch.completedAt).toBeNull();
+  });
+
+  it("hands out again after the 15-minute lease expires", async () => {
+    const schoolId = await createSchool();
+    const fam = await seedFamily(schoolId, ["Léo"]);
+    const day = await seedServiceDay(schoolId, { serviceDate: "2031-05-16", cutoffInMinutes: 60 });
+    const app = buildApp();
+    const first = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    await adminDb()
+      .updateTable("messageDeliveries")
+      .set({ updatedAt: sql`now() - interval '16 minutes'` })
+      .where("batchId", "=", first.batch_id)
+      .where("guardianId", "=", fam.guardianId)
+      .execute();
     const second = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
     expect(second.batch_id).toBe(first.batch_id);
     expect(second.recipients.map((r: { guardian_id: string }) => r.guardian_id)).toEqual([fam.guardianId]);
+    // O novo arrendamento vale de novo por 15 min.
+    const third = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
+    expect(third.recipients).toEqual([]);
     const batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
     expect(batch.completedAt).toBeNull();
   });
@@ -100,8 +122,7 @@ describe("reminders", () => {
     batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
     expect(batch.completedAt).toBeNull();
     const third = (await app.inject(prepare(schoolId, { service_date: day.serviceDate, cursor: null }))).json();
-    expect(third.batch_id).toBe(first.batch_id);
-    expect(third.recipients).toHaveLength(200);
+    expect(third).toEqual({ batch_id: first.batch_id, next_cursor: null, recipients: [] });
     batch = await adminDb().selectFrom("reminderBatches").select("completedAt").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
     expect(batch.completedAt).toBeNull();
   }, 60_000);
