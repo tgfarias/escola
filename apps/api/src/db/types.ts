@@ -116,6 +116,17 @@ export interface MenuItems {
   schoolId: string;
 }
 
+export interface MessageDeliveries {
+  batchId: string;
+  error: string | null;
+  guardianId: string;
+  id: string;
+  schoolId: string;
+  status: Generated<string>;
+  updatedAt: Generated<Timestamp>;
+  waMessageId: string | null;
+}
+
 export interface OrderItems {
   id: string;
   menuItemId: string;
@@ -151,6 +162,7 @@ export interface OutboxEvents {
   attempts: Generated<number>;
   data: Json;
   deliveredAt: Timestamp | null;
+  failedAt: Timestamp | null;
   id: string;
   nextAttemptAt: Generated<Timestamp>;
   occurredAt: Generated<Timestamp>;
@@ -184,6 +196,14 @@ export interface Payments {
   status: Generated<string>;
 }
 
+export interface ReminderBatches {
+  completedAt: Timestamp | null;
+  createdAt: Generated<Timestamp>;
+  id: string;
+  schoolId: string;
+  serviceDate: string;
+}
+
 export interface SchemaMigrations {
   appliedAt: Generated<Timestamp>;
   name: string;
@@ -198,6 +218,7 @@ export interface Schools {
   paymentAccountRef: string | null;
   paymentWebhookSecretRef: string | null;
   platformFeeBps: Generated<number>;
+  reminderLeadMinutes: Generated<number>;
   timezone: Generated<string>;
 }
 
@@ -271,12 +292,14 @@ export interface DB {
   magicLinks: MagicLinks;
   manifests: Manifests;
   menuItems: MenuItems;
+  messageDeliveries: MessageDeliveries;
   orderItems: OrderItems;
   orders: Orders;
   otpChallenges: OtpChallenges;
   outboxEvents: OutboxEvents;
   paymentEvents: PaymentEvents;
   payments: Payments;
+  reminderBatches: ReminderBatches;
   schemaMigrations: SchemaMigrations;
   schools: Schools;
   serviceDayItems: ServiceDayItems;

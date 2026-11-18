@@ -42,6 +42,7 @@ export type SeedIds = {
   checkoutId: string;
   orderId: string;
   paymentId: string;
+  reminderBatchId: string;
 };
 
 /** Insere uma linha em cada tabela de tenant. Estenda quando criar tabela nova. */
@@ -61,6 +62,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     checkoutId: uuidv7(),
     orderId: uuidv7(),
     paymentId: uuidv7(),
+    reminderBatchId: uuidv7(),
   };
   await db.insertInto("classes").values({ id: ids.classId, schoolId, name: "Infantil 3A" }).execute();
   await db
@@ -200,6 +202,14 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
   await db
     .insertInto("idempotencyKeys")
     .values({ schoolId, key: `seed-${uuidv7()}`, requestHash: "seed", response: JSON.stringify({}) })
+    .execute();
+  await db
+    .insertInto("reminderBatches")
+    .values({ id: ids.reminderBatchId, schoolId, serviceDate: ids.serviceDate, completedAt: new Date() })
+    .execute();
+  await db
+    .insertInto("messageDeliveries")
+    .values({ id: uuidv7(), schoolId, batchId: ids.reminderBatchId, guardianId: ids.guardianId, status: "sent", waMessageId: "wamid.seed" })
     .execute();
   return ids;
 }
