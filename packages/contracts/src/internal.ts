@@ -27,3 +27,36 @@ export const ScheduleDueResponse = z.object({
   due: z.array(z.object({ action: DueActionName, school_id: Uuid, service_date: IsoDate })),
 });
 export type ScheduleDueResponse = z.infer<typeof ScheduleDueResponse>;
+
+/** POST /internal/v1/schools/{school_id}/reminders/prepare */
+export const RemindersPrepareRequest = z.object({ service_date: IsoDate, cursor: Uuid.nullable() }).strict();
+export type RemindersPrepareRequest = z.infer<typeof RemindersPrepareRequest>;
+
+export const ReminderRecipient = z.object({
+  guardian_id: Uuid,
+  phone: z.string(),
+  first_name: z.string(),
+  students: z.array(z.string()).min(1),
+  link_url: z.string().url(),
+  wallet_balance_cents: z.number().int().nonnegative(),
+  cutoff_at: IsoDateTime,
+  cutoff_local_time: z.string().regex(/^\d{2}:\d{2}$/),
+});
+export type ReminderRecipient = z.infer<typeof ReminderRecipient>;
+
+export const RemindersPrepareResponse = z.object({
+  batch_id: Uuid,
+  next_cursor: Uuid.nullable(),
+  recipients: z.array(ReminderRecipient).max(200),
+});
+export type RemindersPrepareResponse = z.infer<typeof RemindersPrepareResponse>;
+
+/** POST /internal/v1/schools/{school_id}/reminders/{batch_id}/deliveries → 204 */
+export const DeliveryResult = z.discriminatedUnion("status", [
+  z.object({ guardian_id: Uuid, status: z.literal("sent"), wa_message_id: z.string().min(1).max(200) }).strict(),
+  z.object({ guardian_id: Uuid, status: z.literal("failed"), error: z.string().regex(/^[a-z0-9_]{1,64}$/) }).strict(),
+]);
+export type DeliveryResult = z.infer<typeof DeliveryResult>;
+
+export const DeliveriesRequest = z.object({ results: z.array(DeliveryResult).min(1).max(200) }).strict();
+export type DeliveriesRequest = z.infer<typeof DeliveriesRequest>;

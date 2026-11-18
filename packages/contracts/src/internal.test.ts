@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { InternalMagicLinkRequest, InternalMagicLinkResponse, ScheduleDueResponse } from "./internal";
+import {
+  DeliveriesRequest,
+  InternalMagicLinkRequest,
+  InternalMagicLinkResponse,
+  RemindersPrepareRequest,
+  RemindersPrepareResponse,
+  ScheduleDueResponse,
+} from "./internal";
 
 const G = "0193a3b0-0000-7000-8000-000000000001";
 
@@ -25,5 +32,38 @@ describe("internal contracts", () => {
       ],
     };
     expect(ScheduleDueResponse.parse(example)).toEqual(example);
+  });
+
+  it("accepts the reminder examples from spec 6.2", () => {
+    const req = { service_date: "2026-11-17", cursor: null };
+    expect(RemindersPrepareRequest.parse(req)).toEqual(req);
+    const res = {
+      batch_id: G,
+      next_cursor: null,
+      recipients: [
+        {
+          guardian_id: G,
+          phone: "+5511999990000",
+          first_name: "Ana",
+          students: ["Léo", "Bia"],
+          link_url: "https://app.example/l#Zk3",
+          wallet_balance_cents: 1200,
+          cutoff_at: "2026-11-17T07:30:00-03:00",
+          cutoff_local_time: "07:30",
+        },
+      ],
+    };
+    expect(RemindersPrepareResponse.parse(res)).toEqual(res);
+    const deliveries = {
+      results: [
+        { guardian_id: G, status: "sent", wa_message_id: "wamid.X" },
+        { guardian_id: G, status: "failed", error: "invalid_number" },
+      ],
+    };
+    expect(DeliveriesRequest.parse(deliveries)).toEqual(deliveries);
+  });
+
+  it("rejects a free-text delivery error", () => {
+    expect(() => DeliveriesRequest.parse({ results: [{ guardian_id: G, status: "failed", error: "Número inválido +55" }] })).toThrow();
   });
 });
