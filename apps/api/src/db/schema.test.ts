@@ -163,3 +163,61 @@ describe("F3 schema", () => {
     expect(ids).not.toContain(done);
   });
 });
+
+describe("F4 schema", () => {
+  it("pins resolve_pairing_code and keeps it away from PUBLIC", async () => {
+    const { rows } = await sql<{ proconfig: string[]; prosecdef: boolean; publicExec: boolean }>`
+      SELECT proconfig, prosecdef, has_function_privilege('public', oid, 'EXECUTE') AS public_exec
+      FROM pg_proc WHERE proname = 'resolve_pairing_code'`.execute(adminDb());
+    expect(rows).toEqual([{ proconfig: ["search_path=pg_catalog, public, pg_temp"], prosecdef: true, publicExec: false }]);
+  });
+
+  it("makes delivery events append-only for the application", async () => {
+    const { rows } = await sql<{ update: boolean; del: boolean; ins: boolean }>`
+      SELECT has_table_privilege('app_user', 'delivery_events', 'UPDATE') AS update,
+             has_table_privilege('app_user', 'delivery_events', 'DELETE') AS del,
+             has_table_privilege('app_user', 'delivery_events', 'INSERT') AS ins`.execute(adminDb());
+    expect(rows[0]).toEqual({ update: false, del: false, ins: true });
+  });
+
+  it("keeps a pairing code unique while it is set", async () => {
+    const schoolId = await createSchool();
+    const insert = () =>
+      adminDb()
+        .insertInto("devices")
+        .values({ id: uuidv7(), schoolId, kind: "kitchen", pairingCodeHash: "same-hash", pairingExpiresAt: new Date(Date.now() + 60_000) })
+        .execute();
+    await insert();
+    await expect(insert()).rejects.toThrow(/devices_pairing_code/);
+  });
+
+  it("resolves a pairing code hash to its school and device, only while unexpired", async () => {
+    const schoolId = await createSchool();
+    const live = uuidv7();
+    const dead = uuidv7();
+    await adminDb()
+      .insertInto("devices")
+      .values([
+        { id: live, schoolId, kind: "kitchen", pairingCodeHash: `live-${live}`, pairingExpiresAt: sql`now() + interval '5 minutes'` },
+        { id: dead, schoolId, kind: "kitchen", pairingCodeHash: `dead-${dead}`, pairingExpiresAt: sql`now() - interval '1 second'` },
+      ])
+      .execute();
+    const resolve = async (hash: string) =>
+      (await sql<{ schoolId: string; deviceId: string }>`SELECT school_id, device_id FROM resolve_pairing_code(${hash})`.execute(getDb())).rows;
+    expect(await resolve(`live-${live}`)).toEqual([{ schoolId, deviceId: live }]);
+    expect(await resolve(`dead-${dead}`)).toEqual([]);
+  });
+
+  it("refuses a delivery event for an order of another school", async () => {
+    const a = await createSchool();
+    const b = await createSchool();
+    const seedA = await seedTenant(a);
+    const seedB = await seedTenant(b);
+    await expect(
+      adminDb()
+        .insertInto("deliveryEvents")
+        .values({ eventId: uuidv7(), schoolId: a, orderId: seedB.orderId, deviceId: seedA.kitchenDeviceId, type: "delivered", occurredAt: new Date() })
+        .execute(),
+    ).rejects.toThrow(/foreign key/i);
+  });
+});

@@ -51,6 +51,16 @@ export interface Classes {
   schoolId: string;
 }
 
+export interface DeliveryEvents {
+  deviceId: string;
+  eventId: string;
+  occurredAt: Timestamp;
+  orderId: string;
+  receivedAt: Generated<Timestamp>;
+  schoolId: string;
+  type: string;
+}
+
 export interface Devices {
   createdAt: Generated<Timestamp>;
   guardianId: string | null;
@@ -285,6 +295,7 @@ export interface DB {
   auditLog: AuditLog;
   checkouts: Checkouts;
   classes: Classes;
+  deliveryEvents: DeliveryEvents;
   devices: Devices;
   guardians: Guardians;
   guardianStudents: GuardianStudents;

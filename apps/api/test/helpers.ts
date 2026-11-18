@@ -45,6 +45,8 @@ export type SeedIds = {
   orderId: string;
   paymentId: string;
   reminderBatchId: string;
+  kitchenDeviceId: string;
+  deliveryEventId: string;
 };
 
 /** Insere uma linha em cada tabela de tenant. Estenda quando criar tabela nova. */
@@ -65,6 +67,8 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     orderId: uuidv7(),
     paymentId: uuidv7(),
     reminderBatchId: uuidv7(),
+    kitchenDeviceId: uuidv7(),
+    deliveryEventId: uuidv7(),
   };
   await db.insertInto("classes").values({ id: ids.classId, schoolId, name: "Infantil 3A" }).execute();
   await db
@@ -93,7 +97,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .execute();
   await db
     .insertInto("devices")
-    .values({ id: uuidv7(), schoolId, kind: "kitchen" })
+    .values({ id: ids.kitchenDeviceId, schoolId, kind: "kitchen" })
     .execute();
   await db
     .insertInto("magicLinks")
@@ -172,6 +176,17 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
   await db
     .insertInto("orderItems")
     .values({ id: uuidv7(), schoolId, orderId: ids.orderId, menuItemId: ids.menuItemId, qty: 1, unitPriceCents: 900 })
+    .execute();
+  await db
+    .insertInto("deliveryEvents")
+    .values({
+      eventId: ids.deliveryEventId,
+      schoolId,
+      orderId: ids.orderId,
+      deviceId: ids.kitchenDeviceId,
+      type: "delivered",
+      occurredAt: new Date(),
+    })
     .execute();
   await db
     .insertInto("payments")
