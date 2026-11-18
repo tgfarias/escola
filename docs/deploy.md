@@ -151,7 +151,9 @@ firebase deploy --only hosting --project "$GCP_PROJECT"
 - Pareamento: na área admin, "Tablets da cozinha" → "Gerar código de pareamento"; abra `/kds` no tablet e
   digite o código em até 10 minutos. O código vale uma vez só.
 - O tablet deve ser dedicado à cozinha: ele usa o mesmo cookie `__session` da equipe (o Firebase Hosting só
-  repassa esse), então não faça login de equipe no mesmo navegador.
+  repassa esse), então não faça login de equipe no mesmo navegador. Se alguém entrar em `/admin` no tablet, a
+  sessão da cozinha é substituída: o tablet pede um novo código de pareamento e mantém as entregas pendentes,
+  que são enviadas depois do novo pareamento.
 - Instale o `/kds` como PWA ("Adicionar à tela inicial") e abra-o uma vez com rede: o service worker passa a
   servir a tela sem conexão e as entregas ficam no aparelho até sincronizar.
 - Mantenha a página aberta: a tela pede Wake Lock para não apagar.

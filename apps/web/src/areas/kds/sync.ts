@@ -24,7 +24,7 @@ export async function isPaired(): Promise<boolean> {
   return (await getMeta("deviceId")) !== null;
 }
 
-/** True after a 401: the UI asks for a new pairing code and keeps the outbox. */
+/** True after a 401, or a 403 for a non-kitchen session: the UI asks for a new pairing code and keeps the outbox. */
 export async function isAuthLost(): Promise<boolean> {
   return (await getMeta("authLost")) !== null;
 }
@@ -108,7 +108,9 @@ async function round(serviceDate: string): Promise<void> {
   } catch (err) {
     if (err instanceof ApiError) {
       console.warn("kds sync failed", err.status, err.code);
-      if (err.status === 401 && (await stillPaired(deviceId))) await setMeta("authLost", "1");
+      // A staff or guardian session in this browser replaced the kitchen cookie (403 insufficient_scope): same as losing it.
+      const lost = err.status === 401 || (err.status === 403 && err.code === "insufficient_scope");
+      if (lost && (await stillPaired(deviceId))) await setMeta("authLost", "1");
     } else {
       console.warn("kds sync failed", err instanceof Error ? err.name : "unknown");
     }
