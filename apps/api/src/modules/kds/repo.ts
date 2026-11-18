@@ -72,7 +72,7 @@ export async function existingEventIds(trx: Trx, eventIds: string[]): Promise<Se
   return new Set(rows.map((r) => r.eventId));
 }
 
-/** Aplica o evento vencedor (maior occurred_at, empate pelo maior event_id) a cada pedido. */
+/** Aplica o evento vencedor (maior occurred_at, empate pelo maior event_id) a cada pedido. Ordem de uuid = ordem do texto em hex minúsculo, igual à regra do cliente. */
 export async function applyLatestState(trx: Trx, orderIds: string[]): Promise<void> {
   if (orderIds.length === 0) return;
   await sql`
@@ -80,7 +80,7 @@ export async function applyLatestState(trx: Trx, orderIds: string[]): Promise<vo
       SELECT DISTINCT ON (order_id) order_id, type
       FROM delivery_events
       WHERE order_id = ANY(${orderIds}::uuid[])
-      ORDER BY order_id, occurred_at DESC, event_id::text DESC
+      ORDER BY order_id, occurred_at DESC, event_id DESC
     )
     UPDATE orders o SET status = CASE WHEN l.type = 'delivered' THEN 'delivered' ELSE 'confirmed' END
     FROM latest l
@@ -94,7 +94,6 @@ export async function changesSince(trx: Trx, serviceDate: string, since: string 
     FROM delivery_events e JOIN orders o ON o.id = e.order_id
     WHERE o.service_date = ${serviceDate}::date
       AND (${since}::timestamptz IS NULL OR e.received_at > ${since}::timestamptz - interval '1 minute')
-    ORDER BY e.received_at, e.event_id
-    LIMIT 1000`.execute(trx);
+    ORDER BY e.received_at, e.event_id`.execute(trx);
   return rows;
 }

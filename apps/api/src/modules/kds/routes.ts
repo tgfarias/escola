@@ -13,7 +13,7 @@ const DeviceParams = z.object({ id: Uuid });
 const DateParams = z.object({ date: IsoDate });
 const ChangesQuery = z.object({
   date: IsoDate,
-  since: z.string().min(1).max(64).refine((v) => !Number.isNaN(Date.parse(v)), "invalid timestamp").optional(),
+  since: z.string().min(1).max(64).regex(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)$/).optional(),
 });
 
 /** Toda resposta ao tablet renova a sessão por mais 30 dias (spec 4.3). */

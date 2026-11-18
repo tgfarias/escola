@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { adminDb, createSchool, kitchenCookie, seedClosedDayWithOrders, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
@@ -143,7 +144,40 @@ describe("kds events", () => {
     const schoolId = await createSchool();
     await seedTenant(schoolId);
     const { cookies } = await kitchenCookie(schoolId);
-    const res = await buildApp().inject({ method: "GET", url: "/api/kds/v1/changes?date=2031-11-12&since=banana", cookies });
-    expect(res.statusCode).toBe(400);
+    for (const since of ["banana", "1", "foo 2020"]) {
+      const res = await buildApp().inject({ method: "GET", url: `/api/kds/v1/changes?date=2031-11-12&since=${encodeURIComponent(since)}`, cookies });
+      expect(res.statusCode).toBe(400);
+    }
+  });
+
+  it("returns every event of a burst and a cursor equal to its received_at", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const { cookies, deviceId } = await kitchenCookie(schoolId);
+    const { orderIds } = await closedDay(schoolId, "2031-11-13", ["Léo"]);
+    const db = adminDb();
+    const receivedAt = new Date("2031-11-13T10:00:00.123Z");
+    await db
+      .insertInto("deliveryEvents")
+      .values(Array.from({ length: 1001 }, (_, i) => ({ eventId: uuidv7(), schoolId, orderId: orderIds[0]!, deviceId, type: i % 2 ? "undelivered" : "delivered", occurredAt: new Date(receivedAt.getTime() + i), receivedAt })))
+      .execute();
+    const res = await buildApp().inject({ method: "GET", url: "/api/kds/v1/changes?date=2031-11-13", cookies });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().events).toHaveLength(1001);
+    const stored = await db.selectFrom("deliveryEvents").select(sql<string>`received_at::text`.as("r")).where("orderId", "=", orderIds[0]!).limit(1).executeTakeFirstOrThrow();
+    expect(res.json().cursor).toBe(stored.r);
+  });
+
+  it("rejects and does not store an event for a cancelled order", async () => {
+    const schoolId = await createSchool();
+    await seedTenant(schoolId);
+    const { cookies } = await kitchenCookie(schoolId);
+    const { orderIds } = await closedDay(schoolId, "2031-11-14", ["Léo"]);
+    await adminDb().updateTable("orders").set({ status: "cancelled" }).where("id", "=", orderIds[0]!).execute();
+    const e = ev(orderIds[0]!, "delivered", "2031-11-14T10:00:00Z");
+    const res = await buildApp().inject({ method: "POST", url: "/api/kds/v1/events", cookies, payload: { events: [e] } });
+    expect(res.json()).toEqual({ accepted: [], rejected: [e.eventId] });
+    const rows = await adminDb().selectFrom("deliveryEvents").select("eventId").where("eventId", "=", e.eventId).execute();
+    expect(rows).toHaveLength(0);
   });
 });
