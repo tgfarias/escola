@@ -9,8 +9,10 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   const states = useLive(() => kdsDb.orderState.where("serviceDate").equals(serviceDate).toArray(), [serviceDate]);
   const pending = useLive(() => kdsDb.outbox.count(), []);
   const lastSyncAt = useLive(async () => (await kdsDb.meta.get("lastSyncAt"))?.value ?? null, []);
+  const noService = useLive(async () => (await kdsDb.meta.get(`noService:${serviceDate}`)) !== undefined, [serviceDate]);
   const [now, setNow] = useState(() => new Date());
   const [message, setMessage] = useState<string | null>(null);
+  const [tapFailed, setTapFailed] = useState(false);
 
   useEffect(() => sync.start(serviceDate), [serviceDate]);
   useEffect(() => {
@@ -64,6 +66,16 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   const badge = badgeText(pending ?? 0, lastSyncAt ?? null, now);
   const closed = manifest?.status === "closed";
 
+  async function tap(orderId: string, delivered: boolean) {
+    try {
+      await markOrder(orderId, serviceDate, delivered);
+      setTapFailed(false);
+    } catch (err) {
+      console.warn("kds mark failed", err instanceof Error ? err.name : "unknown");
+      setTapFailed(true);
+    }
+  }
+
   async function unpair() {
     if (!(await sync.unpair())) {
       setMessage("Há entregas ainda não sincronizadas. Conecte o tablet à internet e aguarde antes de desparear.");
@@ -78,7 +90,9 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
         <h1>Cozinha — {serviceDate.split("-").reverse().join("/")}</h1>
         <p data-testid="kds-badge" style={{ color: badge.stale ? "#b91c1c" : undefined }}>{badge.stale ? `${badge.text} — sem sincronizar` : badge.text}</p>
       </header>
-      {!manifest && <p>Carregando o romaneio… Conecte o tablet à internet na primeira vez.</p>}
+      {!manifest && noService && <p data-testid="kds-no-service">Não há serviço de lanche nesta data.</p>}
+      {!manifest && !noService && <p>Carregando o romaneio… Conecte o tablet à internet na primeira vez.</p>}
+      {tapFailed && <p role="alert">Não foi possível registrar a entrega neste tablet. Tente de novo.</p>}
       {manifest && !closed && (
         <p data-testid="kds-waiting">Prévia parcial — aguardando fechamento. As entregas podem ser marcadas depois do fechamento.</p>
       )}
@@ -101,7 +115,7 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
                     data-testid={`kds-order-${o.order_id}`}
                     aria-pressed={isDelivered}
                     disabled={!closed}
-                    onClick={() => void markOrder(o.order_id, serviceDate, !isDelivered)}
+                    onClick={() => void tap(o.order_id, !isDelivered)}
                   >
                     {isDelivered ? "✓ " : ""}
                     {o.student} — {o.items.join(", ")}

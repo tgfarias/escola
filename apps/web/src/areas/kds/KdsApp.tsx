@@ -2,16 +2,12 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import { KdsBoard } from "./KdsBoard";
 import { KdsPair } from "./KdsPair";
+import { localDate } from "./state";
 import * as sync from "./sync";
-
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export default function KdsApp() {
   const [params] = useSearchParams();
-  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : today();
+  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : localDate(new Date());
   const [paired, setPaired] = useState<boolean | null>(null);
   const [authLost, setAuthLost] = useState(false);
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunk, isNewer, mergeEvent, nextOccurredAt } from "./state";
+import { chunk, isNewer, localDate, mergeEvent, nextOccurredAt, shiftDate } from "./state";
 
 const at = (s: string) => `2031-11-05T10:00:${s}.000Z`;
 
@@ -44,5 +44,17 @@ describe("nextOccurredAt", () => {
 
   it("goes 1 ms past a current state that is 20 minutes in the future", () => {
     expect(nextOccurredAt(now, "2031-11-05T10:20:00.000Z")).toBe("2031-11-05T10:20:00.001Z");
+  });
+});
+
+describe("kds dates", () => {
+  it("formats the local calendar date", () => {
+    expect(localDate(new Date(2031, 0, 5, 23, 59))).toBe("2031-01-05");
+  });
+
+  it("shifts a date across month and year boundaries", () => {
+    expect(shiftDate("2031-03-01", -2)).toBe("2031-02-27");
+    expect(shiftDate("2031-01-01", -2)).toBe("2030-12-30");
+    expect(shiftDate("2032-03-01", -1)).toBe("2032-02-29");
   });
 });

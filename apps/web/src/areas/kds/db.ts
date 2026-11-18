@@ -14,6 +14,7 @@ class KdsDb extends Dexie {
 
   constructor() {
     super("app-lanche-kds");
+    // A future schema version must keep the `outbox` store and its key (eventId): pending deliveries live there.
     this.version(1).stores({
       manifest: "serviceDate",
       orderState: "orderId, serviceDate",

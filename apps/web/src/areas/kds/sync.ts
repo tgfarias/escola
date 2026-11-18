@@ -1,9 +1,11 @@
 import { KdsChangesResponse, KdsEventsResponse, KdsManifestResponse, KdsPairResponse } from "@app-lanche/contracts";
 import { ApiError, apiFetch } from "../../app/api";
 import { applyRemoteEvents, getMeta, kdsDb, setMeta } from "./db";
-import { chunk } from "./state";
+import { chunk, localDate, shiftDate } from "./state";
 
 const INTERVAL_MS = 15_000;
+const KEEP_DAYS = 2;
+const DATED_META = ["cursor:", "noService:"];
 
 export async function pair(code: string): Promise<string> {
   const res = await apiFetch("/api/kds/v1/pair", KdsPairResponse, { method: "POST", body: { code } });
@@ -13,6 +15,7 @@ export async function pair(code: string): Promise<string> {
     await kdsDb.manifest.clear();
     await kdsDb.orderState.clear();
     await kdsDb.meta.where("key").startsWith("cursor:").delete();
+    await kdsDb.meta.where("key").startsWith("noService:").delete();
     await kdsDb.meta.delete("authLost");
     await kdsDb.meta.put({ key: "deviceId", value: res.deviceId });
   });
@@ -72,11 +75,18 @@ async function pullManifest(serviceDate: string, deviceId: string): Promise<void
   try {
     const res = await apiFetch(`/api/kds/v1/manifest/${serviceDate}`, KdsManifestResponse);
     if (!(await stillPaired(deviceId))) return;
-    await kdsDb.manifest.put({ ...res, fetchedAt: new Date().toISOString() });
+    await kdsDb.transaction("rw", kdsDb.manifest, kdsDb.meta, async () => {
+      await kdsDb.manifest.put({ ...res, fetchedAt: new Date().toISOString() });
+      await kdsDb.meta.delete(`noService:${serviceDate}`);
+    });
   } catch (err) {
     if (!(err instanceof ApiError && err.status === 404)) throw err;
-    // No service day for that date: there is no manifest.
-    if (await stillPaired(deviceId)) await kdsDb.manifest.delete(serviceDate);
+    // No service day for that date: there is no manifest, and the board says so.
+    if (!(await stillPaired(deviceId))) return;
+    await kdsDb.transaction("rw", kdsDb.manifest, kdsDb.meta, async () => {
+      await kdsDb.manifest.delete(serviceDate);
+      await kdsDb.meta.put({ key: `noService:${serviceDate}`, value: "1" });
+    });
   }
 }
 
@@ -88,6 +98,34 @@ async function pullChanges(serviceDate: string, deviceId: string): Promise<void>
   if (!(await stillPaired(deviceId))) return;
   await applyRemoteEvents(serviceDate, res.events);
   if (res.cursor && (await stillPaired(deviceId))) await setMeta(key, res.cursor);
+}
+
+/**
+ * Limpeza local (spec 7.4): apaga romaneio, estado e cursores de dias com mais de 2 dias, exceto o dia na tela.
+ * Nunca toca na outbox.
+ */
+async function pruneOldDays(serviceDate: string): Promise<void> {
+  const cutoff = shiftDate(localDate(new Date()), -KEEP_DAYS);
+  const old = (date: string) => date < cutoff && date !== serviceDate;
+  await kdsDb.transaction("rw", kdsDb.manifest, kdsDb.orderState, kdsDb.meta, async () => {
+    await kdsDb.manifest.where("serviceDate").below(cutoff).and((m) => old(m.serviceDate)).delete();
+    await kdsDb.orderState.where("serviceDate").below(cutoff).and((o) => old(o.serviceDate)).delete();
+    for (const prefix of DATED_META) {
+      await kdsDb.meta.where("key").startsWith(prefix).and((m) => old(m.key.slice(prefix.length))).delete();
+    }
+  });
+}
+
+/** Sessão perdida: apaga o romaneio local (LGPD) e mantém a outbox e o deviceId para o novo pareamento. */
+async function markAuthLost(deviceId: string): Promise<void> {
+  await kdsDb.transaction("rw", kdsDb.manifest, kdsDb.orderState, kdsDb.meta, async () => {
+    if ((await kdsDb.meta.get("deviceId"))?.value !== deviceId) return;
+    await kdsDb.manifest.clear();
+    await kdsDb.orderState.clear();
+    // Without local state the cursors would skip events already applied to it.
+    for (const prefix of DATED_META) await kdsDb.meta.where("key").startsWith(prefix).delete();
+    await kdsDb.meta.put({ key: "authLost", value: "1" });
+  });
 }
 
 let running: Promise<void> | null = null;
@@ -104,13 +142,14 @@ async function round(serviceDate: string): Promise<void> {
     if (await stillPaired(deviceId)) {
       await setMeta("lastSyncAt", new Date().toISOString());
       await kdsDb.meta.delete("authLost");
+      await pruneOldDays(serviceDate);
     }
   } catch (err) {
     if (err instanceof ApiError) {
       console.warn("kds sync failed", err.status, err.code);
       // A staff or guardian session in this browser replaced the kitchen cookie (403 insufficient_scope): same as losing it.
       const lost = err.status === 401 || (err.status === 403 && err.code === "insufficient_scope");
-      if (lost && (await stillPaired(deviceId))) await setMeta("authLost", "1");
+      if (lost) await markAuthLost(deviceId);
     } else {
       console.warn("kds sync failed", err instanceof Error ? err.name : "unknown");
     }
