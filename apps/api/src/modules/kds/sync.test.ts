@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { adminDb, createSchool, kitchenCookie, seedClosedDayWithOrders, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
@@ -119,7 +118,7 @@ describe("kds events", () => {
     expect(all.statusCode).toBe(200);
     expect(all.json().events).toEqual([{ ...e1, occurredAt: new Date(e1.occurredAt).toISOString(), deviceId: t1.deviceId }]);
     const cursor = all.json().cursor as string;
-    expect(cursor).toBeTruthy();
+    expect(cursor).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
     const e2 = ev(orderIds[1]!, "delivered", t(60));
     await app.inject({ method: "POST", url: "/api/kds/v1/events", cookies: t1.cookies, payload: { events: [e2] } });
     const since = await app.inject({ method: "GET", url: `/api/kds/v1/changes?date=2031-11-10&since=${encodeURIComponent(cursor)}`, cookies: t2.cookies });
@@ -147,13 +146,13 @@ describe("kds events", () => {
     const schoolId = await createSchool();
     await seedTenant(schoolId);
     const { cookies } = await kitchenCookie(schoolId);
-    for (const since of ["banana", "1", "foo 2020"]) {
+    for (const since of ["banana", "1", "foo 2020", "2031-02-31T10:00:00.000000Z", "2031-13-01T10:00:00Z", "2031-11-12T25:00:00Z"]) {
       const res = await buildApp().inject({ method: "GET", url: `/api/kds/v1/changes?date=2031-11-12&since=${encodeURIComponent(since)}`, cookies });
       expect(res.statusCode).toBe(400);
     }
   });
 
-  it("returns every event of a burst and a cursor equal to its received_at", async () => {
+  it("returns every event of a burst and a cursor equal to its received_at in UTC ISO form", async () => {
     const schoolId = await createSchool();
     await seedTenant(schoolId);
     const { cookies, deviceId } = await kitchenCookie(schoolId);
@@ -167,8 +166,7 @@ describe("kds events", () => {
     const res = await buildApp().inject({ method: "GET", url: "/api/kds/v1/changes?date=2031-11-13", cookies });
     expect(res.statusCode).toBe(200);
     expect(res.json().events).toHaveLength(1001);
-    const stored = await db.selectFrom("deliveryEvents").select(sql<string>`received_at::text`.as("r")).where("orderId", "=", orderIds[0]!).limit(1).executeTakeFirstOrThrow();
-    expect(res.json().cursor).toBe(stored.r);
+    expect(res.json().cursor).toBe("2031-11-13T10:00:00.123000Z");
   });
 
   it("rejects and does not store an event for a cancelled order", async () => {

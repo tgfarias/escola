@@ -9,11 +9,25 @@ import * as service from "./service";
 
 const OFFICE: RouteAuth = { kind: "staff", roles: ["admin", "secretaria"] };
 export const KITCHEN: RouteAuth = { kind: "kitchen" };
+/** Rejects impossible instants (2031-02-31, hour 25) that the regex lets through and Postgres would refuse. */
+function isRealInstant(since: string): boolean {
+  if (Number.isNaN(new Date(since).getTime())) return false;
+  const day = since.slice(0, 10);
+  const parsed = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+}
+
 const DeviceParams = z.object({ id: Uuid });
 const DateParams = z.object({ date: IsoDate });
 const ChangesQuery = z.object({
   date: IsoDate,
-  since: z.string().min(1).max(64).regex(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)$/).optional(),
+  since: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)$/)
+    .refine(isRealInstant, "invalid timestamp")
+    .optional(),
 });
 
 /**

@@ -326,11 +326,11 @@ O dispatcher usa a função `list_schools_with_pending_events()` (quinta consult
 1. Service worker (vite-plugin-pwa) faz precache do shell; o KDS abre sem rede.
 2. Antes do fechamento, o KDS mostra a prévia parcial e o aviso "aguardando fechamento". Após `closed`, baixa o romaneio e grava em `manifest`.
 3. Marcar ou desmarcar "entregue" é uma transação IndexedDB que atualiza `orderState` e insere na `outbox`:
-   `{ event_id, order_id, type: "delivered" | "undelivered", occurred_at, device_id }`.
+   `{ event_id, order_id, type: "delivered" | "undelivered", occurred_at }` (o `device_id` vem da sessão do tablet).
 4. Sincronização: no evento `online`, a cada 15 s e quando a aba volta ao foco. A Background Sync API não é usada (ausente no Safari/iOS).
    - `POST /api/kds/v1/events` com até 100 eventos; o servidor insere com `ON CONFLICT (event_id) DO NOTHING` e devolve `accepted` (gravados agora ou antes) e `rejected` (pedido inexistente, dia ainda aberto ou pedido sem entrega); o cliente remove os dois. Entrega só é aceita depois do fechamento.
-   - `GET /api/kds/v1/changes?date=<data>&since=<cursor>` traz eventos de outros tablets; o cursor é o `received_at` do último evento e o servidor repete o último minuto (o cliente deduplica por `event_id`).
-5. Estado de um pedido: o do evento com maior `occurred_at`; empate resolvido por `event_id`.
+   - `GET /api/kds/v1/changes?date=<data>&since=<cursor>` traz eventos de outros tablets; o cursor é o `received_at` do último evento (ISO em UTC, `YYYY-MM-DDTHH:MM:SS.ffffffZ`) e o servidor repete o último minuto (o cliente deduplica por `event_id`).
+5. Estado de um pedido: o do evento com maior `occurred_at`; empate resolvido por `event_id`. O cliente registra `occurred_at = max(agora, último estado + 1 ms)`; o servidor recusa eventos mais de 5 min à frente do relógio do banco.
 6. Token de dispositivo expirado com outbox pendente: o servidor aceita os eventos se o dispositivo ainda está ativo em `devices` e renova o token (token `kitchen` vencido há até 90 dias).
 
 ### 7.4 Proteções
@@ -339,6 +339,7 @@ O dispatcher usa a função `list_schools_with_pending_events()` (quinta consult
 - Selo fixo: "N pendentes · última sincronização HH:MM"; vermelho após 2 min sem sincronizar.
 - Logout e "trocar de escola" bloqueados com outbox não vazia.
 - Screen Wake Lock enquanto o KDS está aberto.
+- Dados de dias com mais de 2 dias são apagados do tablet; sessão perdida apaga o romaneio local, mantendo a outbox.
 - Contingência: o resumo do romaneio chega ao WhatsApp da cozinha pelo n8n.
 
 ## 8. Módulo de documentos

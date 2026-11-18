@@ -96,7 +96,8 @@ export async function applyLatestState(trx: Trx, orderIds: string[]): Promise<vo
 
 export async function changesSince(trx: Trx, serviceDate: string, since: string | null) {
   const { rows } = await sql<{ eventId: string; orderId: string; type: "delivered" | "undelivered"; occurredAt: Date; deviceId: string; receivedAt: string }>`
-    SELECT e.event_id, e.order_id, e.type, e.occurred_at, e.device_id, e.received_at::text AS received_at
+    SELECT e.event_id, e.order_id, e.type, e.occurred_at, e.device_id,
+      to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS received_at
     FROM delivery_events e JOIN orders o ON o.id = e.order_id
     WHERE o.service_date = ${serviceDate}::date
       AND (${since}::timestamptz IS NULL OR e.received_at > ${since}::timestamptz - interval '1 minute')
