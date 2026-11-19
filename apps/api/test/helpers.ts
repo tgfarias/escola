@@ -47,6 +47,9 @@ export type SeedIds = {
   reminderBatchId: string;
   kitchenDeviceId: string;
   deliveryEventId: string;
+  documentTemplateId: string;
+  documentBatchId: string;
+  documentId: string;
 };
 
 /** Insere uma linha em cada tabela de tenant. Estenda quando criar tabela nova. */
@@ -69,6 +72,9 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     reminderBatchId: uuidv7(),
     kitchenDeviceId: uuidv7(),
     deliveryEventId: uuidv7(),
+    documentTemplateId: uuidv7(),
+    documentBatchId: uuidv7(),
+    documentId: uuidv7(),
   };
   await db.insertInto("classes").values({ id: ids.classId, schoolId, name: "Infantil 3A" }).execute();
   await db
@@ -228,6 +234,28 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .insertInto("messageDeliveries")
     .values({ id: uuidv7(), schoolId, batchId: ids.reminderBatchId, guardianId: ids.guardianId, status: "sent", waMessageId: "wamid.seed" })
     .execute();
+  await db
+    .insertInto("documentTemplates")
+    .values({ id: ids.documentTemplateId, schoolId, templateGroupId: ids.documentTemplateId, version: 1, name: "Semente", category: "outro", bodyMd: "# Semente", fields: JSON.stringify([]), createdBy: ids.staffUserId })
+    .execute();
+  await db
+    .insertInto("documentBatches")
+    .values({ id: ids.documentBatchId, schoolId, templateId: ids.documentTemplateId, fieldValues: JSON.stringify({}), issuedOn: "2099-12-31", perGuardian: false, createdBy: ids.staffUserId, status: "published", publishedAt: new Date() })
+    .execute();
+  await db
+    .insertInto("documents")
+    .values({
+      id: ids.documentId,
+      schoolId,
+      batchId: ids.documentBatchId,
+      studentId: ids.studentId,
+      status: "rendered",
+      storagePath: `schools/${schoolId}/documents/${ids.documentBatchId}/${ids.documentId}.pdf`,
+      sha256: "0".repeat(64),
+      renderedAt: new Date(),
+    })
+    .execute();
+  await db.insertInto("documentViews").values({ id: uuidv7(), schoolId, documentId: ids.documentId, guardianId: ids.guardianId }).execute();
   return ids;
 }
 

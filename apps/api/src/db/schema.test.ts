@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedServiceDay, seedTenant, type SeedIds } from "../../test/helpers";
+import { adminDb, createSchool, seedFamily, seedServiceDay, seedTenant, type SeedIds } from "../../test/helpers";
 import { getDb, withTenant } from "./index";
 
 describe("F2 schema", () => {
@@ -218,6 +218,75 @@ describe("F4 schema", () => {
         .insertInto("deliveryEvents")
         .values({ eventId: uuidv7(), schoolId: a, orderId: seedB.orderId, deviceId: seedA.kitchenDeviceId, type: "delivered", occurredAt: new Date() })
         .execute(),
+    ).rejects.toThrow(/foreign key/i);
+  });
+});
+
+describe("F5 schema", () => {
+  it.each(["document_templates", "document_batches", "documents", "document_views"])(
+    "%s cannot be deleted by the application",
+    async (table) => {
+      const { rows } = await sql<{ del: boolean }>`SELECT has_table_privilege('app_user', ${table}, 'DELETE') AS del`.execute(adminDb());
+      expect(rows[0]).toEqual({ del: false });
+    },
+  );
+
+  it("makes document views append-only", async () => {
+    const { rows } = await sql<{ upd: boolean; ins: boolean }>`
+      SELECT has_table_privilege('app_user', 'document_views', 'UPDATE') AS upd,
+             has_table_privilege('app_user', 'document_views', 'INSERT') AS ins`.execute(adminDb());
+    expect(rows[0]).toEqual({ upd: false, ins: true });
+  });
+
+  it("accepts only 11-digit CPFs", async () => {
+    const schoolId = await createSchool();
+    const ids = await seedTenant(schoolId);
+    const setCpf = (cpf: string) => adminDb().updateTable("guardians").set({ cpf }).where("id", "=", ids.guardianId).execute();
+    await setCpf("52998224725");
+    await expect(setCpf("529.982.247-25")).rejects.toThrow(/check constraint/);
+    await expect(setCpf("123")).rejects.toThrow(/check constraint/);
+  });
+
+  it("keeps template versions unique per group", async () => {
+    const schoolId = await createSchool();
+    const ids = await seedTenant(schoolId);
+    const insert = () =>
+      adminDb()
+        .insertInto("documentTemplates")
+        .values({ id: uuidv7(), schoolId, templateGroupId: ids.documentTemplateId, version: 1, name: "X", category: "outro", bodyMd: "x", fields: JSON.stringify([]), createdBy: ids.staffUserId })
+        .execute();
+    await expect(insert()).rejects.toThrow(/document_templates_version/);
+  });
+
+  it("allows one document per student and recipient in a batch, nulls included", async () => {
+    const schoolId = await createSchool();
+    const ids = await seedTenant(schoolId);
+    const doc = (guardianId: string | null) =>
+      adminDb().insertInto("documents").values({ id: uuidv7(), schoolId, batchId: ids.documentBatchId, studentId: ids.studentId, guardianId }).execute();
+    await expect(doc(null)).rejects.toThrow(/documents_one_per_recipient/);
+    await doc(ids.guardianId);
+    await expect(doc(ids.guardianId)).rejects.toThrow(/documents_one_per_recipient/);
+  });
+
+  it("requires the hash and path of a rendered document and a lease while rendering", async () => {
+    const schoolId = await createSchool();
+    const ids = await seedTenant(schoolId);
+    const fam = await seedFamily(schoolId, ["Caio"]);
+    await expect(
+      adminDb().insertInto("documents").values({ id: uuidv7(), schoolId, batchId: ids.documentBatchId, studentId: fam.studentIds[0]!, status: "rendered" }).execute(),
+    ).rejects.toThrow(/check constraint/);
+    await expect(
+      adminDb().insertInto("documents").values({ id: uuidv7(), schoolId, batchId: ids.documentBatchId, studentId: fam.studentIds[0]!, status: "rendering" }).execute(),
+    ).rejects.toThrow(/check constraint/);
+  });
+
+  it("refuses a document for a student of another school", async () => {
+    const a = await createSchool();
+    const b = await createSchool();
+    const seedA = await seedTenant(a);
+    const seedB = await seedTenant(b);
+    await expect(
+      adminDb().insertInto("documents").values({ id: uuidv7(), schoolId: a, batchId: seedA.documentBatchId, studentId: seedB.studentId }).execute(),
     ).rejects.toThrow(/foreign key/i);
   });
 });

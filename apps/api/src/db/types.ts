@@ -73,10 +73,63 @@ export interface Devices {
   secretHash: string | null;
 }
 
+export interface DocumentBatches {
+  createdAt: Generated<Timestamp>;
+  createdBy: string;
+  fieldValues: Generated<Json>;
+  id: string;
+  issuedOn: string;
+  perGuardian: boolean;
+  publishedAt: Timestamp | null;
+  schoolId: string;
+  status: Generated<string>;
+  templateId: string;
+}
+
+export interface Documents {
+  attempts: Generated<number>;
+  batchId: string;
+  createdAt: Generated<Timestamp>;
+  discardedAt: Timestamp | null;
+  guardianId: string | null;
+  id: string;
+  leaseUntil: Timestamp | null;
+  renderedAt: Timestamp | null;
+  schoolId: string;
+  sha256: string | null;
+  status: Generated<string>;
+  storagePath: string | null;
+  studentId: string;
+}
+
+export interface DocumentTemplates {
+  archivedAt: Timestamp | null;
+  bodyMd: string;
+  category: string;
+  createdAt: Generated<Timestamp>;
+  createdBy: string;
+  fields: Generated<Json>;
+  id: string;
+  name: string;
+  schoolId: string;
+  templateGroupId: string;
+  version: number;
+}
+
+export interface DocumentViews {
+  documentId: string;
+  firstViewedAt: Generated<Timestamp>;
+  guardianId: string;
+  id: string;
+  schoolId: string;
+}
+
 export interface Guardians {
+  cpf: string | null;
   createdAt: Generated<Timestamp>;
   email: string | null;
   firstName: string;
+  fullName: string | null;
   id: string;
   phoneE164: string;
   schoolId: string;
@@ -261,6 +314,7 @@ export interface StaffUsers {
 
 export interface Students {
   active: Generated<boolean>;
+  birthDate: string | null;
   classId: string;
   createdAt: Generated<Timestamp>;
   dietaryRestrictions: string | null;
@@ -297,6 +351,10 @@ export interface DB {
   classes: Classes;
   deliveryEvents: DeliveryEvents;
   devices: Devices;
+  documentBatches: DocumentBatches;
+  documents: Documents;
+  documentTemplates: DocumentTemplates;
+  documentViews: DocumentViews;
   guardians: Guardians;
   guardianStudents: GuardianStudents;
   idempotencyKeys: IdempotencyKeys;

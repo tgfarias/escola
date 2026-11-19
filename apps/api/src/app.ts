@@ -165,7 +165,9 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
-      return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
+      return reply
+        .status(err.status)
+        .send({ error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) } });
     }
     const status = err instanceof ZodError ? 400 : (err as { statusCode?: number }).statusCode;
     if (typeof status === "number" && status >= 400 && status < 500) {

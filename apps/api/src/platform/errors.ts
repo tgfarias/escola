@@ -23,6 +23,11 @@ const STATUS: Record<ErrorCode, number> = {
   order_already_exists: 409,
   checkout_not_cancellable: 409,
   invalid_order: 422,
+  document_template_invalid: 422,
+  document_template_outdated: 409,
+  document_missing_data: 422,
+  document_batch_not_ready: 409,
+  document_batch_published: 409,
   internal_error: 500,
 };
 
@@ -30,6 +35,8 @@ export class DomainError extends Error {
   constructor(
     public readonly code: ErrorCode,
     message?: string,
+    /** Só ids, contagens e nomes de variáveis: nunca dado pessoal (vai no corpo da resposta). */
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message ?? code);
   }

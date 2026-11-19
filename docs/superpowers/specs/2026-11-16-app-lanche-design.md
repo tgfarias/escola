@@ -432,12 +432,15 @@ erDiagram
     text external_code
     text first_name
     text full_name
+    date birth_date
     text dietary_restrictions
     bool active }
   guardians { uuid id PK
     uuid school_id FK
     text phone_e164
     text first_name
+    text full_name
+    text cpf
     text email }
   guardian_students { uuid school_id FK
     uuid guardian_id FK
@@ -574,11 +577,15 @@ erDiagram
     text category
     text body_md
     jsonb fields
-    timestamptz archived_at }
+    uuid created_by FK
+    timestamptz archived_at
+    timestamptz created_at }
   document_batches { uuid id PK
     uuid school_id FK
     uuid template_id FK
     jsonb field_values
+    date issued_on
+    bool per_guardian
     uuid created_by FK
     text status
     timestamptz published_at }
@@ -588,8 +595,12 @@ erDiagram
     uuid student_id FK
     uuid guardian_id FK
     text status
+    int attempts
+    timestamptz lease_until
     text storage_path
-    text sha256 }
+    text sha256
+    timestamptz rendered_at
+    timestamptz discarded_at }
   document_views { uuid id PK
     uuid school_id FK
     uuid document_id FK
@@ -610,7 +621,7 @@ Convenções do esquema:
 - Toda tabela exceto `schools` tem `school_id NOT NULL`, RLS e `UNIQUE (school_id, id)` para servir de alvo das FKs compostas.
 - Datas e horas em `timestamptz`; `service_date` em `date` no fuso da escola.
 - `students.external_code` é o código/matrícula do aluno na escola; é a chave que torna a importação CSV idempotente.
-- Unicidades relevantes: `guardians (school_id, phone_e164)`, `students (school_id, external_code)`, `staff_users (email)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, além das listadas em 5.4.
+- Unicidades relevantes: `guardians (school_id, phone_e164)`, `students (school_id, external_code)`, `staff_users (email)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, `document_templates (school_id, template_group_id, version)`, `documents (school_id, batch_id, student_id, guardian_id)` com nulos iguais, `document_views (school_id, document_id, guardian_id)`, além das listadas em 5.4.
 - `status`, `kind`, `role`, `scope` e `type` são `text` com `CHECK` de valores permitidos.
 - `wallet_entries.amount_cents` tem sinal: `checkout_hold` e `refund` negativos; `hold_release`, `late_payment_credit` e `cancel_credit` positivos; `manual_adjustment` qualquer sinal diferente de zero. Saldo = soma dos lançamentos. `wallet_entries.note` (opcional, até 200 caracteres) guarda o motivo de um ajuste manual.
 - `payments` guarda também `pix_copy_paste` e `pix_qr_png_base64` devolvidos pelo gateway; um checkout tem no máximo uma cobrança.
