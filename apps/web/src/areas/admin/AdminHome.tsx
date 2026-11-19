@@ -1,4 +1,4 @@
-import { ImportStudentsResponse, StaffMeResponse } from "@app-lanche/contracts";
+import { ImportStudentsResponse } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Alert, Button, Card, CardBody, CardHeader, Form, FormGroup, Input, Label } from "reactstrap";
@@ -6,6 +6,7 @@ import { ApiError, apiFetch } from "../../app/api";
 import { PageTitle } from "../../theme/layout/PageTitle";
 import { announce, StatusNotice } from "../../theme/notify";
 import { staffErrorMessage } from "../../ui/messages";
+import { useAdminMe } from "./AdminLayout";
 import { KitchenDevicesAdmin } from "./KitchenDevicesAdmin";
 import { MenuAdmin } from "./MenuAdmin";
 import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
@@ -13,22 +14,12 @@ import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
 export function AdminHome() {
   const navigate = useNavigate();
   const { hash, key } = useLocation();
-  const [me, setMe] = useState<StaffMeResponse | null>(null);
+  const { me, meFailed } = useAdminMe();
   const [csv, setCsv] = useState("");
   const [result, setResult] = useState<ImportStudentsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    apiFetch("/api/admin/v1/me", StaffMeResponse).then(setMe, (err) => {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        navigate("/admin/login", { replace: true });
-      } else {
-        setError(staffErrorMessage(err instanceof ApiError ? err.code : "internal_error"));
-      }
-    });
-  }, [navigate]);
 
   // Cardápio, dias e tablets são seções desta página: o menu lateral aponta para elas por âncora. Rola a cada clique
   // no menu (key muda mesmo com o hash igual) e de novo quando cada seção termina de carregar e muda de altura.
@@ -75,19 +66,8 @@ export function AdminHome() {
     }
   }
 
-  if (!me) {
-    return (
-      <div>
-        {error ? (
-          <Alert color="danger" fade={false}>
-            {error}
-          </Alert>
-        ) : (
-          <p>Carregando…</p>
-        )}
-      </div>
-    );
-  }
+  // O AdminLayout busca /me e mostra o erro dessa busca; aqui só falta esperar.
+  if (!me) return meFailed ? null : <p>Carregando…</p>;
 
   return (
     <>

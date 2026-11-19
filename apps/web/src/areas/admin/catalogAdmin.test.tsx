@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Link, MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
+import { AdminLayout } from "./AdminLayout";
 
 type Reply = { status: number; body: unknown };
 
@@ -52,12 +53,10 @@ const OPEN_DAY = {
 function renderAdmin(path = "/admin") {
   render(
     <MemoryRouter initialEntries={[path]}>
-      <nav>
-        <Link to="/admin">Início</Link>
-        <Link to="/admin#dias">Ir para dias</Link>
-      </nav>
       <Routes>
-        <Route path="/admin" element={<AdminHome />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminHome />} />
+        </Route>
         <Route path="/admin/login" element={<p>login</p>} />
       </Routes>
     </MemoryRouter>,
@@ -207,8 +206,7 @@ describe("service days admin", () => {
     renderAdmin();
     await screen.findByText(/04\/03\/2030/);
     fireEvent.click(screen.getByRole("button", { name: "Fechar dia" }));
-    await screen.findByText("Dia fechado: 3 pedidos.");
-    expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Dia fechado: 3 pedidos.");
+    await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Dia fechado: 3 pedidos."));
     expect(window.confirm).toHaveBeenCalledWith("Fechar o dia? Os pedidos não pagos expiram e o romaneio fica congelado.");
   });
 
@@ -229,7 +227,7 @@ describe("service days admin", () => {
   it("hides both sections from the kitchen role", async () => {
     mockApi({ "GET /api/admin/v1/me": me("cozinha") });
     renderAdmin();
-    await screen.findByText("Escola Sol");
+    await screen.findByRole("heading", { name: "Escola Sol" });
     expect(screen.queryByText("Cardápio")).toBeNull();
     expect(screen.queryByText("Dias de serviço")).toBeNull();
   });
@@ -270,7 +268,7 @@ describe("home sections", () => {
     await waitFor(() => expect(scrolled.some((s) => s.menuLoaded)).toBe(true));
     await new Promise((r) => setTimeout(r, 0));
     const before = scrolled.length;
-    fireEvent.click(screen.getByRole("link", { name: "Ir para dias" }));
+    fireEvent.click(screen.getByRole("link", { name: "Dias de serviço" }));
     await waitFor(() => expect(scrolled.length).toBeGreaterThan(before));
     expect(scrolled.at(-1)!.id).toBe("dias");
   });

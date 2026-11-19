@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { staffErrorMessage } from "../../ui/messages";
 import { AdminLayout } from "./AdminLayout";
 
 type Reply = { status: number; body?: unknown };
@@ -79,6 +80,13 @@ describe("admin layout", () => {
     mockApi({ "GET /api/admin/v1/me": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } } });
     renderAt("/admin/alunos");
     await screen.findByText("tela de login");
+  });
+
+  it("shows other /me failures once, above the page", async () => {
+    mockApi({ "GET /api/admin/v1/me": { status: 500, body: { error: { code: "internal_error", message: "x" } } } });
+    renderAt("/admin/alunos");
+    expect((await screen.findByRole("alert")).textContent).toBe(staffErrorMessage("internal_error"));
+    expect(screen.getByText("página de alunos")).toBeTruthy();
   });
 
   it("logs out and returns to the login", async () => {

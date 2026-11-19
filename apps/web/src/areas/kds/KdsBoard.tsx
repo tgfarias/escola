@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Alert, Button, Nav, NavItem, NavLink } from "reactstrap";
 import { KdsShell } from "../../theme/layout/KdsShell";
 import { kdsDb, markOrder } from "./db";
-import { visibleGroups, type StateFilter } from "./filters";
+import { validClassFilter, visibleGroups, type StateFilter } from "./filters";
 import { SyncBadge } from "./SyncBadge";
 import * as sync from "./sync";
 import { useLive } from "./useLive";
@@ -86,6 +86,11 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   const delivered = new Set((states ?? []).filter((s) => s.state === "delivered").map((s) => s.orderId));
   const closed = manifest?.status === "closed";
   const classes = manifest?.content.by_class.map((c) => c.class) ?? [];
+  // Romaneio novo sem a turma filtrada: volta para "Todas as turmas" em vez de mostrar um quadro vazio.
+  const classList = classes.join("\n");
+  useEffect(() => {
+    if (manifest) setClassFilter((current) => validClassFilter(current, classList.split("\n")));
+  }, [manifest, classList]);
   const groups = manifest ? visibleGroups(manifest.content.by_class, delivered, { className: classFilter, state: stateFilter }) : [];
 
   async function tap(orderId: string, delivered: boolean) {

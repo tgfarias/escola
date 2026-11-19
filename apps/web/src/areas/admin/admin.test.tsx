@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
+import { AdminLayout } from "./AdminLayout";
 import { AdminLogin } from "./AdminLogin";
 import { LOGO_ALT } from "../../theme/brand";
 
@@ -22,7 +23,10 @@ function renderAt(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin" element={<AdminHome />} />
+        <Route path="/admin" element={<AdminLayout />}>
+          <Route index element={<AdminHome />} />
+          <Route path="alunos" element={<p>página de alunos</p>} />
+        </Route>
       </Routes>
     </MemoryRouter>,
   );
@@ -56,7 +60,7 @@ describe("admin area", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enviar código" }));
     fireEvent.change(await screen.findByLabelText("Código de 6 dígitos"), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
-    await screen.findByText("Escola Sol");
+    await screen.findByRole("heading", { name: "Escola Sol" });
   });
 
   it("shows the wrong-code message", async () => {
@@ -86,6 +90,17 @@ describe("admin area", () => {
     await screen.findByLabelText("E-mail");
   });
 
+  it("fetches /me once for the layout and the home page, also when coming back to Início", async () => {
+    const fetchMock = mockApi({ "/api/admin/v1/me": ME });
+    renderAt("/admin");
+    await screen.findByLabelText("Conteúdo do CSV");
+    fireEvent.click(screen.getByRole("link", { name: "Alunos e responsáveis" }));
+    await screen.findByText("página de alunos");
+    fireEvent.click(screen.getByRole("link", { name: "Início" }));
+    await screen.findByLabelText("Conteúdo do CSV");
+    expect(fetchMock.mock.calls.filter((c) => c[0] === "/api/admin/v1/me")).toHaveLength(1);
+  });
+
   it("imports a CSV and shows the totals", async () => {
     const fetchMock = mockApi({
       "/api/admin/v1/me": ME,
@@ -97,8 +112,9 @@ describe("admin area", () => {
     renderAt("/admin");
     fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "a,b\n1,2" } });
     fireEvent.click(screen.getByRole("button", { name: "Importar" }));
-    await screen.findByText("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis.");
-    expect(within(document.getElementById("importar")!).getByRole("status").textContent).toBe("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis.");
+    await waitFor(() =>
+      expect(within(document.getElementById("importar")!).getByRole("status").textContent).toBe("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis."),
+    );
     const call = fetchMock.mock.calls.find((c) => c[0] === "/api/admin/v1/import/students")!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ csv: "a,b\n1,2" });
   });

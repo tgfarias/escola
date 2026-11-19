@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
 import { CheckoutPage } from "../areas/guardian/CheckoutPage";
 import { DocumentsPage } from "../areas/guardian/DocumentsPage";
 import { OrderHome } from "../areas/guardian/OrderHome";
 import { WalletPage } from "../areas/guardian/WalletPage";
+import { AreaErrorBoundary } from "./AreaErrorBoundary";
 
 const AdminArea = lazy(() => import("../areas/admin/AdminArea"));
 const KdsApp = lazy(() => import("../areas/kds/KdsApp"));
@@ -38,6 +39,14 @@ function Home() {
   );
 }
 
+function LazyArea({ children }: { children: ReactNode }) {
+  return (
+    <AreaErrorBoundary>
+      <Suspense fallback={null}>{children}</Suspense>
+    </AreaErrorBoundary>
+  );
+}
+
 export function App() {
   return (
     <Routes>
@@ -47,8 +56,8 @@ export function App() {
       <Route path="/pedido/checkout/:id" element={<CheckoutPage />} />
       <Route path="/carteira" element={<WalletPage />} />
       <Route path="/documentos" element={<DocumentsPage />} />
-      <Route path="/admin/*" element={<Suspense fallback={null}><AdminArea /></Suspense>} />
-      <Route path="/kds" element={<Suspense fallback={null}><KdsApp /></Suspense>} />
+      <Route path="/admin/*" element={<LazyArea><AdminArea /></LazyArea>} />
+      <Route path="/kds" element={<LazyArea><KdsApp /></LazyArea>} />
       <Route path="*" element={<Home />} />
     </Routes>
   );

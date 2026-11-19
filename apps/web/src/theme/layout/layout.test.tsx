@@ -90,6 +90,24 @@ describe("AppShell", () => {
     expect(screen.getByRole("button", { name: "Abrir menu" }).getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("closes the mobile menu when the current page's link is tapped", () => {
+    renderShell("/admin/alunos");
+    fireEvent.click(screen.getByRole("button", { name: "Abrir menu" }));
+    fireEvent.click(link("Alunos e responsáveis"));
+    expect(shell().classList.contains("sidebar-mobile-open")).toBe(false);
+  });
+
+  it("moves focus into the mobile menu on open and back to the toggle on Escape", () => {
+    renderShell("/admin");
+    const toggle = screen.getByRole("button", { name: "Abrir menu" });
+    toggle.focus();
+    fireEvent.click(toggle);
+    expect(document.activeElement).toBe(link("Início"));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(shell().classList.contains("sidebar-mobile-open")).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Abrir menu" }));
+  });
+
   it("collapses the sidebar and remembers it", () => {
     renderShell("/admin");
     fireEvent.click(screen.getByRole("button", { name: "Recolher menu" }));
@@ -135,6 +153,7 @@ describe("AppShell", () => {
     renderShell("/admin");
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await waitFor(() => expect(document.querySelector(".Toastify")?.textContent).toContain("Dados salvos."));
+    expect(document.querySelector(".Toastify")!.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Dados salvos.");
     expect(screen.queryByRole("alert")).toBeNull();
   });

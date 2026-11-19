@@ -29,6 +29,9 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         // O tablet abre offline: fontes de ícone, CSS do tema, logo e ícones entram no precache.
         globPatterns: ["**/*.{js,css,html,woff,woff2,ttf,svg,png,jpg}"],
+        // pe-icon-7-stroke.css lista eot, woff, ttf e svg nessa ordem: todo navegador com service worker usa o woff e
+        // nunca pede os outros (cerca de 220 KB que cada celular baixaria à toa).
+        globIgnores: ["**/node_modules/**", "**/Pe-icon-7-stroke-*.{ttf,svg,eot}"],
       },
     }),
     guardianCssGuard(),

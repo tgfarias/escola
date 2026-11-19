@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { visibleGroups, type ClassGroup } from "./filters";
+import { validClassFilter, visibleGroups, type ClassGroup } from "./filters";
 
 const [A, B, C] = ["0193a3b0-0000-7000-8000-000000000001", "0193a3b0-0000-7000-8000-000000000002", "0193a3b0-0000-7000-8000-000000000003"];
 const GROUPS: ClassGroup[] = [
@@ -33,5 +33,16 @@ describe("visibleGroups", () => {
       ["Infantil 4B", ["Caio"]],
     ]);
     expect(names(visibleGroups(GROUPS, delivered, { className: null, state: "delivered" }))).toEqual([["Infantil 3A", ["Léo"]]]);
+  });
+});
+
+describe("validClassFilter", () => {
+  it("keeps a class that is still in the manifest", () => {
+    expect(validClassFilter("Infantil 3A", ["Infantil 3A", "Infantil 4B"])).toBe("Infantil 3A");
+    expect(validClassFilter(null, ["Infantil 3A"])).toBeNull();
+  });
+
+  it("goes back to all classes when the filtered class disappears from the manifest", () => {
+    expect(validClassFilter("Infantil 3A", ["Infantil 4B"])).toBeNull();
   });
 });
