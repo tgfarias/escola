@@ -68,7 +68,7 @@ describe("documents admin", () => {
     expect(screen.getByText("Autorização")).toBeTruthy();
     expect(screen.getByText("Declaração de matrícula")).toBeTruthy();
     expect(screen.getByText("Autorização de passeio (versão 2)")).toBeTruthy();
-    expect(screen.getByText("Publicado")).toBeTruthy();
+    expect(screen.getByText("Publicado").className).toContain("text-bg-success");
     expect(screen.getByText("2 de 3")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Gerar" }).getAttribute("href")).toBe(`/admin/documentos/gerar/${T1}`);
   });
@@ -136,6 +136,7 @@ describe("template editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Campo: Destino" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await screen.findByText("Versão 1 salva.");
+    expect(screen.getByRole("status").textContent).toBe("Versão 1 salva.");
     expect(callOf(fn, "POST /api/admin/v1/document-templates")!.body).toEqual({
       name: "Passeio",
       category: "autorizacao",

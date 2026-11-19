@@ -1,25 +1,31 @@
 import { ClassListResponse, GuardianDetail, StudentListResponse, formatCpf } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Alert, Button, Card, CardBody, Col, Form, FormGroup, Input, Label, Row, Table } from "reactstrap";
 import { z } from "zod";
 import { ApiError, apiFetch } from "../../app/api";
+import { PageTitle } from "../../theme/layout/PageTitle";
+import { announce, StatusNotice } from "../../theme/notify";
 import { formatIsoDate } from "../../ui/dates";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
 import { useStaffErrors } from "./useStaffErrors";
 
 export function StudentFilters(props: { classes: ClassRow[]; classId: string; query: string; onClass: (id: string) => void; onQuery: (q: string) => void }) {
   return (
-    <div>
-      <label htmlFor="filter-class">Turma</label>
-      <select id="filter-class" value={props.classId} onChange={(e) => props.onClass(e.target.value)}>
-        <option value="">Todas</option>
-        {props.classes.map((c) => (
-          <option key={c.id} value={c.id}>{c.name}</option>
-        ))}
-      </select>
-      <label htmlFor="filter-query">Buscar por nome</label>
-      <input id="filter-query" type="search" value={props.query} onChange={(e) => props.onQuery(e.target.value)} />
-    </div>
+    <Row className="g-2 mb-3">
+      <Col md={4}>
+        <Label for="filter-class">Turma</Label>
+        <Input id="filter-class" type="select" value={props.classId} onChange={(e) => props.onClass(e.target.value)}>
+          <option value="">Todas</option>
+          {props.classes.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </Input>
+      </Col>
+      <Col md={8}>
+        <Label for="filter-query">Buscar por nome</Label>
+        <Input id="filter-query" type="search" value={props.query} onChange={(e) => props.onQuery(e.target.value)} />
+      </Col>
+    </Row>
   );
 }
 
@@ -54,15 +60,31 @@ function StudentForm({ student, onSubmit, onSaved, onCancel, onError }: FormProp
   }
 
   return (
-    <form onSubmit={submit}>
-      <h2>{student.firstName} — {student.className}</h2>
-      <label htmlFor="student-full-name">Nome completo</label>
-      <input id="student-full-name" maxLength={200} value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      <label htmlFor="student-birth-date">Data de nascimento</label>
-      <input id="student-birth-date" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
-      <button type="submit" disabled={busy}>Salvar</button>
-      <button type="button" onClick={onCancel}>Cancelar</button>
-    </form>
+    <Card className="main-card mb-3">
+      <CardBody>
+        <Form onSubmit={submit}>
+          <h2 className="h6">{student.firstName} — {student.className}</h2>
+          <Row className="g-2">
+            <Col md={8}>
+              <FormGroup>
+                <Label for="student-full-name">Nome completo</Label>
+                <Input id="student-full-name" maxLength={200} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              </FormGroup>
+            </Col>
+            <Col md={4}>
+              <FormGroup>
+                <Label for="student-birth-date">Data de nascimento</Label>
+                <Input id="student-birth-date" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
+              </FormGroup>
+            </Col>
+          </Row>
+          <div className="d-flex gap-2">
+            <Button color="primary" type="submit" disabled={busy}>Salvar</Button>
+            <Button color="secondary" outline type="button" onClick={onCancel}>Cancelar</Button>
+          </div>
+        </Form>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -105,18 +127,40 @@ function GuardianForm({ guardianId, onSubmit, onSaved, onCancel, onError }: Form
     }
   }
 
-  if (loadFailed) return <p role="alert">Não foi possível carregar o responsável.</p>;
+  if (loadFailed) {
+    return (
+      <Alert color="danger" fade={false}>
+        Não foi possível carregar o responsável.
+      </Alert>
+    );
+  }
   if (!detail) return <p>Carregando…</p>;
   return (
-    <form onSubmit={submit}>
-      <h2>Responsável: {detail.firstName}</h2>
-      <label htmlFor="guardian-full-name">Nome completo do responsável</label>
-      <input id="guardian-full-name" maxLength={200} value={fullName} onChange={(e) => setFullName(e.target.value)} />
-      <label htmlFor="guardian-cpf">CPF</label>
-      <input id="guardian-cpf" inputMode="numeric" autoComplete="off" value={cpf} onChange={(e) => setCpf(cpfInput(e.target.value))} />
-      <button type="submit" disabled={busy}>Salvar</button>
-      <button type="button" onClick={onCancel}>Cancelar</button>
-    </form>
+    <Card className="main-card mb-3">
+      <CardBody>
+        <Form onSubmit={submit}>
+          <h2 className="h6">Responsável: {detail.firstName}</h2>
+          <Row className="g-2">
+            <Col md={8}>
+              <FormGroup>
+                <Label for="guardian-full-name">Nome completo do responsável</Label>
+                <Input id="guardian-full-name" maxLength={200} value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              </FormGroup>
+            </Col>
+            <Col md={4}>
+              <FormGroup>
+                <Label for="guardian-cpf">CPF</Label>
+                <Input id="guardian-cpf" inputMode="numeric" autoComplete="off" value={cpf} onChange={(e) => setCpf(cpfInput(e.target.value))} />
+              </FormGroup>
+            </Col>
+          </Row>
+          <div className="d-flex gap-2">
+            <Button color="primary" type="submit" disabled={busy}>Salvar</Button>
+            <Button color="secondary" outline type="button" onClick={onCancel}>Cancelar</Button>
+          </div>
+        </Form>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -154,10 +198,23 @@ export function StudentsAdmin() {
     setEditing(null);
     setError(null);
     setStatus("Dados salvos.");
+    announce("Dados salvos.");
     await load();
   }
 
-  if (!students) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  if (!students) {
+    return (
+      <div>
+        {error ? (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        ) : (
+          <p>Carregando…</p>
+        )}
+      </div>
+    );
+  }
   const visible = filterStudents(students, { classId, query });
   const formProps = {
     onSubmit: () => {
@@ -173,45 +230,56 @@ export function StudentsAdmin() {
   };
 
   return (
-    <main>
-      <p><Link to="/admin">Voltar</Link></p>
-      <h1>Alunos e responsáveis</h1>
-      <StudentFilters classes={classes} classId={classId} query={query} onClass={setClassId} onQuery={setQuery} />
-      {status && <p role="status">{status}</p>}
-      {error && <p role="alert">{error}</p>}
+    <>
+      <PageTitle heading="Alunos e responsáveis" subheading="Nome completo, nascimento e CPF usados nos documentos." icon="pe-7s-users" />
+      <StatusNotice message={status} />
+      {error && (
+        <Alert color="danger" fade={false}>
+          {error}
+        </Alert>
+      )}
       {editing?.kind === "student" && <StudentForm key={editing.student.id} student={editing.student} {...formProps} />}
       {editing?.kind === "guardian" && <GuardianForm key={editing.id} guardianId={editing.id} {...formProps} />}
-      <table>
-        <thead>
-          <tr><th>Aluno</th><th>Turma</th><th>Nascimento</th><th>Responsáveis</th></tr>
-        </thead>
-        <tbody>
-          {visible.map((s) => (
-            <tr key={s.id}>
-              <td>
-                <span>{studentLabel(s)}</span>{" "}
-                <button type="button" aria-label={`Editar aluno ${studentLabel(s)}`} onClick={() => edit({ kind: "student", student: s })}>Editar</button>
-              </td>
-              <td>{s.className}</td>
-              <td>{s.birthDate ? formatIsoDate(s.birthDate) : "—"}</td>
-              <td>
-                {s.guardians.length === 0 ? (
-                  <span>Nenhum responsável</span>
-                ) : (
-                  <ul>
-                    {s.guardians.map((g) => (
-                      <li key={g.id}>
-                        {g.fullName ?? g.firstName} — {g.cpfMasked ?? "CPF não informado"}{" "}
-                        <button type="button" aria-label={`Editar responsável ${g.firstName}`} onClick={() => edit({ kind: "guardian", id: g.id })}>Editar</button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </main>
+      <Card className="main-card mb-3">
+        <CardBody>
+          <StudentFilters classes={classes} classId={classId} query={query} onClass={setClassId} onQuery={setQuery} />
+          <Table responsive hover striped className="mb-0">
+            <thead>
+              <tr><th>Aluno</th><th>Turma</th><th>Nascimento</th><th>Responsáveis</th></tr>
+            </thead>
+            <tbody>
+              {visible.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <span>{studentLabel(s)}</span>{" "}
+                    <Button size="sm" color="link" type="button" aria-label={`Editar aluno ${studentLabel(s)}`} onClick={() => edit({ kind: "student", student: s })}>
+                      Editar
+                    </Button>
+                  </td>
+                  <td>{s.className}</td>
+                  <td>{s.birthDate ? formatIsoDate(s.birthDate) : "—"}</td>
+                  <td>
+                    {s.guardians.length === 0 ? (
+                      <span>Nenhum responsável</span>
+                    ) : (
+                      <ul className="list-unstyled mb-0">
+                        {s.guardians.map((g) => (
+                          <li key={g.id}>
+                            {g.fullName ?? g.firstName} — {g.cpfMasked ?? "CPF não informado"}{" "}
+                            <Button size="sm" color="link" type="button" aria-label={`Editar responsável ${g.firstName}`} onClick={() => edit({ kind: "guardian", id: g.id })}>
+                              Editar
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </CardBody>
+      </Card>
+    </>
   );
 }

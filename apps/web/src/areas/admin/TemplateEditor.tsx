@@ -8,7 +8,10 @@ import {
 } from "@app-lanche/contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { Alert, Button, Card, CardBody, CardHeader, Col, Form, FormGroup, Input, Label, Row } from "reactstrap";
 import { ApiError, apiFetch, apiFetchBlob } from "../../app/api";
+import { PageTitle } from "../../theme/layout/PageTitle";
+import { announce, StatusNotice } from "../../theme/notify";
 import { staffErrorMessage } from "../../ui/messages";
 import { CATEGORY_LABELS } from "./documentLabels";
 import { useRequestKey } from "./useRequestKey";
@@ -45,7 +48,24 @@ export function TemplateEditor() {
     if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
 
-  if (!draft) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  const savedMessage = savedVersion !== undefined ? `Versão ${savedVersion} salva.` : null;
+  useEffect(() => {
+    if (savedMessage) announce(savedMessage);
+  }, [savedMessage]);
+
+  if (!draft) {
+    return (
+      <div>
+        {error ? (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        ) : (
+          <p>Carregando…</p>
+        )}
+      </div>
+    );
+  }
 
   // A prévia mostra o rascunho de quando foi pedida: qualquer mudança a descarta (o efeito acima libera a URL).
   const update = (patch: Partial<TemplateInput>) => {
@@ -117,66 +137,112 @@ export function TemplateEditor() {
   }
 
   return (
-    <main>
-      <p><Link to="/admin/documentos">Voltar aos documentos</Link></p>
-      <h1>{loaded ? `${loaded.name} — versão ${loaded.version}` : "Novo modelo"}</h1>
-      {savedVersion !== undefined && <p role="status">Versão {savedVersion} salva.</p>}
-      {loaded && !loaded.latest && <p>Esta não é a versão mais recente do modelo.</p>}
+    <>
+      <PageTitle
+        heading={loaded ? `${loaded.name} — versão ${loaded.version}` : "Novo modelo"}
+        icon="pe-7s-note2"
+        actions={<Link className="btn btn-outline-secondary" to="/admin/documentos">Voltar aos documentos</Link>}
+      />
+      <StatusNotice message={savedMessage} />
+      {loaded && !loaded.latest && <div className="alert alert-warning">Esta não é a versão mais recente do modelo.</div>}
       {error && (
-        <div role="alert">
-          <p>{error}</p>
-          {invalid.length > 0 && <ul>{invalid.map((v) => <li key={v}>{v}</li>)}</ul>}
-        </div>
+        <Alert color="danger" fade={false}>
+          <p className="mb-0">{error}</p>
+          {invalid.length > 0 && <ul className="mt-2 mb-0">{invalid.map((v) => <li key={v}>{v}</li>)}</ul>}
+        </Alert>
       )}
-      <form onSubmit={save}>
-        <label htmlFor="template-name">Nome</label>
-        <input id="template-name" required maxLength={120} value={draft.name} onChange={(e) => update({ name: e.target.value })} />
-        <label htmlFor="template-category">Categoria</label>
-        <select id="template-category" value={draft.category} onChange={(e) => update({ category: DocumentCategory.parse(e.target.value) })}>
-          {DocumentCategory.options.map((c) => (
-            <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
-          ))}
-        </select>
+      <Card className="main-card mb-3">
+        <CardBody>
+          <Form onSubmit={save}>
+            <Row className="g-2">
+              <Col md={8}>
+                <FormGroup>
+                  <Label for="template-name">Nome</Label>
+                  <Input id="template-name" required maxLength={120} value={draft.name} onChange={(e) => update({ name: e.target.value })} />
+                </FormGroup>
+              </Col>
+              <Col md={4}>
+                <FormGroup>
+                  <Label for="template-category">Categoria</Label>
+                  <Input id="template-category" type="select" value={draft.category} onChange={(e) => update({ category: DocumentCategory.parse(e.target.value) })}>
+                    {DocumentCategory.options.map((c) => (
+                      <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                    ))}
+                  </Input>
+                </FormGroup>
+              </Col>
+            </Row>
 
-        <fieldset>
-          <legend>Variáveis (clique para inserir no texto)</legend>
-          {TEMPLATE_VARIABLES.map((v) => (
-            <button key={v} type="button" title={`{{${v}}}`} onClick={() => insert(v)}>{TEMPLATE_VARIABLE_LABELS[v]}</button>
-          ))}
-          {draft.fields.filter((f) => f.key && f.label).map((f) => (
-            <button key={f.key} type="button" title={`{{campo.${f.key}}}`} onClick={() => insert(`campo.${f.key}`)}>Campo: {f.label}</button>
-          ))}
-        </fieldset>
+            <fieldset className="mb-3">
+              <legend className="fs-6">Variáveis (clique para inserir no texto)</legend>
+              <div className="d-flex flex-wrap gap-2">
+                {TEMPLATE_VARIABLES.map((v) => (
+                  <Button key={v} size="sm" outline color="primary" type="button" title={`{{${v}}}`} onClick={() => insert(v)}>
+                    {TEMPLATE_VARIABLE_LABELS[v]}
+                  </Button>
+                ))}
+                {draft.fields.filter((f) => f.key && f.label).map((f) => (
+                  <Button key={f.key} size="sm" outline color="secondary" type="button" title={`{{campo.${f.key}}}`} onClick={() => insert(`campo.${f.key}`)}>
+                    Campo: {f.label}
+                  </Button>
+                ))}
+              </div>
+            </fieldset>
 
-        <label htmlFor="template-body">Texto do modelo</label>
-        <p>Use # e ## para títulos, **negrito**, listas com - ou 1. e tabelas com |.</p>
-        <textarea id="template-body" ref={body} rows={16} required value={draft.bodyMd} onChange={(e) => update({ bodyMd: e.target.value })} />
+            <FormGroup>
+              <Label for="template-body">Texto do modelo</Label>
+              <p className="small mb-2">Use # e ## para títulos, **negrito**, listas com - ou 1. e tabelas com |.</p>
+              <Input id="template-body" type="textarea" className="font-monospace" innerRef={body} rows={16} required value={draft.bodyMd} onChange={(e) => update({ bodyMd: e.target.value })} />
+            </FormGroup>
 
-        <fieldset>
-          <legend>Campos preenchidos ao gerar (até 10)</legend>
-          {draft.fields.map((f, i) => (
-            <div key={i}>
-              <label htmlFor={`field-key-${i}`}>Chave</label>
-              <input id={`field-key-${i}`} required pattern="[a-z][a-z0-9_]{0,29}" value={f.key} onChange={(e) => updateField(i, { key: e.target.value })} />
-              <label htmlFor={`field-label-${i}`}>Rótulo</label>
-              <input id={`field-label-${i}`} required maxLength={80} value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} />
-              <label htmlFor={`field-type-${i}`}>Tipo</label>
-              <select id={`field-type-${i}`} value={f.type} onChange={(e) => updateField(i, { type: e.target.value === "data" ? "data" : "texto" })}>
-                <option value="texto">Texto</option>
-                <option value="data">Data</option>
-              </select>
-              <button type="button" onClick={() => update({ fields: draft.fields.filter((_, j) => j !== i) })}>Remover campo</button>
+            <fieldset className="mb-3">
+              <legend className="fs-6">Campos preenchidos ao gerar (até 10)</legend>
+              {draft.fields.map((f, i) => (
+                <Row key={i} className="g-2 align-items-end mb-2">
+                  <Col md={3}>
+                    <Label for={`field-key-${i}`}>Chave</Label>
+                    <Input id={`field-key-${i}`} required pattern="[a-z][a-z0-9_]{0,29}" value={f.key} onChange={(e) => updateField(i, { key: e.target.value })} />
+                  </Col>
+                  <Col md={4}>
+                    <Label for={`field-label-${i}`}>Rótulo</Label>
+                    <Input id={`field-label-${i}`} required maxLength={80} value={f.label} onChange={(e) => updateField(i, { label: e.target.value })} />
+                  </Col>
+                  <Col md={3}>
+                    <Label for={`field-type-${i}`}>Tipo</Label>
+                    <Input id={`field-type-${i}`} type="select" value={f.type} onChange={(e) => updateField(i, { type: e.target.value === "data" ? "data" : "texto" })}>
+                      <option value="texto">Texto</option>
+                      <option value="data">Data</option>
+                    </Input>
+                  </Col>
+                  <Col md={2}>
+                    <Button outline color="danger" type="button" className="w-100" onClick={() => update({ fields: draft.fields.filter((_, j) => j !== i) })}>
+                      Remover campo
+                    </Button>
+                  </Col>
+                </Row>
+              ))}
+              {draft.fields.length < 10 && (
+                <Button outline color="secondary" type="button" onClick={() => update({ fields: [...draft.fields, { key: "", label: "", type: "texto" }] })}>
+                  Adicionar campo
+                </Button>
+              )}
+            </fieldset>
+
+            <div className="d-flex gap-2">
+              <Button outline color="secondary" type="button" disabled={busy} onClick={() => void showPreview()}>Ver prévia</Button>
+              <Button color="primary" type="submit" disabled={busy}>Salvar</Button>
             </div>
-          ))}
-          {draft.fields.length < 10 && (
-            <button type="button" onClick={() => update({ fields: [...draft.fields, { key: "", label: "", type: "texto" }] })}>Adicionar campo</button>
-          )}
-        </fieldset>
-
-        <button type="button" disabled={busy} onClick={() => void showPreview()}>Ver prévia</button>
-        <button type="submit" disabled={busy}>Salvar</button>
-      </form>
-      {preview && <iframe title="Prévia do PDF" src={preview} width="100%" height="600" />}
-    </main>
+          </Form>
+        </CardBody>
+      </Card>
+      {preview && (
+        <Card className="main-card mb-3">
+          <CardHeader tag="h2" className="h6 mb-0">Prévia</CardHeader>
+          <CardBody className="p-0">
+            <iframe title="Prévia do PDF" src={preview} width="100%" height="600" className="d-block border-0" />
+          </CardBody>
+        </Card>
+      )}
+    </>
   );
 }

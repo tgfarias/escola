@@ -70,6 +70,7 @@ describe("students admin", () => {
     mockApi(BASE);
     renderPage();
     await screen.findByText("Leonardo Souza");
+    expect(screen.getByRole("heading", { level: 1, name: "Alunos e responsáveis" })).toBeTruthy();
     expect(screen.getByText("15/03/2021")).toBeTruthy();
     expect(screen.getByText(/\*\*\*\.982\.247-\*\*/)).toBeTruthy();
     expect(screen.getByText("Nenhum responsável")).toBeTruthy();
@@ -89,6 +90,7 @@ describe("students admin", () => {
     fireEvent.change(screen.getByLabelText("Data de nascimento"), { target: { value: "2020-05-08" } });
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
     await screen.findByText("Dados salvos.");
+    expect(screen.getByRole("status").textContent).toBe("Dados salvos.");
     expect(bodyOf(fn, `PUT /api/admin/v1/students/${S2}`)).toEqual({ fullName: "Caio Lima", birthDate: "2020-05-08" });
   });
 
