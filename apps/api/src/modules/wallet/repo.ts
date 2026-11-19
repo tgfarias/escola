@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import type { Trx } from "../../db/index";
 
@@ -21,6 +22,7 @@ export async function lockWallet(trx: Trx, guardianId: string) {
 export async function insertEntry(
   trx: Trx,
   entry: {
+    id: string;
     schoolId: string;
     walletId: string;
     kind: string;
@@ -32,7 +34,7 @@ export async function insertEntry(
 ): Promise<boolean> {
   const row = await trx
     .insertInto("walletEntries")
-    .values({ id: uuidv7(), ...entry })
+    .values(entry)
     .onConflict((oc) => oc.columns(["schoolId", "sourceType", "sourceId", "kind"]).doNothing())
     .returning("id")
     .executeTakeFirst();
@@ -63,4 +65,18 @@ export async function listEntries(trx: Trx, guardianId: string, limit: number) {
 export async function guardianExists(trx: Trx, guardianId: string): Promise<boolean> {
   const row = await trx.selectFrom("guardians").select("id").where("id", "=", guardianId).executeTakeFirst();
   return row !== undefined;
+}
+
+/** Trava as carteiras em ordem de guardian_id: lotes de balcão de dois tablets nunca se travam em ordens opostas. */
+export async function lockWallets(trx: Trx, guardianIds: string[]): Promise<void> {
+  if (guardianIds.length === 0) return;
+  await trx.selectFrom("wallets").select("id").where("guardianId", "in", guardianIds).orderBy("guardianId").forUpdate().execute();
+}
+
+export async function markDebtNotice(trx: Trx, guardianId: string): Promise<void> {
+  await trx.updateTable("wallets").set({ debtNoticeAt: sql<Date>`now()` }).where("guardianId", "=", guardianId).execute();
+}
+
+export async function guardianContact(trx: Trx, guardianId: string) {
+  return trx.selectFrom("guardians").select(["phoneE164", "firstName"]).where("id", "=", guardianId).executeTakeFirstOrThrow();
 }

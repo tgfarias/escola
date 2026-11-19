@@ -80,7 +80,8 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
 
   // A carteira é a última trava da transação (ordem: service_days → … → wallets).
   const { balanceCents } = await wallet.lockBalance(trx, schoolId, guardianId);
-  const appliedCents = Math.min(balanceCents, totalCents);
+  // Carteira negativa (débito do balcão) não reduz nem aumenta o Pix: só saldo positivo é aplicado.
+  const appliedCents = Math.max(0, Math.min(balanceCents, totalCents));
   if (appliedCents > 0) {
     await wallet.postEntry(trx, {
       schoolId,

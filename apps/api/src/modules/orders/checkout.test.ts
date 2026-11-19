@@ -58,6 +58,25 @@ async function outbox(schoolId: string, type: string) {
 }
 
 describe("POST /api/v1/checkouts", () => {
+  it("does not apply a negative balance: the Pix covers the whole total", async () => {
+    const s = await setup();
+    await withTenant(s.schoolId, (trx) =>
+      postEntry(trx, {
+        schoolId: s.schoolId,
+        guardianId: s.family.guardianId,
+        kind: "counter_charge",
+        amountCents: -700,
+        sourceType: "counter_sale",
+        sourceId: uuidv7(),
+        minBalanceCents: null,
+      }),
+    );
+    const res = await post(s.cookies, oneOrder(s));
+    expect(res.json()).toMatchObject({ status: "pending_payment", walletAppliedCents: 0 });
+    expect(res.json().amountDueCents).toBe(res.json().totalCents);
+    expect(await walletLedgerMatches(s.schoolId, s.family.guardianId)).toBe(true);
+  });
+
   it("pays two children entirely from the wallet in one checkout", async () => {
     const s = await setup({ walletCents: 5000 });
     const res = await post(s.cookies, {
