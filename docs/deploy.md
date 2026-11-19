@@ -3,7 +3,14 @@
 Pré-requisitos: projeto GCP com Cloud Run, Cloud SQL (PostgreSQL 16, `southamerica-east1`),
 Secret Manager e Firebase Hosting habilitados; `gcloud` e `firebase` autenticados.
 
-Variáveis usadas abaixo: `GCP_PROJECT`, `SQL_INSTANCE` (formato `projeto:regiao:instancia`).
+Variáveis usadas abaixo: `GCP_PROJECT`, `SQL_INSTANCE` (formato `projeto:regiao:instancia`) e
+`DOCUMENTS_BUCKET` (bucket privado dos PDFs, criado em "Documentos (Cloud Storage)"):
+
+```bash
+DOCUMENTS_BUCKET=<projeto>-app-lanche-documentos
+```
+
+A API recusa iniciar com `STORAGE_DRIVER=gcs` (o padrão) e `DOCUMENTS_BUCKET` vazio.
 
 `APP_BASE_URL` é a origem pública da PWA: monta os magic links e é a única origem aceita em
 gravações com sessão (proteção contra CSRF). Em produção, `https://<dominio>`; em
@@ -79,8 +86,9 @@ A conta de serviço do serviço Cloud Run precisa dos papéis:
 
 ## Documentos (Cloud Storage)
 
+Crie o bucket antes do primeiro deploy da API (`DOCUMENTS_BUCKET` definido no início deste arquivo):
+
 ```bash
-DOCUMENTS_BUCKET=<projeto>-app-lanche-documentos
 RUN_SA=<conta de serviço do Cloud Run>
 gcloud storage buckets create "gs://$DOCUMENTS_BUCKET" --project "$GCP_PROJECT" \
   --location southamerica-east1 --uniform-bucket-level-access --public-access-prevention
@@ -98,6 +106,10 @@ O bucket é privado e o objeto nunca é sobrescrito (`ifGenerationMatch=0`), por
 `objectAdmin`. O `gcloud run deploy` da seção "API" inclui `STORAGE_DRIVER=gcs,DOCUMENTS_BUCKET=$DOCUMENTS_BUCKET`
 em `--set-env-vars`. `STORAGE_DRIVER=local` é recusado sem `ENABLE_LOCAL_STORAGE=true` e não deve ser usado em
 produção.
+
+Desenvolvimento fora do Docker (`pnpm dev`): sem bucket, use o disco local, por exemplo
+`STORAGE_DRIVER=local ENABLE_LOCAL_STORAGE=true LOCAL_STORAGE_DIR=/tmp/app-lanche-documents pnpm dev`
+(veja `docs/local.md`).
 
 Item de homologação: gerar um lote real e abrir o PDF pela URL assinada.
 

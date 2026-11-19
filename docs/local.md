@@ -17,14 +17,45 @@ Sem o n8n configurado, o código de acesso não sai por e-mail/WhatsApp: ele fic
 1. Em http://localhost:8088/admin, peça o código para `admin@escola.local`.
 2. `pnpm app:otp` mostra o último código gerado.
 
-O mesmo vale para o login do responsável por OTP. Os responsáveis de demonstração usam telefones
-fictícios `+55119000000xx`.
+## Entrar como responsável
+
+O responsável entra por magic link, que em produção o n8n pede à API e manda por WhatsApp. Localmente,
+`pnpm app:link` faz esse papel: procura o responsável pelo telefone no banco do compose, chama
+`POST /internal/v1/schools/<school_id>/magic-links` assinado com `INTERNAL_SERVICE_TOKEN`/`INTERNAL_HMAC_SECRET`
+(os valores do `docker-compose.yml`, ou os das variáveis de ambiente) e imprime o link.
+
+```
+pnpm app:link +5511900000001 documents   # link para /documentos (padrão)
+pnpm app:link +5511900000001 order       # link de pedido
+```
+
+O link de pedido vale para o próximo dia de serviço aberto com corte no futuro; sem ele, o comando avisa que é
+preciso abrir um dia na área admin.
+
+O link abre a PWA em http://localhost:8088 (`APP_BASE_URL`). Se ela pedir o código de acesso, `pnpm app:otp` mostra o
+último. Os responsáveis de demonstração usam telefones fictícios: Ana `+5511900000001` (Léo e Bia), Bruno
+`+5511900000002` (Caio) e Carla `+5511900000003` (Duda).
+
+### Ver um documento publicado como responsável
+
+1. Na área admin, em Documentos, copie um exemplo, gere o lote para os alunos de demonstração, aguarde a geração e publique.
+2. `pnpm app:link +5511900000001 documents` e abra o link impresso.
+3. Em `/documentos`, toque no documento: o PDF abre pela URL assinada de 5 minutos.
 
 ## Documentos (PDF)
 
 Os PDFs ficam no volume `documents` (`STORAGE_DRIVER=local`, só aceito com `ENABLE_LOCAL_STORAGE=true`). O link
 de download é servido pela própria API em `/api/v1/files?t=...`, assinado e válido por 5 minutos.
 `pnpm app:down` mantém o volume; `docker compose --profile app down -v` apaga PDFs e banco.
+
+Fora do Docker (`pnpm dev`), o driver padrão é `gcs` e a API não sobe sem bucket. Use o disco local:
+
+```
+STORAGE_DRIVER=local ENABLE_LOCAL_STORAGE=true LOCAL_STORAGE_DIR=/tmp/app-lanche-documents pnpm dev
+```
+
+Os dados pessoais da escola de demonstração só são preenchidos quando estão vazios: um valor alterado pela equipe
+sobrevive a `pnpm app:up` (um valor apagado volta a ser preenchido).
 
 ## Testes com o app no ar
 

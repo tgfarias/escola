@@ -1,4 +1,4 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src", "test", "../../db/migrate.ts"]
+  "include": ["src", "test", "../../db/migrate.ts", "../../db/dev-link.ts"]
 }

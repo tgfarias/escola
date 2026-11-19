@@ -68,11 +68,11 @@ function harness(onlySchool: string) {
       throw new Error("set per run");
     },
   };
-  async function run(jsCode: string, opts: { input?: unknown; staticData?: Record<string, unknown>; raw?: string } = {}) {
+  async function run(jsCode: string, opts: { input?: unknown; staticData?: Record<string, unknown>; raw?: string; env?: Record<string, unknown> } = {}) {
     const staticData = opts.staticData ?? {};
     const ctx = { helpers: { ...helpers, getBinaryDataBuffer: async () => Buffer.from(opts.raw ?? "") } };
     const fn = new AsyncFunction("$env", "$input", "$getWorkflowStaticData", "require", jsCode);
-    return (await fn.call(ctx, ENV, { first: () => opts.input, all: () => [opts.input] }, () => staticData, require_)) as { json: Record<string, unknown> }[];
+    return (await fn.call(ctx, opts.env ?? ENV, { first: () => opts.input, all: () => [opts.input] }, () => staticData, require_)) as { json: Record<string, unknown> }[];
   }
   return { run, whatsapp };
 }
@@ -192,6 +192,18 @@ describe("n8n workflows", () => {
       const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(dup[0]!.json).toMatchObject({ duplicate: true });
       expect(h.whatsapp).toHaveLength(1);
+    });
+
+    it("fails document.published before minting a link when the WhatsApp template is not configured", async () => {
+      const schoolId = await createSchool();
+      const fam = await seedFamily(schoolId, ["Léo"]);
+      const data = { guardian_id: fam.guardianId, phone: "+5511999990004", first_name: "Ana", batch_id: crypto.randomUUID(), template_name: "Declaração", students: ["Léo"] };
+      const req = await withN8n(async () => signedEventRequest({ ...envelope(crypto.randomUUID(), "document.published", data), school_id: schoolId }));
+      const h = harness(schoolId);
+      const env = { ...ENV, WA_TEMPLATE_DOCUMENT: undefined };
+      await expect(h.run(code("events.json", "Verify and send"), { input: { json: { headers: req.headers } }, raw: req.body, env })).rejects.toThrow(/WA_TEMPLATE_DOCUMENT/);
+      expect(h.whatsapp).toEqual([]);
+      expect(await adminDb().selectFrom("magicLinks").select("id").where("guardianId", "=", fam.guardianId).execute()).toEqual([]);
     });
 
     it("verifies the dispatcher signature, sends the OTP and deduplicates", async () => {

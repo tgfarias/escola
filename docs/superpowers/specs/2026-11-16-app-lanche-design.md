@@ -99,7 +99,7 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 ### 4.5 LGPD
 
 - Escola é controladora; a plataforma é operadora (contrato de operação com cada escola).
-- Do aluno guardamos primeiro nome, turma e restrição alimentar. Restrição alimentar é dado de saúde de criança: exige consentimento específico do responsável, registrado em `guardian_students.restriction_consent_at`.
+- Do aluno guardamos primeiro nome, turma e restrição alimentar. Para documentos (8.1), guardamos também nome completo e data de nascimento do aluno, e nome completo e CPF do responsável: campos opcionais, preenchidos só pelas escolas que optam por usar documentos que os exigem. Restrição alimentar é dado de saúde de criança: exige consentimento específico do responsável, registrado em `guardian_students.restriction_consent_at`.
 - Mensagens de WhatsApp usam apenas primeiros nomes.
 - Telefone, token, OTP e `device_secret` nunca aparecem em log. Logs usam `guardian_id`.
 - `audit_log` registra geração de documento, download, ajuste de saldo e ações de equipe.
@@ -725,7 +725,7 @@ Cada módulo da API tem `routes.ts` (HTTP), `service.ts` (regras, recebe a trans
 | F5 | Documentos | F1, F3 |
 | F6 | Conciliação, alertas, rotinas de retenção LGPD, piloto na primeira escola | F2–F5 |
 
-Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limite de requisições por IP (F6).
+Pendências registradas para fases futuras: rota de reverificação por OTP do responsável, com `otpAt` pelo relógio do banco (fase que trouxer reembolso e edição de cadastro); limite de requisições por IP (F6); a retenção LGPD da F6 precisa cobrir documentos — as linhas de `documents`/`document_views` e os PDFs no bucket, que trazem nome completo e nascimento do aluno e CPF do responsável. Hoje o `app_user` não tem `DELETE` nessas tabelas e o objeto nunca é sobrescrito, então a anonimização 12 meses após a saída não alcança os PDFs emitidos sem uma rotina própria (F6).
 
 Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
 

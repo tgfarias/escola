@@ -1,5 +1,6 @@
 // CPFs are well-known fictitious test numbers with valid check digits.
 // Local only: a demo school to click around in. Idempotent (fixed ids + ON CONFLICT DO NOTHING).
+// Personal fields are only backfilled when empty: a value staff changed survives `pnpm app:up`; a cleared one is filled again.
 // Runs with the admin database user, outside the application, like cli:create-school.
 import pg from "pg";
 
@@ -49,7 +50,7 @@ try {
   for (const g of guardians) {
     await db.query(
       `INSERT INTO guardians (id, school_id, phone_e164, first_name, full_name, cpf) VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, cpf = EXCLUDED.cpf`,
+       ON CONFLICT (id) DO UPDATE SET full_name = coalesce(guardians.full_name, EXCLUDED.full_name), cpf = coalesce(guardians.cpf, EXCLUDED.cpf)`,
       [g.id, SCHOOL, g.phone, g.first, g.full, g.cpf],
     );
   }
@@ -57,7 +58,7 @@ try {
     await db.query(
       `INSERT INTO students (id, school_id, class_id, external_code, first_name, full_name, birth_date)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (id) DO UPDATE SET full_name = EXCLUDED.full_name, birth_date = EXCLUDED.birth_date`,
+       ON CONFLICT (id) DO UPDATE SET full_name = coalesce(students.full_name, EXCLUDED.full_name), birth_date = coalesce(students.birth_date, EXCLUDED.birth_date)`,
       [s.id, SCHOOL, classes[s.cls]!.id, s.code, s.first, s.full, s.birth],
     );
     await db.query(

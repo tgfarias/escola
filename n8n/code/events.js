@@ -53,6 +53,8 @@ switch (event.type) {
     break;
   }
   case "document.published": {
+    // Sem o modelo configurado, falha antes de pedir o link: cada nova tentativa da outbox criaria outro magic link.
+    if (!$env.WA_TEMPLATE_DOCUMENT) throw new Error("WA_TEMPLATE_DOCUMENT is not set");
     // Link de escopo `documents` (7 dias) pedido à API; o n8n nunca gera token (spec 4.1). Falha → 500 → nova tentativa.
     const link = ensureOk(
       await api(this, "POST", `/internal/v1/schools/${event.school_id}/magic-links`, { guardian_id: d.guardian_id, scope: "documents" }),
