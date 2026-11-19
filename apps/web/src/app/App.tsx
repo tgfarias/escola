@@ -2,7 +2,9 @@ import { lazy, Suspense, useEffect } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router";
 import { AdminHome } from "../areas/admin/AdminHome";
 import { AdminLogin } from "../areas/admin/AdminLogin";
+import { BatchPage } from "../areas/admin/BatchPage";
 import { DocumentsAdmin } from "../areas/admin/DocumentsAdmin";
+import { GenerateBatch } from "../areas/admin/GenerateBatch";
 import { StudentsAdmin } from "../areas/admin/StudentsAdmin";
 import { TemplateEditor } from "../areas/admin/TemplateEditor";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
@@ -56,6 +58,8 @@ export function App() {
       <Route path="/admin/documentos" element={<DocumentsAdmin />} />
       <Route path="/admin/documentos/modelos/novo" element={<TemplateEditor />} />
       <Route path="/admin/documentos/modelos/:id" element={<TemplateEditor />} />
+      <Route path="/admin/documentos/gerar/:templateId" element={<GenerateBatch />} />
+      <Route path="/admin/documentos/lotes/:id" element={<BatchPage />} />
       <Route path="/kds" element={<Suspense fallback={null}><KdsApp /></Suspense>} />
       <Route path="*" element={<Home />} />
     </Routes>
