@@ -222,15 +222,18 @@ test("keeps an undo made during a sync round behind its sale", async ({ browser 
   // 2. Durante a rodada, outro lançamento e o "Desfazer" dele (correção de aluno errado).
   await sell();
   page.once("dialog", (d) => void d.accept());
-  await page.locator('[data-testid^="kds-counter-undo-"]').first().click();
+  // The list order is not part of the contract: undo a specific sale and check that one.
+  const undo = page.locator('[data-testid^="kds-counter-undo-"]').first();
+  const undoneId = (await undo.getAttribute("data-testid"))!.replace("kds-counter-undo-", "");
+  await undo.click();
   await expect(page.getByTestId("kds-badge")).toContainText("3 pendentes");
 
   // 3. A rede volta: o estorno espera o lançamento e o desfazer não se perde.
   release(); // as rodadas seguintes passam direto pelo handler
   await expect(page.getByTestId("kds-badge")).toHaveText(SYNCED, { timeout: 45_000 });
   const stored = await sales();
-  expect(stored.map((s) => s.voided)).toEqual([false, true]);
-  const [second] = stored.slice(1);
-  await expect(page.getByTestId(`kds-counter-sale-${second!.id}`)).toContainText("estornado");
+  expect(stored).toHaveLength(2);
+  expect(stored.filter((s) => s.voided).map((s) => s.id)).toEqual([undoneId]);
+  await expect(page.getByTestId(`kds-counter-sale-${undoneId}`)).toContainText("estornado");
   await context.close();
 });
