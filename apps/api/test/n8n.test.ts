@@ -3,10 +3,13 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { uuidv7 } from "uuidv7";
 import { buildApp } from "../src/app";
+import { withTenant } from "../src/db/index";
+import { postEntry } from "../src/modules/wallet/service";
 import { resetConfigForTests } from "../src/platform/config";
 import { signedEventRequest } from "../src/modules/outbox/service";
-import { adminDb, createSchool, internalRequest, seedFamily, seedServiceDay } from "./helpers";
+import { adminDb, createSchool, internalRequest, seedFamily, seedServiceDay, zoneAtLocalHour } from "./helpers";
 
 const ROOT = join(__dirname, "..", "..", "..", "n8n");
 const require_ = createRequire(import.meta.url);
@@ -30,6 +33,9 @@ const ENV = {
   WA_TEMPLATE_PAYMENT_CONFIRMED: "pedido_confirmado",
   WA_TEMPLATE_LATE_CREDIT: "credito_atrasado",
   WA_TEMPLATE_DOCUMENT: "documento_publicado",
+  WA_TEMPLATE_DEBT_NOTICE: "aviso_debito",
+  WA_TEMPLATE_PAYMENT_REQUEST: "pedido_pagamento",
+  WA_TEMPLATE_TOPUP_CONFIRMED: "recarga_confirmada",
 };
 
 type Sent = { to: string; template: string; params: string[]; components: { type: string; sub_type?: string; index?: string; parameters: { text: string }[] }[] };
@@ -123,6 +129,20 @@ describe("n8n workflows", () => {
     expect(day.status).toBe("closed");
   });
 
+  it("asks the API to enqueue the debt notices that are due", async () => {
+    const schoolId = await createSchool();
+    await adminDb().updateTable("schools").set({ timezone: zoneAtLocalHour(12) }).where("id", "=", schoolId).execute();
+    const fam = await seedFamily(schoolId, ["Léo"]);
+    await withTenant(schoolId, (trx) =>
+      postEntry(trx, { schoolId, guardianId: fam.guardianId, kind: "counter_charge", amountCents: -700, sourceType: "counter_sale", sourceId: uuidv7(), minBalanceCents: null }),
+    );
+    const h = harness(schoolId);
+    const out = await h.run(code("schedule.json", "Run due actions"));
+    expect(out).toEqual([{ json: expect.objectContaining({ action: "send_debt_notices", school_id: schoolId, ok: true, enqueued: 1 }) }]);
+    expect(h.whatsapp).toEqual([]); // a mensagem sai do evento, pelo fluxo de eventos
+    expect(await h.run(code("schedule.json", "Run due actions"))).toEqual([{ json: { idle: true } }]);
+  });
+
   it("records a failed delivery when WhatsApp rejects the number", async () => {
     const schoolId = await createSchool();
     const ok = await seedFamily(schoolId, ["Léo"]);
@@ -172,6 +192,41 @@ describe("n8n workflows", () => {
       school_id: crypto.randomUUID(),
       occurred_at: new Date().toISOString(),
       data,
+    });
+
+    it("sends wallet notices with a wallet-scope link and the top-up confirmation", async () => {
+      const schoolId = await createSchool();
+      const fam = await seedFamily(schoolId, ["Léo"]);
+      const h = harness(schoolId);
+      const contact = { guardian_id: fam.guardianId, phone: "+5511999990004", first_name: "Ana" };
+      const deliver = async (type: string, data: Record<string, unknown>) => {
+        const req = await withN8n(async () => signedEventRequest({ ...envelope(crypto.randomUUID(), type, data), school_id: schoolId }));
+        return h.run(code("events.json", "Verify and send"), { input: { json: { headers: req.headers } }, raw: req.body, staticData: {} });
+      };
+      expect((await deliver("wallet.debt_notice", { ...contact, amount_due_cents: 1350 }))[0]!.json).toMatchObject({ ok: true, type: "wallet.debt_notice" });
+      await deliver("wallet.payment_requested", { ...contact, amount_due_cents: 1350 });
+      await deliver("wallet.topup_confirmed", { ...contact, amount_cents: 5000, wallet_balance_cents: -350 });
+      expect(h.whatsapp.map((m) => [m.to, m.template, m.params])).toEqual([
+        ["5511999990004", "aviso_debito", ["Ana", "R$ 13,50", expect.stringMatching(/^https:\/\/app\.test\/l#/)]],
+        ["5511999990004", "pedido_pagamento", ["Ana", "R$ 13,50", expect.stringMatching(/^https:\/\/app\.test\/l#/)]],
+        ["5511999990004", "recarga_confirmada", ["Ana", "R$ 50,00", "-R$ 3,50"]],
+      ]);
+      const links = await adminDb().selectFrom("magicLinks").select(["scope", "serviceDate"]).where("guardianId", "=", fam.guardianId).execute();
+      expect(links).toEqual([
+        { scope: "wallet", serviceDate: null },
+        { scope: "wallet", serviceDate: null },
+      ]);
+    });
+
+    it("fails a wallet notice before minting a link when its template is not configured", async () => {
+      const schoolId = await createSchool();
+      const fam = await seedFamily(schoolId, ["Léo"]);
+      const h = harness(schoolId);
+      const data = { guardian_id: fam.guardianId, phone: "+5511999990004", first_name: "Ana", amount_due_cents: 100 };
+      const req = await withN8n(async () => signedEventRequest({ ...envelope(crypto.randomUUID(), "wallet.debt_notice", data), school_id: schoolId }));
+      const env = { ...ENV, WA_TEMPLATE_DEBT_NOTICE: "" };
+      await expect(h.run(code("events.json", "Verify and send"), { input: { json: { headers: req.headers } }, raw: req.body, env })).rejects.toThrow(/WA_TEMPLATE_DEBT_NOTICE/);
+      expect(await adminDb().selectFrom("magicLinks").select("id").where("guardianId", "=", fam.guardianId).execute()).toEqual([]);
     });
 
     it("sends the document link with a documents-scope magic link from document.published", async () => {

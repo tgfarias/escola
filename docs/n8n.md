@@ -21,16 +21,17 @@ O n8n roda em VPS externa e fala com a API por REST + HMAC (spec 6). Há dois fl
 | `WHATSAPP_TOKEN` | token da WhatsApp Cloud API |
 | `WHATSAPP_PHONE_NUMBER_ID` | id do número remetente |
 | `WHATSAPP_API_VERSION` | opcional, padrão `v21.0` |
-| `WA_TEMPLATE_REMINDER`, `WA_TEMPLATE_KITCHEN`, `WA_TEMPLATE_OTP`, `WA_TEMPLATE_PAYMENT_CONFIRMED`, `WA_TEMPLATE_LATE_CREDIT`, `WA_TEMPLATE_DOCUMENT` | nomes dos modelos aprovados |
+| `WA_TEMPLATE_REMINDER`, `WA_TEMPLATE_KITCHEN`, `WA_TEMPLATE_OTP`, `WA_TEMPLATE_PAYMENT_CONFIRMED`, `WA_TEMPLATE_LATE_CREDIT`, `WA_TEMPLATE_DOCUMENT`, `WA_TEMPLATE_DEBT_NOTICE`, `WA_TEMPLATE_PAYMENT_REQUEST`, `WA_TEMPLATE_TOPUP_CONFIRMED` | nomes dos modelos aprovados |
 | `APP_LANCHE_EMAIL_FROM` | remetente do e-mail de código |
 
 Configure também a credencial SMTP no nó "Send e-mail".
 
 ## Comportamento dos fluxos
 
-- Agenda (a cada 5 min): envia lembretes e fecha o dia vencido. O fechamento não manda mensagem.
+- Agenda (a cada 5 min): envia lembretes e fecha o dia vencido. O fechamento não manda mensagem. Além disso, `send_debt_notices` (das 09:00 às 19:00 no fuso da escola) chama `POST /internal/v1/schools/{school_id}/debt-notices`, que grava um `wallet.debt_notice` por carteira negativa sem aviso há 3 dias; a conciliação de recargas não passa pelo n8n.
 - Eventos: o resumo da cozinha sai do evento `service_day.closed`, qualquer que seja o fechamento (fluxo do n8n, fechamento de segurança ou equipe). O fluxo lê o romaneio em `GET /internal/v1/service-days/{school_id}/{date}/manifest`; falha na leitura ou no envio responde 500 e a outbox tenta de novo.
 - Documentos: para cada `document.published` o fluxo pede um magic link de escopo `documents` em `POST /internal/v1/schools/{school_id}/magic-links` (vale 7 dias) e envia o modelo de documento; falha no pedido do link ou no envio responde 500 e a outbox tenta de novo (cada tentativa gera um link novo; os antigos continuam válidos até vencer).
+- Carteira: para `wallet.debt_notice` e `wallet.payment_requested` o fluxo pede um magic link de escopo `wallet` (7 dias) e envia o modelo correspondente; `wallet.topup_confirmed` não tem link. Falha responde 500 e a outbox tenta de novo.
 - Tempo limite: 20 s por chamada à API e 15 s por envio ao WhatsApp. Um envio de lembrete que falha no transporte (tempo esgotado, conexão recusada) é registrado como `failed` com `error: "send_failed"`, e a página segue com os demais responsáveis.
 
 ## Modelos do WhatsApp (idioma `pt_BR`)
@@ -48,12 +49,18 @@ Parâmetros na ordem; nenhum contém quebra de linha.
   Texto: "Olá, {{1}}! O pagamento chegou depois do horário de corte. Creditamos {{2}} na sua carteira. Saldo: {{3}}."
 - Documento publicado (utility): `{{1}}` primeiro nome, `{{2}}` nome do documento, `{{3}}` filhos, `{{4}}` link.
   Texto: "Olá, {{1}}! A escola publicou {{2}} de {{3}}. Para ver e baixar, acesse em até 7 dias: {{4}}"
+- Aviso de débito (utility): `{{1}}` primeiro nome, `{{2}}` valor devido, `{{3}}` link.
+  Texto: "Olá, {{1}}! A conta do lanche está com débito de {{2}}. Para pagar por Pix, acesse em até 7 dias: {{3}}"
+- Pedido de pagamento (utility): `{{1}}` primeiro nome, `{{2}}` valor devido, `{{3}}` link.
+  Texto: "Olá, {{1}}! A escola enviou o link para pagar o débito de {{2}} do lanche por Pix: {{3}}"
+- Recarga confirmada (utility): `{{1}}` primeiro nome, `{{2}}` valor, `{{3}}` saldo.
+  Texto: "Olá, {{1}}! Recebemos o Pix de {{2}}. Saldo do lanche: {{3}}."
 
 ## Dados pessoais no n8n
 
 O fluxo de eventos não guarda histórico de execuções, de propósito: o corpo do webhook e a saída do Code node trazem código OTP, telefone e nomes, que a API apaga depois da entrega (regra 28 do CLAUDE.md). Por isso `events.json` vem com `saveDataSuccessExecution` e `saveDataErrorExecution` em `none`, `saveManualExecutions` e `saveExecutionProgress` desligados. Nunca ligue o histórico nesse fluxo para depurar; use um evento de teste sem dados reais. Recomenda-se também `EXECUTIONS_DATA_PRUNE=true` com `EXECUTIONS_DATA_MAX_AGE` curto (poucas horas) no contêiner.
 
-O evento de documento traz só primeiros nomes, o nome do modelo e o telefone; CPF e nomes completos ficam só no PDF.
+O evento de documento traz só primeiros nomes, o nome do modelo e o telefone; CPF e nomes completos ficam só no PDF. Os eventos da carteira trazem só o primeiro nome do responsável, o telefone e valores; nenhum nome de aluno.
 
 Limitações conhecidas:
 - A deduplicação por static data pode falhar sob execuções concorrentes do mesmo id de evento. O arrendamento do dispatcher torna isso raro; o pior caso é uma mensagem duplicada.

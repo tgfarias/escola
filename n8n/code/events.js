@@ -63,6 +63,22 @@ switch (event.type) {
     await send.call(this, d.phone, $env.WA_TEMPLATE_DOCUMENT, [d.first_name, d.template_name, joinNames(d.students), link.link_url]);
     break;
   }
+  case "wallet.debt_notice":
+  case "wallet.payment_requested": {
+    const name = event.type === "wallet.debt_notice" ? "WA_TEMPLATE_DEBT_NOTICE" : "WA_TEMPLATE_PAYMENT_REQUEST";
+    // Sem o modelo, falha antes de pedir o link: cada nova tentativa da outbox criaria outro magic link.
+    if (!$env[name]) throw new Error(`${name} is not set`);
+    // Link de escopo `wallet` (7 dias), pedido à API; o n8n nunca gera token (spec 4.1).
+    const link = ensureOk(
+      await api(this, "POST", `/internal/v1/schools/${event.school_id}/magic-links`, { guardian_id: d.guardian_id, scope: "wallet" }),
+      "magic link",
+    );
+    await send.call(this, d.phone, $env[name], [d.first_name, brl(d.amount_due_cents), link.link_url]);
+    break;
+  }
+  case "wallet.topup_confirmed":
+    await send.call(this, d.phone, $env.WA_TEMPLATE_TOPUP_CONFIRMED, [d.first_name, brl(d.amount_cents), brl(d.wallet_balance_cents)]);
+    break;
   default:
     // Tipos futuros: aceitos sem mensagem.
     break;
