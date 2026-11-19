@@ -71,7 +71,7 @@ Pais pagam a semana inteira na segunda (recarga). Depois disso, a cozinha ou a s
   - extrato por responsável;
   - lançar no balcão (mesmo fluxo do tablet, online, com confirmação para passar do limite);
   - estornar um lançamento;
-  - gerar QR de pagamento (valor padrão = débito, editável) mostrado na tela;
+  - gerar QR de pagamento (valor padrão = débito, editável) mostrado na tela; a cozinha abre "Contas" em outro aparelho (celular ou computador), nunca no tablet do KDS: o login de equipe substitui o cookie `__session` e desconecta o tablet, e a página avisa isso ao papel `cozinha`;
   - "Enviar link de pagamento por WhatsApp".
 - Configuração da escola: o limite de débito.
 - "Alunos e responsáveis": trocar o responsável financeiro do aluno.

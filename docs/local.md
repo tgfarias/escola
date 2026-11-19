@@ -49,11 +49,19 @@ o financeiro).
 - Admin → "Contas": débitos primeiro, extrato, "Lançar no balcão", estorno, QR de pagamento e "Enviar link de
   pagamento por WhatsApp" (o evento fica na outbox sem o n8n). O limite de débito (padrão R$ 50,00) fica no cartão
   "Limite de débito" (só administradores alteram).
+- A cozinha abre "Contas" (para mostrar o QR) em outro aparelho, nunca no tablet do KDS: entrar no admin no tablet
+  troca o cookie `__session` e o tablet pede um novo pareamento.
 - Tablet: pareie em /kds (código gerado em "Tablets da cozinha") e use a aba "Lançar". Sem rede, o lançamento fica
   pendente e sai quando a conexão volta.
 - Responsável: `pnpm app:link +5511900000002 wallet` abre a carteira de Bruno com "Pagar débito" e "Adicionar
-  créditos". O provedor `fake` gera um Pix de mentira; sem o webhook configurado a recarga fica pendente e o job
-  `/jobs/v1/topups/reconcile` a expira depois de 60 minutos.
+  créditos". O provedor `fake` gera um Pix de mentira; sem o webhook configurado a recarga fica pendente.
+- Nada roda jobs localmente: a expiração e a conciliação das recargas só acontecem quando
+  `POST /jobs/v1/topups/reconcile` é chamado (em produção, o Cloud Scheduler a cada 5 minutos). Depois dos 60
+  minutos do Pix, chame à mão:
+
+  ```
+  curl -X POST -H 'X-Job-Token: local-jobs-token-with-at-least-32-chars!!!' http://localhost:8080/jobs/v1/topups/reconcile
+  ```
 
 ## Documentos (PDF)
 

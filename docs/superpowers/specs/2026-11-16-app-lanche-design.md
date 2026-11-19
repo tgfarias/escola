@@ -648,7 +648,7 @@ Convenções do esquema:
 - `students.external_code` é o código/matrícula do aluno na escola; é a chave que torna a importação CSV idempotente.
 - Unicidades relevantes: `guardians (school_id, phone_e164)`, `students (school_id, external_code)`, `staff_users (email)`, `service_days (school_id, service_date)`, `wallets (school_id, guardian_id)`, `magic_links (token_hash)`, `payments (provider, provider_charge_id)`, `manifests (school_id, service_day_id, version)`, `document_templates (school_id, template_group_id, version)`, `documents (school_id, batch_id, student_id, guardian_id)` com nulos iguais, `document_views (school_id, document_id, guardian_id)`, além das listadas em 5.4.
 - `status`, `kind`, `role`, `scope` e `type` são `text` com `CHECK` de valores permitidos.
-- `wallet_entries.amount_cents` tem sinal: `checkout_hold` e `refund` negativos; `hold_release`, `late_payment_credit` e `cancel_credit` positivos; `manual_adjustment` qualquer sinal diferente de zero. Saldo = soma dos lançamentos. `wallet_entries.note` (opcional, até 200 caracteres) guarda o motivo de um ajuste manual.
+- `wallet_entries.amount_cents` tem sinal: `checkout_hold`, `refund` e `counter_charge` (lanche lançado no balcão) negativos; `hold_release`, `late_payment_credit`, `cancel_credit`, `counter_void` (estorno de um lançamento do balcão) e `topup_credit` (recarga por Pix) positivos; `manual_adjustment` qualquer sinal diferente de zero. Saldo = soma dos lançamentos; desde a F5B pode ficar negativo até o limite de débito da escola (spec `2026-11-19-balcao-carteira-design.md`). `wallet_entries.note` (opcional, até 200 caracteres) guarda o motivo de um ajuste manual.
 - `payments` guarda também `pix_copy_paste` e `pix_qr_png_base64` devolvidos pelo gateway; um checkout tem no máximo uma cobrança.
 - No romaneio, a restrição alimentar só aparece se algum responsável do aluno registrou `restriction_consent_at`; item com quantidade maior que 1 aparece como `"2x Misto quente"`.
 
@@ -664,12 +664,17 @@ Convenções do esquema:
 | `GET /api/v1/checkouts/:id` | Estado do checkout e dados do Pix |
 | `POST /api/v1/checkouts/:id/cancel` | Cancela e credita na carteira |
 | `POST /api/v1/checkouts/:id/charge` | Cria o Pix que faltou (falha do gateway no checkout); idempotente por natureza, sem `Idempotency-Key` |
-| `GET /api/v1/wallet` | Saldo e extrato |
+| `GET /api/v1/wallet` | Saldo, débito e extrato (escopos `order` e `wallet`) |
+| `POST /api/v1/topups` · `GET /api/v1/topups/:id` | Recarga por Pix: pagar o débito ou colocar créditos (idempotente) e acompanhar o pagamento |
+| `POST /api/v1/topups/:id/charge` | Cria o Pix da recarga que faltou; idempotente por natureza, sem `Idempotency-Key` |
 | `GET /api/v1/documents` · `POST /api/v1/documents/:id/download` | Lista e URL assinada (o download registra a primeira abertura) |
 | `POST /api/kds/v1/pair` | Pareia o tablet |
 | `GET /api/kds/v1/manifest/:date` | Romaneio ou prévia |
 | `POST /api/kds/v1/events` · `GET /api/kds/v1/changes` | Sincronização |
-| `/api/admin/v1/**` | Cadastros, cardápio, dias de serviço, modelos, lotes, pareamento, ajustes de saldo |
+| `GET /api/kds/v1/roster` | Alunos, responsável financeiro com saldo, limite e itens do balcão |
+| `POST /api/kds/v1/counter-sales` · `POST /api/kds/v1/counter-voids` | Lançamentos e estornos do balcão, idempotentes pelo id do cliente |
+| `/api/admin/v1/**` | Cadastros, cardápio, dias de serviço, modelos, lotes, pareamento, ajustes de saldo, contas, lançamento no balcão, recarga por QR e limite de débito |
+| `POST /jobs/v1/topups/reconcile` | Job (Cloud Scheduler): confirma recargas pagas e expira os Pix vencidos |
 
 Todos os corpos e respostas são schemas zod em `packages/contracts`, usados pela API para validar e pela web para tipar.
 
