@@ -176,4 +176,27 @@ describe("students admin", () => {
     renderPage();
     await screen.findByText("login");
   });
+  it("makes another guardian the financial one", async () => {
+    const twoGuardians = {
+      students: [
+        {
+          ...STUDENTS.students[0]!,
+          guardians: [
+            { ...STUDENTS.students[0]!.guardians[0]!, financial: true },
+            { id: U(6), firstName: "Rui", fullName: null, phone: "+5511999990002", cpfMasked: null, financial: false },
+          ],
+        },
+      ],
+    };
+    const fn = mockApi({
+      ...BASE,
+      "GET /api/admin/v1/students": { status: 200, body: twoGuardians },
+      [`PUT /api/admin/v1/students/${S1}/financial-guardian`]: { status: 204 },
+    });
+    renderPage();
+    expect(await screen.findByText("financeiro")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Tornar Rui responsável financeiro de Leonardo Souza" }));
+    await waitFor(() => expect(bodyOf(fn, `PUT /api/admin/v1/students/${S1}/financial-guardian`)).toEqual({ guardianId: U(6) }));
+  });
+
 });

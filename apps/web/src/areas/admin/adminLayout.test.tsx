@@ -56,6 +56,7 @@ describe("admin layout", () => {
     expect(menu().getAllByRole("link").map((a) => a.textContent)).toEqual([
       "Início",
       "Alunos e responsáveis",
+      "Contas",
       "Cardápio",
       "Dias de serviço",
       "Documentos",
@@ -69,11 +70,11 @@ describe("admin layout", () => {
     expect(screen.getByText("página de documentos")).toBeTruthy();
   });
 
-  it("shows only the home page to the kitchen", async () => {
+  it("shows the home page and the accounts to the kitchen", async () => {
     mockApi({ "GET /api/admin/v1/me": me("cozinha") });
     renderAt("/admin");
     await screen.findByText("Cozinha");
-    expect(menu().getAllByRole("link").map((a) => a.textContent)).toEqual(["Início"]);
+    expect(menu().getAllByRole("link").map((a) => a.textContent)).toEqual(["Início", "Contas"]);
   });
 
   it("sends visitors without a session to the login", async () => {

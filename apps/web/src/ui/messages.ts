@@ -11,6 +11,7 @@ const MESSAGES: Record<string, string> = {
   checkout_not_cancellable: "Este pedido não pode mais ser cancelado.",
   not_found: "Não encontramos este pedido.",
   network_error: "Sem conexão. Verifique a internet e tente de novo.",
+  wallet_no_debt: "Não há débito para pagar.",
 };
 
 export function errorMessage(code: string): string {
@@ -32,6 +33,9 @@ const STAFF_MESSAGES: Record<string, string> = {
   document_missing_data: "Faltam dados de alguns alunos ou responsáveis. Corrija em Alunos e responsáveis e tente de novo.",
   document_batch_not_ready: "Ainda há documentos sem PDF. Aguarde a geração ou descarte os que falharam.",
   document_batch_published: "Este lote já foi publicado.",
+  insufficient_balance: "Saldo insuficiente: o lançamento passa do limite de débito.",
+  wallet_no_debt: "Este responsável não tem débito.",
+  invalid_order: "Aluno ou item indisponível. Atualize a página e tente de novo.",
   request_rejected: "Não foi possível concluir esta ação. Atualize a página e tente de novo.",
 };
 

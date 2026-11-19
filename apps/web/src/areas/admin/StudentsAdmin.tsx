@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ApiError, apiFetch } from "../../app/api";
 import { PageTitle } from "../../theme/layout/PageTitle";
 import { announce, StatusNotice } from "../../theme/notify";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { formatIsoDate } from "../../ui/dates";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
 import { useStaffErrors } from "./useStaffErrors";
@@ -202,6 +203,19 @@ export function StudentsAdmin() {
     await load();
   }
 
+  async function makeFinancial(studentId: string, guardianId: string) {
+    setStatus(null);
+    setError(null);
+    try {
+      await apiFetch(`/api/admin/v1/students/${studentId}/financial-guardian`, z.undefined(), { method: "PUT", body: { guardianId } });
+      setStatus("Responsável financeiro alterado.");
+      announce("Responsável financeiro alterado.");
+      await load();
+    } catch (err) {
+      fail(err);
+    }
+  }
+
   if (!students) {
     return (
       <div>
@@ -231,7 +245,7 @@ export function StudentsAdmin() {
 
   return (
     <>
-      <PageTitle heading="Alunos e responsáveis" subheading="Nome completo, nascimento e CPF usados nos documentos." icon="pe-7s-users" />
+      <PageTitle heading="Alunos e responsáveis" subheading="Nome completo, nascimento e CPF usados nos documentos; responsável financeiro de cada aluno." icon="pe-7s-users" />
       <StatusNotice message={status} />
       {error && (
         <Alert color="danger" fade={false}>
@@ -269,6 +283,19 @@ export function StudentsAdmin() {
                             <Button size="sm" color="link" type="button" aria-label={`Editar responsável ${g.firstName}`} onClick={() => edit({ kind: "guardian", id: g.id })}>
                               Editar
                             </Button>
+                            {g.financial ? (
+                              <StatusBadge tone="success">financeiro</StatusBadge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                color="link"
+                                type="button"
+                                aria-label={`Tornar ${g.firstName} responsável financeiro de ${studentLabel(s)}`}
+                                onClick={() => void makeFinancial(s.id, g.id)}
+                              >
+                                Tornar financeiro
+                              </Button>
+                            )}
                           </li>
                         ))}
                       </ul>

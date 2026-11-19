@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes } from "react-router";
 import "../../theme/styles";
 import { useThemedDocument } from "../../theme/useThemedDocument";
+import { AccountPage } from "./AccountPage";
+import { AccountsAdmin } from "./AccountsAdmin";
 import { AdminHome } from "./AdminHome";
 import { AdminLayout } from "./AdminLayout";
 import { AdminLogin } from "./AdminLogin";
 import { BatchPage } from "./BatchPage";
+import { CounterSaleAdmin } from "./CounterSaleAdmin";
 import { DocumentsAdmin } from "./DocumentsAdmin";
 import { GenerateBatch } from "./GenerateBatch";
 import { StudentsAdmin } from "./StudentsAdmin";
@@ -19,6 +22,9 @@ export default function AdminArea() {
       <Route element={<AdminLayout />}>
         <Route index element={<AdminHome />} />
         <Route path="alunos" element={<StudentsAdmin />} />
+        <Route path="contas" element={<AccountsAdmin />} />
+        <Route path="contas/lancar" element={<CounterSaleAdmin />} />
+        <Route path="contas/:guardianId" element={<AccountPage />} />
         <Route path="documentos" element={<DocumentsAdmin />} />
         <Route path="documentos/modelos/novo" element={<TemplateEditor />} />
         <Route path="documentos/modelos/:id" element={<TemplateEditor />} />
