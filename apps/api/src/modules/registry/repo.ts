@@ -66,14 +66,18 @@ export async function upsertGuardian(
   return saved.id;
 }
 
+/** Novo vínculo é o financeiro se o aluno ainda não tem um. O alvo explícito do ON CONFLICT não engole o índice parcial. */
 export async function linkGuardianStudent(
   trx: Trx,
   row: { schoolId: string; guardianId: string; studentId: string },
 ): Promise<void> {
   await trx
     .insertInto("guardianStudents")
-    .values(row)
-    .onConflict((oc) => oc.doNothing())
+    .values({
+      ...row,
+      financial: sql<boolean>`NOT EXISTS (SELECT 1 FROM guardian_students f WHERE f.student_id = ${row.studentId} AND f.financial)`,
+    })
+    .onConflict((oc) => oc.columns(["schoolId", "guardianId", "studentId"]).doNothing())
     .execute();
 }
 
@@ -110,6 +114,7 @@ export async function listGuardianLinks(trx: Trx) {
       "guardians.fullName",
       "guardians.cpf",
       "guardians.phoneE164 as phone",
+      "guardianStudents.financial",
     ])
     .orderBy("guardians.firstName")
     .execute();
@@ -127,4 +132,27 @@ export async function findGuardian(trx: Trx, id: string) {
 export async function updateGuardian(trx: Trx, id: string, values: { fullName: string | null; cpf: string | null }): Promise<boolean> {
   const res = await trx.updateTable("guardians").set(values).where("id", "=", id).executeTakeFirst();
   return res.numUpdatedRows > 0n;
+}
+
+/** Vínculos do aluno, travados FOR UPDATE em ordem de responsável. Ordem de travas: guardian_students → wallets. */
+export async function lockStudentLinks(trx: Trx, studentId: string) {
+  return trx
+    .selectFrom("guardianStudents")
+    .select(["guardianId", "financial"])
+    .where("studentId", "=", studentId)
+    .orderBy("guardianId")
+    .forUpdate()
+    .execute();
+}
+
+export async function setFinancial(trx: Trx, studentId: string, guardianId: string): Promise<void> {
+  // Primeiro desmarca o atual: o índice único parcial é conferido a cada comando.
+  await trx
+    .updateTable("guardianStudents")
+    .set({ financial: false })
+    .where("studentId", "=", studentId)
+    .where("financial", "=", true)
+    .where("guardianId", "<>", guardianId)
+    .execute();
+  await trx.updateTable("guardianStudents").set({ financial: true }).where("studentId", "=", studentId).where("guardianId", "=", guardianId).execute();
 }

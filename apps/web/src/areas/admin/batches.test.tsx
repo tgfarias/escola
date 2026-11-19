@@ -35,7 +35,7 @@ const TEMPLATE = {
 const STUDENTS = {
   students: [
     { id: S1, externalCode: "A1", firstName: "Léo", fullName: "Leonardo Souza", birthDate: "2021-03-15", classId: C1, className: "Infantil 3A",
-      guardians: [{ id: G1, firstName: "Ana", fullName: "Ana Paula Souza", phone: "+5511999990001", cpfMasked: null }] },
+      guardians: [{ id: G1, firstName: "Ana", fullName: "Ana Paula Souza", phone: "+5511999990001", cpfMasked: null, financial: true }] },
     { id: S2, externalCode: "B1", firstName: "Caio", fullName: null, birthDate: null, classId: C2, className: "Infantil 4B", guardians: [] },
   ],
 };
@@ -188,7 +188,7 @@ describe("generate batch: one request per action", () => {
 
   it("lists a student's own missing data once, not once per guardian", async () => {
     const two = {
-      students: [{ ...STUDENTS.students[0]!, guardians: [...STUDENTS.students[0]!.guardians, { id: U(20), firstName: "Rui", fullName: "Rui Souza", phone: "+5511999990002", cpfMasked: null }] }],
+      students: [{ ...STUDENTS.students[0]!, guardians: [...STUDENTS.students[0]!.guardians, { id: U(20), firstName: "Rui", fullName: "Rui Souza", phone: "+5511999990002", cpfMasked: null, financial: false }] }],
     };
     mockApi({
       ...GENERATE,

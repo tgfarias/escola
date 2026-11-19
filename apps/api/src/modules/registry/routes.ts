@@ -1,4 +1,4 @@
-import { ImportStudentsRequest, UpdateGuardianRequest, UpdateStudentRequest, Uuid } from "@app-lanche/contracts";
+import { ImportStudentsRequest, SetFinancialGuardianRequest, UpdateGuardianRequest, UpdateStudentRequest, Uuid } from "@app-lanche/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { RouteAuth } from "../../app";
@@ -25,6 +25,12 @@ export async function registryRoutes(app: FastifyInstance): Promise<void> {
   // PUT is naturally idempotent: repeating it writes the same values (no Idempotency-Key).
   app.put("/api/admin/v1/students/:id", { config: { auth: OFFICE } }, async (req, reply) => {
     await service.updateStudent(req.session!, IdParams.parse(req.params).id, UpdateStudentRequest.parse(req.body));
+    return reply.status(204).send();
+  });
+
+  // PUT naturalmente idempotente: repetir não muda nada (sem Idempotency-Key).
+  app.put("/api/admin/v1/students/:id/financial-guardian", { config: { auth: OFFICE } }, async (req, reply) => {
+    await service.setFinancialGuardian(req.session!, IdParams.parse(req.params).id, SetFinancialGuardianRequest.parse(req.body));
     return reply.status(204).send();
   });
 

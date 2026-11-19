@@ -32,7 +32,7 @@ export const StudentListResponse = z.object({
       classId: Uuid,
       className: z.string(),
       guardians: z.array(
-        z.object({ id: Uuid, firstName: z.string(), fullName: z.string().nullable(), phone: z.string(), cpfMasked: z.string().nullable() }),
+        z.object({ id: Uuid, firstName: z.string(), fullName: z.string().nullable(), phone: z.string(), cpfMasked: z.string().nullable(), financial: z.boolean() }),
       ),
     }),
   ),
@@ -42,6 +42,10 @@ export type StudentListResponse = z.infer<typeof StudentListResponse>;
 /** PUT /api/admin/v1/students/:id — null apaga o valor. */
 export const UpdateStudentRequest = z.object({ fullName: PersonName.nullable(), birthDate: IsoDate.nullable() }).strict();
 export type UpdateStudentRequest = z.infer<typeof UpdateStudentRequest>;
+
+/** PUT /api/admin/v1/students/:id/financial-guardian — o responsável precisa estar vinculado ao aluno. */
+export const SetFinancialGuardianRequest = z.object({ guardianId: Uuid }).strict();
+export type SetFinancialGuardianRequest = z.infer<typeof SetFinancialGuardianRequest>;
 
 /** GET /api/admin/v1/guardians/:id — único lugar com o CPF completo (formulário de edição). */
 export const GuardianDetail = z.object({ id: Uuid, firstName: z.string(), fullName: z.string().nullable(), cpf: z.string().nullable() });

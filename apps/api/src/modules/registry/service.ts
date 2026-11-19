@@ -3,6 +3,7 @@ import {
   type ClassListResponse,
   type GuardianDetail,
   type ImportStudentsResponse,
+  type SetFinancialGuardianRequest,
   type StudentListResponse,
   type UpdateGuardianRequest,
   type UpdateStudentRequest,
@@ -94,6 +95,7 @@ export async function listStudents(session: SessionClaims): Promise<StudentListR
             fullName: l.fullName,
             phone: l.phone,
             cpfMasked: l.cpf ? maskCpf(l.cpf) : null,
+            financial: l.financial,
           })),
       })),
     };
@@ -120,5 +122,22 @@ export async function updateGuardian(session: SessionClaims, guardianId: string,
   await withTenant(session.schoolId, async (trx) => {
     if (!(await repo.updateGuardian(trx, guardianId, body))) throw new DomainError("not_found");
     await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "guardian.updated", detail: { guardian_id: guardianId, fields: ["full_name", "cpf"] } });
+  });
+}
+
+export async function setFinancialGuardian(session: SessionClaims, studentId: string, body: SetFinancialGuardianRequest): Promise<void> {
+  await withTenant(session.schoolId, async (trx) => {
+    const links = await repo.lockStudentLinks(trx, studentId);
+    const target = links.find((l) => l.guardianId === body.guardianId);
+    if (!target) throw new DomainError("not_found");
+    if (target.financial) return; // já é: nada a fazer
+    await repo.setFinancial(trx, studentId, body.guardianId);
+    await audit(trx, {
+      schoolId: session.schoolId,
+      actorKind: "staff",
+      actorId: session.sub,
+      action: "student.financial_guardian_changed",
+      detail: { student_id: studentId, guardian_id: body.guardianId },
+    });
   });
 }
