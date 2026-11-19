@@ -29,7 +29,7 @@ export function OrderHome() {
     <main>
       <h1>Olá, {me.guardian.firstName}</h1>
       <p>
-        Saldo na carteira: {formatCents(me.walletBalanceCents)} · <Link to="/carteira">Minha carteira</Link>
+        Saldo na carteira: {formatCents(me.walletBalanceCents)} · <Link to="/carteira">Minha carteira</Link> · <Link to="/documentos">Documentos</Link>
       </p>
       {days.length === 0 ? (
         <p>Nenhum dia aberto para pedidos no momento.</p>

@@ -729,4 +729,6 @@ Pendências registradas para fases futuras: rota de reverificação por OTP do r
 
 Na F2, o fechamento (`closeServiceDay`) e o romaneio já existem, com rotas de equipe `POST /api/admin/v1/service-days/:date/close` e `GET …/manifest`; as rotas internas do n8n (F3) reutilizam a mesma função.
 
-Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md`, `2026-11-16-f1-cadastros-e-autenticacao.md` e `2026-11-17-f2-pedidos-pagamento-carteira.md`.
+F5 concluída em 2026-11-18 (plano `2026-11-18-f5-documentos.md`): campos pessoais confirmados (nascimento, nome completo e CPF do responsável) na importação CSV e na lista "Alunos e responsáveis"; modelos versionados com quatro exemplos, prévia e validação de variáveis; lotes por aluno ou por par aluno–responsável com conferência prévia; renderização na requisição com arrendamento; armazenamento GCS (URL assinada V4) ou disco local assinado por HMAC no Docker; publicação pela outbox (`document.published`) com magic link de escopo `documents` pelo n8n; página `/documentos` com registro de abertura.
+
+Cada fase tem seu próprio plano de implementação em `docs/superpowers/plans/`. Já escritos: `2026-11-16-f0-fundacao.md`, `2026-11-16-f1-cadastros-e-autenticacao.md`, `2026-11-17-f2-pedidos-pagamento-carteira.md`, `2026-11-17-f3-rotas-internas-outbox-n8n.md`, `2026-11-17-f4-kds-offline.md` e `2026-11-18-f5-documentos.md`.
