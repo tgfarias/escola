@@ -46,24 +46,26 @@ export function TopupPage() {
 
   if (!topup) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
   const pix = topup.payment;
+  const until = pix ? new Date(pix.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : null;
   return (
     <main>
       <h1>Pix de {formatCents(topup.amountCents)}</h1>
-      {topup.status === "pending_payment" &&
-        (pix?.pixCopyPaste ? (
-          <section>
-            {pix.pixQrPngBase64 && <img alt="QR Code Pix" src={`data:image/png;base64,${pix.pixQrPngBase64}`} />}
-            <textarea readOnly value={pix.pixCopyPaste} aria-label="Código Pix" />
-            <button type="button" onClick={() => navigator.clipboard.writeText(pix.pixCopyPaste!).then(() => setCopied(true), () => setCopied(false))}>
-              {copied ? "Código copiado" : "Copiar código Pix"}
-            </button>
-            <p>Aguardando o pagamento…</p>
-          </section>
-        ) : (
-          <p>Gerando o Pix… aguarde alguns segundos.</p>
-        ))}
-      {topup.status === "paid" && <p>Pagamento confirmado! Saldo: {formatCents(topup.balanceCents)}</p>}
-      {FINAL_TEXT[topup.status] && <p>{FINAL_TEXT[topup.status]}</p>}
+      {topup.status === "pending_payment" && pix?.pixCopyPaste && (
+        <section>
+          {pix.pixQrPngBase64 && <img alt="QR Code Pix" src={`data:image/png;base64,${pix.pixQrPngBase64}`} />}
+          <textarea readOnly value={pix.pixCopyPaste} aria-label="Código Pix" />
+          <button type="button" onClick={() => navigator.clipboard.writeText(pix.pixCopyPaste!).then(() => setCopied(true), () => setCopied(false))}>
+            {copied ? "Código copiado" : "Copiar código Pix"}
+          </button>
+          <p>Vale até {until}</p>
+        </section>
+      )}
+      {/* A mudança de situação (pago, expirado) é anunciada pelo leitor de tela. */}
+      <div role="status">
+        {topup.status === "pending_payment" && <p>{pix?.pixCopyPaste ? "Aguardando o pagamento…" : "Gerando o Pix… aguarde alguns segundos."}</p>}
+        {topup.status === "paid" && <p>Pagamento confirmado! Saldo: {formatCents(topup.balanceCents)}</p>}
+        {FINAL_TEXT[topup.status] && <p>{FINAL_TEXT[topup.status]}</p>}
+      </div>
       {error && <p role="alert">{error}</p>}
       <Link to="/carteira">Voltar à carteira</Link>
     </main>

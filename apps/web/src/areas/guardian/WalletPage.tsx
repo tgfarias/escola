@@ -1,6 +1,6 @@
 import { TOPUP_MAX_CENTS, TOPUP_MIN_CENTS, TopupView, WalletResponse, type GuardianTopupRequest } from "@app-lanche/contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
 import { formatCents, parsePriceToCents } from "../../ui/money";
@@ -11,6 +11,8 @@ const names = (list: string[]) => (list.length <= 1 ? list.join("") : `${list.sl
 
 export function WalletPage() {
   const navigate = useNavigate();
+  // Aberta direto pelo link do WhatsApp não há para onde voltar dentro do app.
+  const hasHistory = useLocation().key !== "default";
   const [wallet, setWallet] = useState<WalletResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
@@ -106,7 +108,11 @@ export function WalletPage() {
           </ul>
         </>
       )}
-      <button type="button" onClick={() => navigate(-1)}>Voltar</button>
+      {hasHistory && (
+        <button type="button" onClick={() => navigate(-1)}>
+          Voltar
+        </button>
+      )}
     </main>
   );
 }
