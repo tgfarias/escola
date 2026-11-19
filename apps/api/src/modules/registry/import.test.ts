@@ -174,6 +174,19 @@ describe("student import", () => {
     expect(res.json().error.code).toBe("validation_failed");
   });
 
+  it("imports the optional personal columns and never erases them on a later import without values", async () => {
+    const schoolId = await createSchool();
+    const cookies = await staffCookie(schoolId);
+    const header = "codigo_aluno,primeiro_nome,turma,responsavel_nome,responsavel_telefone,nome_completo,data_nascimento,responsavel_nome_completo,responsavel_cpf";
+    const full = `${header}\nA001,Léo,Infantil 3A,Ana,(11) 99999-0001,Leonardo Souza,15/03/2021,Ana Paula Souza,529.982.247-25`;
+    expect((await importCsv(cookies, full)).json()).toMatchObject({ applied: true });
+    expect((await importCsv(cookies, CSV)).json()).toMatchObject({ applied: true });
+    const student = await adminDb().selectFrom("students").select(["fullName", "birthDate"]).where("schoolId", "=", schoolId).where("externalCode", "=", "A001").executeTakeFirstOrThrow();
+    expect(student).toEqual({ fullName: "Leonardo Souza", birthDate: "2021-03-15" });
+    const guardian = await adminDb().selectFrom("guardians").select(["fullName", "cpf"]).where("schoolId", "=", schoolId).where("phoneE164", "=", "+5511999990001").executeTakeFirstOrThrow();
+    expect(guardian).toEqual({ fullName: "Ana Paula Souza", cpf: "52998224725" });
+  });
+
   describe("staff session re-checked against the database", () => {
     it("rejects a session whose staff user was deactivated and writes nothing", async () => {
       const schoolId = await createSchool();

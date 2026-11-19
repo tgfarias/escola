@@ -24,7 +24,7 @@ describe("parseStudentsCsv", () => {
     const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,(11) 99999-0001\n`);
     expect(errors).toEqual([]);
     expect(rows).toEqual([
-      { line: 2, externalCode: "A001", firstName: "Léo", className: "Infantil 3A", guardianFirstName: "Ana", guardianPhone: "+5511999990001" },
+      { line: 2, externalCode: "A001", firstName: "Léo", className: "Infantil 3A", guardianFirstName: "Ana", guardianPhone: "+5511999990001", fullName: null, birthDate: null, guardianFullName: null, guardianCpf: null },
     ]);
   });
 
@@ -85,5 +85,42 @@ describe("parseStudentsCsv", () => {
     const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,11999990001\n${second}\n`);
     expect(rows).toEqual([]);
     expect(errors).toEqual([{ line: 3, message: "codigo_aluno repetido com dados diferentes" }]);
+  });
+});
+
+describe("optional personal columns", () => {
+  const H = `${HEADER},nome_completo,data_nascimento,responsavel_nome_completo,responsavel_cpf`;
+
+  it("reads full names, birth dates in two formats and CPFs with punctuation", () => {
+    const { rows, errors } = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,Leonardo  Souza,15/03/2021,Ana Paula Souza,529.982.247-25\nA002,Bia,Infantil 3A,Ana,11999990001,,2022-07-02,,\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ fullName: "Leonardo Souza", birthDate: "2021-03-15", guardianFullName: "Ana Paula Souza", guardianCpf: "52998224725" });
+    expect(rows[1]).toMatchObject({ fullName: null, birthDate: "2022-07-02", guardianFullName: null, guardianCpf: null });
+  });
+
+  it("reports invalid dates and CPFs without echoing the CPF", () => {
+    const { rows, errors } = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,31/02/2021,,\nA002,Bia,Infantil 3A,Rui,11988880002,,,,529.982.247-24\n`,
+    );
+    expect(rows).toEqual([]);
+    expect(errors).toEqual([
+      { line: 2, message: "data_nascimento inválida" },
+      { line: 3, message: "responsavel_cpf inválido" },
+    ]);
+  });
+
+  it("refuses the same guardian phone with different CPFs", () => {
+    const { errors } = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,,,52998224725\nA002,Bia,Infantil 3A,Ana,11999990001,,,,11144477735\n`,
+    );
+    expect(errors).toEqual([{ line: 3, message: "responsavel_telefone repetido com dados diferentes" }]);
+  });
+
+  it("keeps working without the optional columns", () => {
+    const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,11999990001\n`);
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ fullName: null, guardianCpf: null });
   });
 });

@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./catalog";
 export * from "./checkout";
 export * from "./common";
+export * from "./cpf";
 export * from "./documents";
 export * from "./errors";
 export * from "./events";

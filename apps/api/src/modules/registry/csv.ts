@@ -1,3 +1,4 @@
+import { isValidCpf } from "@app-lanche/contracts";
 import { parse } from "csv-parse/sync";
 
 const COLUMNS = ["codigo_aluno", "primeiro_nome", "turma", "responsavel_nome", "responsavel_telefone"] as const;
@@ -9,6 +10,10 @@ export type StudentRow = {
   className: string;
   guardianFirstName: string;
   guardianPhone: string;
+  fullName: string | null;
+  birthDate: string | null;
+  guardianFullName: string | null;
+  guardianCpf: string | null;
 };
 
 export type CsvError = { line: number; message: string };
@@ -29,6 +34,23 @@ function firstWord(name: string): string {
   return name.trim().split(/\s+/)[0]!;
 }
 
+/** "15/03/2021" ou "2021-03-15" → "2021-03-15"; data impossível → null. */
+export function parseBirthDate(raw: string): string | null {
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  const iso = br ? `${br[3]}-${br[2]}-${br[1]}` : raw;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+}
+
+/** Coluna opcional: ausente ou vazia vira null; espaços repetidos viram um. */
+function optional(value: string | undefined): string | null {
+  const v = value?.trim().replace(/\s+/g, " ");
+  return v ? v : null;
+}
+
+const differs = (a: string | null, b: string | null) => a !== null && b !== null && a !== b;
+
 export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: CsvError[] } {
   let records: { record: Record<string, string>; info: { lines: number } }[];
   try {
@@ -45,6 +67,7 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
   const rows: StudentRow[] = [];
   const errors: CsvError[] = [];
   const firstSeen = new Map<string, StudentRow>();
+  const guardianSeen = new Map<string, StudentRow>();
   // info.lines is the physical line where the record ends (blank lines and quoted newlines included).
   records.forEach(({ record, info }) => {
     const line = info.lines;
@@ -58,6 +81,24 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
       errors.push({ line, message: "telefone inválido" });
       return;
     }
+    const fullName = optional(record.nome_completo);
+    const guardianFullName = optional(record.responsavel_nome_completo);
+    if ((fullName?.length ?? 0) > 200 || (guardianFullName?.length ?? 0) > 200) {
+      errors.push({ line, message: "nome completo muito longo" });
+      return;
+    }
+    const rawBirth = optional(record.data_nascimento);
+    const birthDate = rawBirth === null ? null : parseBirthDate(rawBirth);
+    if (rawBirth !== null && birthDate === null) {
+      errors.push({ line, message: "data_nascimento inválida" });
+      return;
+    }
+    const rawCpf = optional(record.responsavel_cpf);
+    const guardianCpf = rawCpf === null ? null : rawCpf.replace(/[.\-\s]/g, "");
+    if (guardianCpf !== null && !isValidCpf(guardianCpf)) {
+      errors.push({ line, message: "responsavel_cpf inválido" });
+      return;
+    }
     const row: StudentRow = {
       line,
       externalCode: record.codigo_aluno!,
@@ -65,12 +106,28 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
       className: record.turma!,
       guardianFirstName: firstWord(record.responsavel_nome!),
       guardianPhone: phone,
+      fullName,
+      birthDate,
+      guardianFullName,
+      guardianCpf,
     };
     const first = firstSeen.get(row.externalCode);
     if (!first) {
       firstSeen.set(row.externalCode, row);
-    } else if (first.firstName !== row.firstName || first.className !== row.className) {
+    } else if (
+      first.firstName !== row.firstName ||
+      first.className !== row.className ||
+      differs(first.fullName, row.fullName) ||
+      differs(first.birthDate, row.birthDate)
+    ) {
       errors.push({ line, message: "codigo_aluno repetido com dados diferentes" });
+      return;
+    }
+    const g = guardianSeen.get(row.guardianPhone);
+    if (!g) {
+      guardianSeen.set(row.guardianPhone, row);
+    } else if (differs(g.guardianCpf, row.guardianCpf) || differs(g.guardianFullName, row.guardianFullName)) {
+      errors.push({ line, message: "responsavel_telefone repetido com dados diferentes" });
       return;
     }
     rows.push(row);
