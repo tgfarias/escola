@@ -344,12 +344,37 @@ O dispatcher usa a função `list_schools_with_pending_events()` (quinta consult
 
 ## 8. Módulo de documentos
 
-- **Modelos** (`document_templates`): corpo em Markdown restrito (títulos, parágrafos, listas, negrito, tabela simples), versionado. Variáveis de uma lista fechada: `{{escola.nome}}`, `{{aluno.primeiro_nome}}`, `{{aluno.nome_completo}}`, `{{turma.nome}}`, `{{responsavel.nome}}`, `{{data.hoje}}`, `{{data.ano_letivo}}`. Variável desconhecida impede salvar o modelo.
-- **Nome completo**: `students.full_name` é opcional, preenchido só por escolas que usam documentos que o exigem.
-- **Geração**: a secretaria escolhe modelo e público (aluno, turma ou escola). O backend cria um `document_batches` e um `documents` por aluno, renderiza o PDF com `pdfmake` (sem Chromium), grava no bucket e registra `sha256`. O PDF é imutável; corrigir é gerar novo lote.
-- **Lotes grandes**: geração assíncrona por Cloud Tasks, 1 tarefa por documento; o lote mostra progresso.
-- **Entrega**: ao publicar, um evento `document.published` por responsável; o n8n envia link com escopo `documents`.
-- **Leitura**: página "Documentos" no PWA; download por URL assinada de 5 min; `document_views` registra a primeira abertura para a escola acompanhar.
+Documentos de secretaria (declarações, comunicados, autorizações, bilhetes) gerados em PDF a partir de modelos da escola. Só a secretaria inicia: escolhe o modelo, marca alunos na lista e gera. O responsável não pede documentos pelo app.
+
+### 8.1 Cadastro (dados pessoais confirmados pela escola dona do produto em 2026-11-18)
+
+- `students.full_name` (já existe), `students.birth_date date` (novo), `guardians.full_name text` (novo) e `guardians.cpf text` (novo, 11 dígitos com dígitos verificadores válidos). Todos opcionais, preenchidos só por escolas que usam documentos que os exigem.
+- Preenchidos pela importação CSV (colunas opcionais) e por um formulário de edição na lista "Alunos e responsáveis" da área admin.
+- CPF aparece mascarado em listas (`***.456.789-**`), completo só no formulário de edição e no PDF. Nunca em log, evento de outbox ou mensagem de WhatsApp.
+
+### 8.2 Modelos
+
+- `document_templates`: nome, categoria (`declaracao` | `comunicado` | `autorizacao` | `outro`), corpo em Markdown restrito (títulos `#`/`##`, parágrafos, listas `-` e `1.`, negrito `**`, tabela simples com `|`), campos do lote e versão. Editar cria uma nova versão (mesmo `template_group_id`, `version + 1`); lotes apontam para a versão exata usada. Arquivar esconde o modelo da lista de geração.
+- Variáveis (lista fechada): `{{escola.nome}}`, `{{aluno.primeiro_nome}}`, `{{aluno.nome_completo}}`, `{{aluno.data_nascimento}}`, `{{turma.nome}}`, `{{responsavel.nome}}`, `{{responsavel.nome_completo}}`, `{{responsavel.cpf}}`, `{{data.hoje}}`, `{{data.ano_letivo}}` e `{{campo.<chave>}}`. Variável desconhecida, ou `campo.<chave>` não declarado no modelo, impede salvar.
+- **Campos do lote**: o modelo declara até 10 campos (`chave` em `[a-z][a-z0-9_]{0,29}`, rótulo, tipo `texto` | `data`), preenchidos pela secretaria ao gerar (ex.: data e local do passeio). Todos obrigatórios; valores guardados no lote, iguais para todos os documentos do lote.
+- A área admin mostra os modelos em tabela (nome, categoria, versão, atualizado em, ações) e um editor com as variáveis clicáveis e prévia do PDF com dados de exemplo. Quatro exemplos prontos, que a escola copia e edita: declaração de matrícula, declaração de frequência, comunicado geral e autorização de passeio.
+
+### 8.3 Geração
+
+- A secretaria escolhe o modelo e marca alunos na lista "Alunos e responsáveis" (filtro por turma, busca por nome, "marcar turma" e "marcar todos"), preenche os campos do lote e gera.
+- Um documento por aluno. Se o modelo usa alguma variável `responsavel.*`, um documento por par aluno–responsável (cada responsável recebe só o seu).
+- Antes de criar o lote o servidor confere os dados: aluno ou responsável sem um valor que o modelo usa recusa o lote com `document_missing_data` e a lista dos ids faltantes; a tela mostra quem corrigir.
+- `document_batches` guarda modelo (versão), alunos escolhidos (via `documents`), valores dos campos e quem gerou; `documents` nasce `pending`.
+- **Renderização sem fila em nuvem**: a tela do lote chama `POST /api/admin/v1/document-batches/:id/render` em sequência; cada chamada reserva até 10 documentos pendentes (`FOR UPDATE SKIP LOCKED`, arrendamento de 2 min), renderiza com `pdfmake` fora da transação, grava no bucket em `schools/<school_id>/documents/<batch_id>/<document_id>.pdf`, registra `sha256` e devolve o progresso. Fechar a aba pausa; reabrir continua. Falha de renderização marca o documento `failed` após 3 tentativas. Substitui Cloud Tasks (decisão de 2026-11-18): não exige serviço novo nem consulta sem tenant.
+- O PDF é imutável; corrigir é gerar um novo lote. A secretaria pode baixar qualquer PDF do lote para imprimir.
+
+### 8.4 Publicação e leitura
+
+- `POST /api/admin/v1/document-batches/:id/publish` só com todos os documentos `rendered` (os `failed` precisam ser descartados antes); marca `published_at` e grava um evento `document.published` por responsável, com o primeiro nome do responsável, os primeiros nomes dos alunos, o nome do modelo e o telefone. O n8n pede um magic link de escopo `documents` e envia o aviso por WhatsApp.
+- Página "Documentos" no PWA (`/documentos`), aberta por sessão de escopo `documents` ou `order`: lista os documentos publicados dos filhos (e os de par aluno–responsável só do próprio responsável).
+- Download: `POST /api/v1/documents/:id/download` (POST porque registra a primeira abertura em `document_views`; regra 24 do CLAUDE.md) devolve URL assinada de 5 min. A secretaria vê, por lote, quantos responsáveis abriram.
+- Armazenamento: Cloud Storage (bucket privado, URL assinada V4) em produção; em desenvolvimento, disco local com URL assinada por HMAC servida pela própria API (`STORAGE_DRIVER=local`, só com `ENABLE_LOCAL_STORAGE=true`).
+- `audit_log` registra criação de modelo, geração, publicação e cada download (equipe ou responsável).
 
 ## 9. MER
 
@@ -385,6 +410,7 @@ erDiagram
   document_templates ||--o{ document_batches : origina
   document_batches ||--|{ documents : gera
   students ||--o{ documents : referente
+  guardians ||--o{ documents : destinatario
   documents ||--o{ document_views : aberto
   guardians ||--o{ document_views : abre
   reminder_batches ||--o{ message_deliveries : envia
@@ -542,23 +568,28 @@ erDiagram
     text wa_message_id }
   document_templates { uuid id PK
     uuid school_id FK
-    text name
+    uuid template_group_id
     int version
-    text body_md }
+    text name
+    text category
+    text body_md
+    jsonb fields
+    timestamptz archived_at }
   document_batches { uuid id PK
     uuid school_id FK
     uuid template_id FK
-    text audience_kind
-    uuid audience_id
+    jsonb field_values
     uuid created_by FK
-    text status }
+    text status
+    timestamptz published_at }
   documents { uuid id PK
     uuid school_id FK
     uuid batch_id FK
     uuid student_id FK
+    uuid guardian_id FK
+    text status
     text storage_path
-    text sha256
-    timestamptz published_at }
+    text sha256 }
   document_views { uuid id PK
     uuid school_id FK
     uuid document_id FK
@@ -598,7 +629,7 @@ Convenções do esquema:
 | `POST /api/v1/checkouts/:id/cancel` | Cancela e credita na carteira |
 | `POST /api/v1/checkouts/:id/charge` | Cria o Pix que faltou (falha do gateway no checkout); idempotente por natureza, sem `Idempotency-Key` |
 | `GET /api/v1/wallet` | Saldo e extrato |
-| `GET /api/v1/documents` · `GET /api/v1/documents/:id/download` | Lista e URL assinada |
+| `GET /api/v1/documents` · `POST /api/v1/documents/:id/download` | Lista e URL assinada (o download registra a primeira abertura) |
 | `POST /api/kds/v1/pair` | Pareia o tablet |
 | `GET /api/kds/v1/manifest/:date` | Romaneio ou prévia |
 | `POST /api/kds/v1/events` · `GET /api/kds/v1/changes` | Sincronização |
