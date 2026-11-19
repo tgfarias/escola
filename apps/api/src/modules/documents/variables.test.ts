@@ -70,4 +70,27 @@ describe("template variables", () => {
     expect(formatDateBR("2021-03-05")).toBe("05/03/2021");
     expect(formatLongDateBR("2026-01-01")).toBe("1 de janeiro de 2026");
   });
+
+  it("validates hostile input in linear time", () => {
+    const start = performance.now();
+    expect(templateProblems("{{" + " ".repeat(20000), [])).toEqual(["{{"]);
+    expect(placeholdersIn("{{" + " ".repeat(20000))).toEqual([]);
+    expect(performance.now() - start).toBeLessThan(100);
+  });
+
+  it("does not read inherited properties for field values", () => {
+    expect(templateProblems("{{campo.constructor}}", [])).toEqual(["{{campo.constructor}}"]);
+    const fields = [{ key: "constructor", label: "C", type: "texto" as const }];
+    expect(() => missingVariables("{{campo.constructor}}", { ...ctx, fields, fieldValues: {} })).not.toThrow();
+    expect(missingVariables("{{campo.constructor}}", { ...ctx, fields, fieldValues: {} })).toEqual(["campo.constructor"]);
+  });
+
+  it("rejects a placeholder broken by a newline, so validation matches rendering", () => {
+    expect(templateProblems("{{aluno.nome_completo\n\n}}", [])).toEqual(["{{"]);
+  });
+
+  it("returns non-ISO dates unchanged", () => {
+    expect(formatDateBR("amanhã")).toBe("amanhã");
+    expect(formatLongDateBR("05/12/2026")).toBe("05/12/2026");
+  });
 });

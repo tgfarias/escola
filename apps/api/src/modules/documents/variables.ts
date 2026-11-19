@@ -12,16 +12,20 @@ export type VariableContext = {
   fieldValues: Record<string, string>;
 };
 
-const PLACEHOLDER = /\{\{\s*([^{}]*?)\s*\}\}/g;
+// Linear: no quantifier overlaps, no newline inside a marker. The name is trimmed in code.
+const PLACEHOLDER = /\{\{([^{}\n]*)\}\}/g;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const KNOWN = new Set<string>(TEMPLATE_VARIABLES);
 const MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
 export function formatDateBR(iso: string): string {
+  if (!ISO_DATE.test(iso)) return iso;
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
 }
 
 export function formatLongDateBR(iso: string): string {
+  if (!ISO_DATE.test(iso)) return iso;
   const [y, m, d] = iso.split("-");
   return `${Number(d)} de ${MONTHS[Number(m) - 1]} de ${y}`;
 }
@@ -76,7 +80,8 @@ export function variableValue(name: string, ctx: VariableContext): string | null
   if (name.startsWith("campo.")) {
     const key = name.slice("campo.".length);
     const field = ctx.fields.find((f) => f.key === key);
-    const raw = present(ctx.fieldValues[key]);
+    const value = Object.hasOwn(ctx.fieldValues, key) ? ctx.fieldValues[key] : undefined;
+    const raw = typeof value === "string" ? present(value) : null;
     if (!field || raw === null) return null;
     return field.type === "data" ? formatDateBR(raw) : raw;
   }
