@@ -17,7 +17,7 @@ Data: 2026-11-19. Complementa `2026-11-16-app-lanche-design.md` (a spec principa
   - Estado do layout (menu recolhido, menu móvel aberto) em um contexto React com `localStorage` (try/catch), substituindo o Redux `ThemeOptions` do tema.
   - `LICENSE-ArchitectUI.txt` com o texto MIT original e o aviso de copyright, e um cabeçalho de origem nos arquivos copiados.
 - **Carregamento**: o SCSS do tema e o layout só são importados pelos módulos do admin e do KDS (chunks carregados sob demanda); a área dos responsáveis importa apenas o CSS base do Bootstrap. As rotas do admin passam a ser `lazy`, como a do KDS.
-- **Offline do tablet**: fontes de ícone e CSS empacotados localmente pelo Vite e incluídos no precache do service worker (`globPatterns` com `woff`, `woff2`, `ttf`, `svg`); nenhum recurso de CDN.
+- **Offline do tablet**: fontes de ícone e CSS empacotados localmente pelo Vite e incluídos no precache do service worker (`globPatterns` com `woff`, `woff2`, `ttf`, `svg`); nenhum recurso de CDN. O pacote pe7-icon não tem woff2; o precache leva também `png` e `jpg` (logo e ícones). O manifesto usa ícones 192/512 px gerados do logo e `theme_color` `#047c37`. Um plugin de build (`apps/web/build/guardianCss.ts`) falha o build se o CSS carregado por `index.html` contiver o layout do tema.
 
 ## Admin
 
