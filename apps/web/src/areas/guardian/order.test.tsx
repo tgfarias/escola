@@ -339,6 +339,8 @@ describe("wallet page", () => {
       "GET /api/v1/wallet": ok({ balanceCents: -1800, debtLimitCents: 1000, financialFor: ["Léo"], otherSales: [], entries: [] }),
     });
     renderAt("/carteira");
-    await screen.findByText("Saldo: -R$ 18,00");
+    // Saldo negativo aparece como débito (Task 14); a página nunca leva ao pedido, que um link de escopo `wallet` não abre.
+    await screen.findByText("Débito: R$ 18,00");
+    expect(document.querySelector('a[href^="/pedido"]')).toBeNull();
   });
 });

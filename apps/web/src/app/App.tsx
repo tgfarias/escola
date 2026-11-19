@@ -4,6 +4,7 @@ import { LinkLanding } from "../areas/guardian/LinkLanding";
 import { CheckoutPage } from "../areas/guardian/CheckoutPage";
 import { DocumentsPage } from "../areas/guardian/DocumentsPage";
 import { OrderHome } from "../areas/guardian/OrderHome";
+import { TopupPage } from "../areas/guardian/TopupPage";
 import { WalletPage } from "../areas/guardian/WalletPage";
 import { AreaErrorBoundary } from "./AreaErrorBoundary";
 
@@ -55,6 +56,7 @@ export function App() {
       <Route path="/pedido" element={<OrderHome />} />
       <Route path="/pedido/checkout/:id" element={<CheckoutPage />} />
       <Route path="/carteira" element={<WalletPage />} />
+      <Route path="/carteira/recarga/:id" element={<TopupPage />} />
       <Route path="/documentos" element={<DocumentsPage />} />
       <Route path="/admin/*" element={<LazyArea><AdminArea /></LazyArea>} />
       <Route path="/kds" element={<LazyArea><KdsApp /></LazyArea>} />

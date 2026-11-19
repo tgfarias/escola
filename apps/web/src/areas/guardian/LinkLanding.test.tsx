@@ -23,6 +23,7 @@ function renderAt(hash: string) {
         <Route path="/l" element={<LinkLanding />} />
         <Route path="/pedido" element={<p>tela de pedido</p>} />
         <Route path="/documentos" element={<p>tela de documentos</p>} />
+        <Route path="/carteira" element={<p>tela da carteira</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -50,6 +51,12 @@ describe("LinkLanding", () => {
     mockApi({ "/api/v1/auth/exchange": { status: 200, body: { status: "ok", scope: "documents" } } });
     renderAt("#tok-123456789012345678901234567890");
     await screen.findByText("tela de documentos");
+  });
+
+  it("goes to the wallet when the link has that scope", async () => {
+    mockApi({ "/api/v1/auth/exchange": { status: 200, body: { status: "ok", scope: "wallet" } } });
+    renderAt("#tok-123456789012345678901234567890");
+    await screen.findByText("tela da carteira");
   });
 
   it("asks for the code on a new device and continues after verifying", async () => {
