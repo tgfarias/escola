@@ -1,4 +1,4 @@
-import { CopyExampleRequest, TemplateInput, Uuid } from "@app-lanche/contracts";
+import { CopyExampleRequest, CreateBatchRequest, TemplateInput, Uuid } from "@app-lanche/contracts";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { RouteAuth } from "../../app";
@@ -34,4 +34,11 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
     const pdf = await service.previewTemplate(req.session!, TemplateInput.parse(req.body));
     return reply.type("application/pdf").send(pdf);
   });
+
+  const B = "/api/admin/v1/document-batches";
+  app.post(B, { config: { auth: OFFICE } }, async (req) =>
+    service.createBatch(req.session!, idempotencyKeyFrom(req), CreateBatchRequest.parse(req.body)),
+  );
+  app.get(B, { config: { auth: OFFICE } }, async (req) => service.listBatches(req.session!));
+  app.get(`${B}/:id`, { config: { auth: OFFICE } }, async (req) => service.getBatch(req.session!, IdParams.parse(req.params).id));
 }
