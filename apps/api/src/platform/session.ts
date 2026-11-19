@@ -91,6 +91,14 @@ export async function issueSession(
   });
 }
 
+/**
+ * Apaga o cookie de sessão com os mesmos atributos de issueSession. O token é sem estado no servidor: encerrar é tirar
+ * o cookie do navegador; uma cópia do token vale até vencer.
+ */
+export function clearSession(reply: FastifyReply): void {
+  reply.setCookie(SESSION_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0 });
+}
+
 export async function authenticate(
   req: FastifyRequest,
   auth: Exclude<RouteAuth, string>,

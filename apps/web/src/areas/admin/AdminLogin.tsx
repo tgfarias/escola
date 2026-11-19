@@ -1,7 +1,9 @@
 import { StaffOtpRequestResponse, StaffOtpVerifyResponse } from "@app-lanche/contracts";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { Alert, Button, Card, CardBody, Form, FormGroup, Input, Label } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
+import { LOGO_ALT, LOGO_URL, PRODUCT_NAME } from "../../theme/brand";
 import { staffErrorMessage } from "../../ui/messages";
 
 export function AdminLogin() {
@@ -46,49 +48,68 @@ export function AdminLogin() {
     });
   }
 
-  if (otpToken === null) {
-    return (
-      <main>
-        <h1>Área da escola</h1>
-        <form onSubmit={requestCode}>
-          <label htmlFor="email">E-mail</label>
-          <input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          {error && <p role="alert">{error}</p>}
-          <button type="submit" disabled={busy}>Enviar código</button>
-        </form>
-      </main>
-    );
-  }
+  const errorAlert = error && (
+    <Alert color="danger" fade={false}>
+      {error}
+    </Alert>
+  );
 
   return (
-    <main>
-      <h1>Área da escola</h1>
-      <p>Se o e-mail estiver cadastrado, você receberá um código em instantes.</p>
-      <form onSubmit={verify}>
-        <label htmlFor="code">Código de 6 dígitos</label>
-        <input
-          id="code"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          pattern="\d{6}"
-          maxLength={6}
-          required
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-        />
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" disabled={busy}>Entrar</button>
-        <button
-          type="button"
-          onClick={() => {
-            setOtpToken(null);
-            setCode("");
-            setError(null);
-          }}
-        >
-          Usar outro e-mail
-        </button>
-      </form>
+    <main className="app-login">
+      <Card className="main-card">
+        <CardBody className="p-4">
+          <img className="app-login__logo" src={LOGO_URL} alt={LOGO_ALT} />
+          <h1 className="h4 text-center mb-1">Área da escola</h1>
+          <p className="text-center mb-4">{PRODUCT_NAME}</p>
+          {otpToken === null ? (
+            <Form onSubmit={requestCode}>
+              <FormGroup>
+                <Label for="email">E-mail</Label>
+                <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              </FormGroup>
+              {errorAlert}
+              <Button color="primary" type="submit" className="w-100" disabled={busy}>
+                Enviar código
+              </Button>
+            </Form>
+          ) : (
+            <>
+              <p>Se o e-mail estiver cadastrado, você receberá um código em instantes.</p>
+              <Form onSubmit={verify}>
+                <FormGroup>
+                  <Label for="code">Código de 6 dígitos</Label>
+                  <Input
+                    id="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="\d{6}"
+                    maxLength={6}
+                    required
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                  />
+                </FormGroup>
+                {errorAlert}
+                <Button color="primary" type="submit" className="w-100 mb-2" disabled={busy}>
+                  Entrar
+                </Button>
+                <Button
+                  color="link"
+                  type="button"
+                  className="w-100"
+                  onClick={() => {
+                    setOtpToken(null);
+                    setCode("");
+                    setError(null);
+                  }}
+                >
+                  Usar outro e-mail
+                </Button>
+              </Form>
+            </>
+          )}
+        </CardBody>
+      </Card>
     </main>
   );
 }

@@ -1,18 +1,12 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router";
-import { AdminHome } from "../areas/admin/AdminHome";
-import { AdminLogin } from "../areas/admin/AdminLogin";
-import { BatchPage } from "../areas/admin/BatchPage";
-import { DocumentsAdmin } from "../areas/admin/DocumentsAdmin";
-import { GenerateBatch } from "../areas/admin/GenerateBatch";
-import { StudentsAdmin } from "../areas/admin/StudentsAdmin";
-import { TemplateEditor } from "../areas/admin/TemplateEditor";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
 import { CheckoutPage } from "../areas/guardian/CheckoutPage";
 import { DocumentsPage } from "../areas/guardian/DocumentsPage";
 import { OrderHome } from "../areas/guardian/OrderHome";
 import { WalletPage } from "../areas/guardian/WalletPage";
 
+const AdminArea = lazy(() => import("../areas/admin/AdminArea"));
 const KdsApp = lazy(() => import("../areas/kds/KdsApp"));
 
 function Home() {
@@ -53,14 +47,7 @@ export function App() {
       <Route path="/pedido/checkout/:id" element={<CheckoutPage />} />
       <Route path="/carteira" element={<WalletPage />} />
       <Route path="/documentos" element={<DocumentsPage />} />
-      <Route path="/admin/login" element={<AdminLogin />} />
-      <Route path="/admin" element={<AdminHome />} />
-      <Route path="/admin/alunos" element={<StudentsAdmin />} />
-      <Route path="/admin/documentos" element={<DocumentsAdmin />} />
-      <Route path="/admin/documentos/modelos/novo" element={<TemplateEditor />} />
-      <Route path="/admin/documentos/modelos/:id" element={<TemplateEditor />} />
-      <Route path="/admin/documentos/gerar/:templateId" element={<GenerateBatch />} />
-      <Route path="/admin/documentos/lotes/:id" element={<BatchPage />} />
+      <Route path="/admin/*" element={<Suspense fallback={null}><AdminArea /></Suspense>} />
       <Route path="/kds" element={<Suspense fallback={null}><KdsApp /></Suspense>} />
       <Route path="*" element={<Home />} />
     </Routes>

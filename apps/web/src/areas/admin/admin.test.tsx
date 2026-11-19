@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
 import { AdminLogin } from "./AdminLogin";
+import { LOGO_ALT } from "../../theme/brand";
 
 type Reply = { status: number; body: unknown };
 
@@ -38,6 +39,12 @@ afterEach(() => {
 });
 
 describe("admin area", () => {
+  it("shows the school logo on the login card", () => {
+    renderAt("/admin/login");
+    expect(screen.getByRole("img", { name: LOGO_ALT })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: "Área da escola" })).toBeTruthy();
+  });
+
   it("logs in with e-mail and code, then shows the school", async () => {
     mockApi({
       "/api/admin/v1/auth/otp/request": { status: 200, body: { otpToken: "otp-token" } },

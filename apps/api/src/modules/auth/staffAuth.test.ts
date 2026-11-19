@@ -41,6 +41,19 @@ async function otpEvents(schoolId: string) {
 }
 
 describe("staff authentication", () => {
+  it("logs out by expiring the session cookie, with or without a session", async () => {
+    for (const cookies of [{ [SESSION_COOKIE]: "stale-token" }, {}] as Record<string, string>[]) {
+      const res = await buildApp().inject({ method: "POST", url: "/api/admin/v1/auth/logout", cookies });
+      expect(res.statusCode).toBe(204);
+      const cleared = res.cookies.find((c) => c.name === SESSION_COOKIE)!;
+      expect(cleared.value).toBe("");
+      expect(cleared.maxAge).toBe(0);
+      expect(cleared.httpOnly).toBe(true);
+      expect(cleared.secure).toBe(true);
+      expect(cleared.path).toBe("/");
+    }
+  });
+
   it("logs in with e-mail and code", async () => {
     const schoolId = await createSchool("Escola Sol");
     const seed = await seedTenant(schoolId);

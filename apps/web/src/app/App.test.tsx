@@ -46,3 +46,16 @@ describe("Home", () => {
     expect(screen.getByRole("heading", { name: "App Lanche" })).toBeTruthy();
   });
 });
+
+describe("admin area", () => {
+  afterEach(cleanup);
+
+  it("loads the admin area on demand at the same addresses", async () => {
+    render(
+      <MemoryRouter initialEntries={["/admin/login"]}>
+        <App />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByLabelText("E-mail")).toBeTruthy();
+  });
+});

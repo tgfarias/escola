@@ -21,8 +21,8 @@ Data: 2026-11-19. Complementa `2026-11-16-app-lanche-design.md` (a spec principa
 
 ## Admin
 
-- Menu lateral: Início · Alunos e responsáveis · Cardápio · Dias de serviço · Documentos · Tablets da cozinha. O item da página atual fica destacado; em telas estreitas o menu vira gaveta (hambúrguer).
-- Cabeçalho: nome da escola (de `/api/admin/v1/me`), e-mail e papel do usuário, botão "Sair" (o logout já existente, se houver; senão, só limpa a sessão do lado do servidor pela rota existente — não criar rota nova sem necessidade).
+- Menu lateral: Início · Alunos e responsáveis · Cardápio · Dias de serviço · Documentos · Tablets da cozinha. O item da página atual fica destacado; em telas estreitas o menu vira gaveta (hambúrguer). Cardápio, Dias de serviço e Tablets da cozinha continuam seções da página inicial; o menu aponta para elas por âncora (`/admin#cardapio`, `/admin#dias`, `/admin#tablets`). Fora "Início", os itens só aparecem para `admin` e `secretaria`.
+- Cabeçalho: nome da escola (de `/api/admin/v1/me`), e-mail e papel do usuário, botão "Sair". Não havia logout e o cookie é `HttpOnly`: foi criada `POST /api/admin/v1/auth/logout` (pública, 204, sem `Idempotency-Key`), que regrava `__session` vazio com `Max-Age=0`; a sessão é um token sem estado, que vence sozinho em 8 h.
 - Cada página: `PageTitle` com título e ação principal; conteúdo em `Card`s; listas em `Table` responsiva (`hover`, `striped`); formulários com `Form`/`FormGroup`/`Label`/`Input`, mensagens de erro em `Alert color="danger"` com `role="alert"`, estados vazios e de carregamento visíveis.
 - Avisos de sucesso ("Dados salvos.", "Lote publicado.", "Modelo salvo.") viram toasts do `react-toastify` **e** continuam anunciados para leitores de tela (`role="status"`); erros continuam dentro da página.
 - Status como `Badge` (lote: gerando/pronto/publicado; documento: pendente/gerado/falhou/descartado; dia: aberto/fechado).
