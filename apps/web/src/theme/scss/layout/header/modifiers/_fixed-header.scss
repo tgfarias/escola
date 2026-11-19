@@ -1,0 +1,28 @@
+// Origem: ArchitectUI React Theme Free v4.9.3 (MIT, (c) 2023 DashboardPack), src/assets/layout/header/modifiers/_fixed-header.scss.
+// Recortado para o App Lanche; ver apps/web/src/theme/LICENSE-ArchitectUI.txt.
+
+// Fixed Header
+
+.fixed-header {
+  .app-header {
+    position: fixed;
+    width: 100%;
+    top: 0;
+
+    .app-header__logo {
+      visibility: visible;
+    }
+  }
+
+  .app-main {
+    padding-top: $app-header-height;
+  }
+
+  &:not(.fixed-sidebar):not(.closed-sidebar) {
+    .app-sidebar {
+      .app-header__logo {
+        visibility: hidden;
+      }
+    }
+  }
+}

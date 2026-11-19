@@ -1,0 +1,69 @@
+// Origem: ArchitectUI React Theme Free v4.9.3 (MIT, (c) 2023 DashboardPack), src/assets/layout/sidebar/modifiers/_fixed-sidebar.scss.
+// Recortado para o App Lanche; ver apps/web/src/theme/LICENSE-ArchitectUI.txt.
+
+// Fixed Sidebar
+
+.fixed-sidebar {
+  .app-sidebar {
+    position: fixed;
+    height: 100vh;
+  }
+
+  .app-main {
+    .app-main__outer {
+      z-index: 9;
+      padding-left: $app-sidebar-width;
+    }
+  }
+
+  &.fixed-header {
+    .app-sidebar {
+      .app-header__logo {
+        display: none;
+      }
+    }
+  }
+
+  &:not(.fixed-header) {
+    .app-sidebar {
+      .app-header__logo {
+        display: flex;
+      }
+    }
+
+    .app-header {
+      margin-left: $app-sidebar-width;
+
+      .app-header__logo {
+        display: none;
+      }
+    }
+
+    .app-main {
+      //z-index: 12;
+    }
+  }
+
+  &.closed-sidebar {
+    &:not(.fixed-header) {
+      .app-header {
+        margin-left: $app-sidebar-width-collapsed;
+      }
+
+      .app-sidebar {
+        .app-header__logo {
+          width: $app-sidebar-width-collapsed;
+          padding: 0;
+
+          .logo-src {
+            display: none;
+          }
+
+          .header__pane {
+            margin-right: auto;
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+// Origem: ArchitectUI React Theme Free v4.9.3 (MIT, (c) 2023 DashboardPack), src/assets/layout/main/themes/_main-white.scss.
+// Recortado para o App Lanche; ver apps/web/src/theme/LICENSE-ArchitectUI.txt.
+
+// Theme White
+
+// Variables
+
+$app-container-bg: $brand-body-bg;
+$app-sidebar-bg: $brand-sidebar-bg;
+$app-header-bg: $brand-header-bg;
+$app-header-logo-bg: rgba(255, 255, 255, 0.9);
+
+// Content
+
+.app-theme-white {
+  &.app-container {
+    background: $app-container-bg;
+  }
+
+  .app-sidebar {
+    background: $app-sidebar-bg;
+  }
+
+  .app-page-title {
+    background: rgba(255, 255, 255, 0.55);
+  }
+
+  .app-footer .app-footer__inner,
+  .app-header {
+    background: $app-header-bg;
+  }
+
+  &.fixed-header {
+    .app-header__logo {
+      background: rgba($app-header-bg, 0.1);
+    }
+  }
+}

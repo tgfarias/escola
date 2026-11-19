@@ -1,0 +1,36 @@
+// Marca do App Lanche: o único lugar com cores. Paleta do logo da escola piloto (Centro Educacional Caminho do Saber).
+// Contraste WCAG AA (texto normal >= 4,5:1) conferido para cada par usado:
+//   branco sobre $primary 5,3:1 · $brand-on-tint sobre $brand-tint 5,0:1 · #212529 sobre $success 5,7:1,
+//   sobre $warning 6,6:1, sobre $info 10,3:1 e sobre $brand-tint 9,6:1 · branco sobre $danger 4,5:1.
+// Pares proibidos (falham AA): branco sobre $info (1,5:1), $brand-tint (1,6:1), $warning (2,4:1) ou $success (2,7:1);
+//   $primary sobre $brand-tint (3,3:1; use $brand-on-tint); $success, $info ou $warning como cor de texto sobre
+//   branco (não use .text-success, .text-info, .text-warning nem .btn-outline-success/info/warning).
+
+$brand-orange: #dc9d3f;
+$brand-mint: #94e4b4;
+$brand-green-dark: #047c37;
+$brand-green-mid: #6eaa89;
+$brand-green-pale: #acd5bf;
+
+$primary: $brand-green-dark;
+$secondary: #6c757d;
+$success: $brand-green-mid;
+$info: $brand-mint;
+$warning: $brand-orange;
+$danger: #dc3545;
+$light: #eeeeee;
+$dark: #343a40;
+$focus: $brand-green-dark;
+$alt: $brand-orange;
+
+// Bootstrap escolhe o texto de .btn-* e .text-bg-* com color-contrast(): escuro sobre as cores claras.
+$color-contrast-dark: #212529;
+$color-contrast-light: #fff;
+$min-contrast-ratio: 4.5;
+
+$brand-tint: $brand-green-pale;
+$brand-on-tint: #035d29;
+$brand-header-bg: $brand-green-dark;
+$brand-header-text: #fff;
+$brand-sidebar-bg: #fff;
+$brand-body-bg: #f1f4f6;

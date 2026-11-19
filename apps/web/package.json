@@ -11,10 +11,14 @@
   },
   "dependencies": {
     "@app-lanche/contracts": "workspace:*",
+    "bootstrap": "^5.3.9",
     "dexie": "^4.4.7",
+    "pe7-icon": "^1.0.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router": "^8.5.1",
+    "react-toastify": "^11.2.0",
+    "reactstrap": "^9.2.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -23,6 +27,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
     "jsdom": "^31.0.1",
+    "sass": "^1.108.2",
     "vite": "^8.3.8",
     "vite-plugin-pwa": "^2.0.0"
   }

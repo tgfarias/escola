@@ -1,0 +1,157 @@
+// App Lanche sobre o layout do ArchitectUI: cores da marca no cabeçalho e no menu, logo, usuário, login.
+
+body {
+  background: $brand-body-bg;
+}
+
+.app-header {
+  background: $brand-header-bg;
+  color: $brand-header-text;
+
+  :focus-visible {
+    outline-color: $brand-header-text;
+  }
+}
+
+.app-theme-white.fixed-header .app-header__logo,
+.app-header__logo {
+  background: transparent;
+}
+
+.app-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: $brand-header-text;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.app-logo__badge {
+  display: inline-flex;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 2px;
+  border-radius: 50%;
+  background: $white;
+
+  img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: contain;
+  }
+}
+
+.closed-sidebar .app-header__logo .app-logo {
+  display: none;
+}
+
+.app-header__icon-btn {
+  padding: 0.25rem;
+  border: 0;
+  background: transparent;
+  color: $brand-header-text;
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.app-header__school {
+  font-size: $font-size-lg;
+  font-weight: 600;
+}
+
+.app-user-box {
+  margin-right: 1rem;
+  line-height: 1.25;
+  text-align: right;
+
+  .app-user-box__role {
+    font-size: $font-size-xs;
+  }
+}
+
+.app-page-title .page-title-subheading {
+  color: $gray-700;
+  opacity: 1;
+}
+
+.vertical-nav-menu .metismenu-container .metismenu-link {
+  &:hover,
+  &.active {
+    color: $brand-on-tint;
+  }
+
+  &.active i.metismenu-icon {
+    color: $primary;
+    opacity: 1;
+  }
+}
+
+@include media-breakpoint-down(md) {
+  .app-header .app-header__content {
+    visibility: visible;
+    opacity: 1;
+    position: static;
+    width: auto;
+    padding: 0 $layout-spacer-x 0 0;
+    overflow: visible;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .app-user-box {
+    display: none;
+  }
+}
+
+.app-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background: $brand-body-bg;
+
+  .card {
+    width: 100%;
+    max-width: 420px;
+  }
+}
+
+.app-login__logo {
+  display: block;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1rem;
+  border-radius: 50%;
+}
+
+// Copiado de src/assets/base.scss do ArchitectUI (MIT): link "pular para o conteúdo" e foco visível.
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  z-index: 2000;
+  padding: 0.5rem 1rem;
+  background: $primary;
+  color: $white;
+  text-decoration: none;
+  border-radius: 0 0 0.25rem 0;
+  font-weight: 600;
+  transition: top 0.15s ease;
+
+  &:focus,
+  &:focus-visible {
+    top: 0;
+    outline: 2px solid $white;
+    outline-offset: -4px;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid $primary;
+  outline-offset: 2px;
+}

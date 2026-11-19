@@ -1,0 +1,151 @@
+// Tablet da cozinha: tela cheia, cartões grandes para toque, retrato e paisagem (768–1280 px).
+
+.kds-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: $brand-body-bg;
+}
+
+.kds-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1.25rem;
+  background: $brand-header-bg;
+  color: $brand-header-text;
+
+  h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  :focus-visible {
+    outline-color: $brand-header-text;
+  }
+}
+
+.kds-topbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.kds-sync-badge {
+  font-size: 0.95rem;
+  text-transform: none;
+  padding: 0.5rem 0.85rem;
+}
+
+.kds-content {
+  flex: 1;
+  padding: 1rem 1.25rem 2rem;
+}
+
+.kds-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 1rem;
+
+  .nav-link {
+    min-height: 48px;
+    padding: 0.6rem 1.1rem;
+    font-size: 1.05rem;
+  }
+}
+
+.kds-class-title {
+  margin: 1.25rem 0 0.75rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.kds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kds-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  min-height: 140px;
+  padding: 1rem;
+  border: 2px solid $gray-300;
+  border-radius: $border-radius-lg;
+  background: $white;
+  color: $gray-900;
+  font-size: 1.05rem;
+  text-align: left;
+  box-shadow: $box-shadow-default;
+
+  &.is-delivered {
+    border-color: $primary;
+    background: $brand-tint;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+  }
+}
+
+.kds-card__name {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.kds-card__class {
+  color: $gray-700;
+  font-size: 0.9rem;
+}
+
+.kds-card .badge {
+  font-size: 0.95rem;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+}
+
+.kds-card__state {
+  margin-top: auto;
+  font-weight: 700;
+}
+
+.kds-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background: $brand-body-bg;
+
+  .card {
+    width: 100%;
+    max-width: 460px;
+  }
+}
+
+.kds-pair__logo {
+  display: block;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto 1rem;
+  border-radius: 50%;
+}
+
+.kds-pair__code {
+  font-size: 1.5rem;
+  letter-spacing: 0.2em;
+  text-align: center;
+  text-transform: uppercase;
+}

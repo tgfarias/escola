@@ -1,0 +1,15 @@
+// Responsáveis: só o CSS base do Bootstrap com as cores da marca. Nada do layout do tema entra aqui.
+@import 'bootstrap/scss/functions';
+@import 'brand';
+@import 'bootstrap/scss/variables';
+@import 'bootstrap/scss/variables-dark';
+@import 'bootstrap/scss/maps';
+@import 'bootstrap/scss/mixins';
+@import 'bootstrap/scss/utilities';
+@import 'bootstrap/scss/root';
+@import 'bootstrap/scss/reboot';
+@import 'bootstrap/scss/type';
+@import 'bootstrap/scss/forms';
+@import 'bootstrap/scss/buttons';
+@import 'bootstrap/scss/helpers';
+@import 'bootstrap/scss/utilities/api';
