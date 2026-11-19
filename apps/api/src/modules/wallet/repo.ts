@@ -80,3 +80,75 @@ export async function markDebtNotice(trx: Trx, guardianId: string): Promise<void
 export async function guardianContact(trx: Trx, guardianId: string) {
   return trx.selectFrom("guardians").select(["phoneE164", "firstName"]).where("id", "=", guardianId).executeTakeFirstOrThrow();
 }
+
+export async function debtLimit(trx: Trx): Promise<number> {
+  return (await trx.selectFrom("schools").select("debtLimitCents").executeTakeFirstOrThrow()).debtLimitCents;
+}
+
+export async function setDebtLimit(trx: Trx, debtLimitCents: number): Promise<void> {
+  await trx.updateTable("schools").set({ debtLimitCents }).execute();
+}
+
+export async function guardianName(trx: Trx, guardianId: string) {
+  return trx.selectFrom("guardians").select(["id", "firstName"]).where("id", "=", guardianId).executeTakeFirst();
+}
+
+/** Todos os responsáveis, débitos primeiro; `students` = alunos ativos de quem ele é o financeiro. */
+export async function listAccounts(trx: Trx) {
+  const { rows } = await sql<{ guardianId: string; firstName: string; balanceCents: number; students: string[] }>`
+    SELECT g.id AS guardian_id, g.first_name, coalesce(w.balance_cents, 0) AS balance_cents,
+      coalesce(array_agg(s.first_name ORDER BY s.first_name) FILTER (WHERE s.id IS NOT NULL), '{}') AS students
+    FROM guardians g
+    LEFT JOIN wallets w ON w.guardian_id = g.id
+    LEFT JOIN guardian_students gs ON gs.guardian_id = g.id AND gs.financial
+    LEFT JOIN students s ON s.id = gs.student_id AND s.active
+    GROUP BY g.id, g.first_name, w.balance_cents
+    ORDER BY coalesce(w.balance_cents, 0), g.first_name, g.id`.execute(trx);
+  return rows;
+}
+
+/** Lançamentos acima do limite, não estornados, recebidos nos últimos 7 dias (relógio do banco). */
+export async function recentOverLimitSales(trx: Trx) {
+  const { rows } = await sql<{
+    saleId: string;
+    guardianId: string;
+    guardianFirstName: string;
+    studentFirstName: string;
+    occurredAt: Date;
+    totalCents: number;
+  }>`
+    SELECT cs.id AS sale_id, cs.guardian_id, g.first_name AS guardian_first_name, s.first_name AS student_first_name,
+      cs.occurred_at, cs.total_cents
+    FROM counter_sales cs
+    JOIN guardians g ON g.id = cs.guardian_id
+    JOIN students s ON s.id = cs.student_id
+    WHERE cs.over_limit AND cs.voided_at IS NULL AND cs.received_at > now() - interval '7 days'
+    ORDER BY cs.occurred_at DESC, cs.id DESC
+    LIMIT 50`.execute(trx);
+  return rows;
+}
+
+/** Extrato: lançamentos do balcão trazem o aluno, o selo de ultrapassagem e se foram estornados. */
+export async function statementEntries(trx: Trx, guardianId: string, limit: number) {
+  const { rows } = await sql<{
+    id: string;
+    kind: string;
+    amountCents: number;
+    createdAt: Date;
+    saleId: string | null;
+    studentFirstName: string | null;
+    overLimit: boolean;
+    voided: boolean;
+  }>`
+    SELECT e.id, e.kind, e.amount_cents, e.created_at, cs.id AS sale_id, st.first_name AS student_first_name,
+      coalesce(e.kind = 'counter_charge' AND cs.over_limit, false) AS over_limit,
+      coalesce(cs.voided_at IS NOT NULL, false) AS voided
+    FROM wallet_entries e
+    JOIN wallets w ON w.id = e.wallet_id
+    LEFT JOIN counter_sales cs ON e.source_type = 'counter_sale' AND cs.id = e.source_id
+    LEFT JOIN students st ON st.id = cs.student_id
+    WHERE w.guardian_id = ${guardianId}
+    ORDER BY e.created_at DESC, e.id DESC
+    LIMIT ${limit}`.execute(trx);
+  return rows;
+}

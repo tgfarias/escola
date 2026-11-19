@@ -1,4 +1,4 @@
-import type { WalletAdjustmentRequest, WalletAdjustmentResponse, WalletEntryKind as Kind, WalletResponse } from "@app-lanche/contracts";
+import type { AccountListResponse, AccountStatementResponse, SchoolSettings, StatementEntry, WalletAdjustmentRequest, WalletAdjustmentResponse, WalletEntryKind as Kind, WalletResponse } from "@app-lanche/contracts";
 import { uuidv7 } from "uuidv7";
 import { withTenant, type Trx } from "../../db/index";
 import { audit } from "../../platform/audit";
@@ -148,5 +148,53 @@ export async function adjustBalance(
       return { balanceCents };
     });
     return response;
+  });
+}
+
+export function toStatement(rows: Awaited<ReturnType<typeof repo.statementEntries>>): StatementEntry[] {
+  return rows.map((r) => ({
+    id: r.id,
+    kind: r.kind as WalletEntryKind,
+    amountCents: r.amountCents,
+    createdAt: r.createdAt.toISOString(),
+    saleId: r.saleId,
+    studentFirstName: r.studentFirstName,
+    overLimit: r.overLimit,
+    voided: r.voided,
+  }));
+}
+
+export async function listAccounts(session: SessionClaims): Promise<AccountListResponse> {
+  return withTenant(session.schoolId, async (trx) => ({
+    debtLimitCents: await repo.debtLimit(trx),
+    accounts: await repo.listAccounts(trx),
+    overLimitSales: (await repo.recentOverLimitSales(trx)).map((r) => ({ ...r, occurredAt: r.occurredAt.toISOString() })),
+  }));
+}
+
+export async function accountStatement(session: SessionClaims, guardianId: string): Promise<AccountStatementResponse> {
+  return withTenant(session.schoolId, async (trx) => {
+    const guardian = await repo.guardianName(trx, guardianId);
+    if (!guardian) throw new DomainError("not_found");
+    return {
+      guardian,
+      balanceCents: await repo.readBalance(trx, guardianId),
+      debtLimitCents: await repo.debtLimit(trx),
+      entries: toStatement(await repo.statementEntries(trx, guardianId, 100)),
+    };
+  });
+}
+
+export async function getSettings(session: SessionClaims): Promise<SchoolSettings> {
+  return withTenant(session.schoolId, async (trx) => ({ debtLimitCents: await repo.debtLimit(trx) }));
+}
+
+export async function updateSettings(session: SessionClaims, body: SchoolSettings): Promise<SchoolSettings> {
+  return withTenant(session.schoolId, async (trx) => {
+    if ((await repo.debtLimit(trx)) !== body.debtLimitCents) {
+      await repo.setDebtLimit(trx, body.debtLimitCents);
+      await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "school.debt_limit_changed", detail: { debt_limit_cents: body.debtLimitCents } });
+    }
+    return { debtLimitCents: body.debtLimitCents };
   });
 }
