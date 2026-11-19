@@ -21,12 +21,13 @@ export default function KdsApp() {
   if (paired === null) return null;
   if (!paired || authLost) {
     return (
-      <>
-        {paired && authLost && (
-          <p role="alert">Este tablet foi desconectado. Peça um novo código à secretaria; as entregas ainda não enviadas serão mantidas.</p>
-        )}
-        <KdsPair onPaired={() => { setAuthLost(false); setPaired(true); }} />
-      </>
+      <KdsPair
+        disconnected={paired && authLost}
+        onPaired={() => {
+          setAuthLost(false);
+          setPaired(true);
+        }}
+      />
     );
   }
   return <KdsBoard serviceDate={serviceDate} onUnpaired={() => setPaired(false)} />;
