@@ -99,6 +99,28 @@ export function clearSession(reply: FastifyReply): void {
   reply.setCookie(SESSION_COOKIE, "", { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 0 });
 }
 
+/**
+ * Tipo da sessão no cookie, sem consultar o banco: null se faltar ou for inválida. O tablet da cozinha conta com a
+ * mesma tolerância de authenticate (token vencido offline continua sendo do tablet).
+ */
+export async function sessionKind(req: FastifyRequest): Promise<SessionClaims["kind"] | null> {
+  const token = req.cookies[SESSION_COOKIE];
+  if (!token) return null;
+  const kindOf = async (graceSeconds: number) => {
+    const parsed = SessionClaims.safeParse(await verifyToken("session", token, { graceSeconds }));
+    return parsed.success ? parsed.data.kind : null;
+  };
+  try {
+    return await kindOf(0);
+  } catch {
+    try {
+      return (await kindOf(KITCHEN_GRACE_SECONDS)) === "kitchen" ? "kitchen" : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 export async function authenticate(
   req: FastifyRequest,
   auth: Exclude<RouteAuth, string>,

@@ -1,7 +1,8 @@
 import { ExchangeRequest, OtpVerifyRequest, StaffOtpRequest } from "@app-lanche/contracts";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { DomainError } from "../../platform/errors";
-import { clearSession, GUARDIAN_SESSION_TTL, issueSession, STAFF_SESSION_TTL } from "../../platform/session";
+import { assertSameOrigin } from "../../platform/origin";
+import { clearSession, GUARDIAN_SESSION_TTL, issueSession, sessionKind, STAFF_SESSION_TTL } from "../../platform/session";
 import * as service from "./service";
 
 /** Ids only: never the e-mail, phone or token (LGPD). */
@@ -47,8 +48,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // "Sair" da área da escola. Pública (vale com sessão vencida) e naturalmente idempotente: sem Idempotency-Key.
-  app.post("/api/admin/v1/auth/logout", { config: { auth: "public" } }, async (_req, reply) => {
-    clearSession(reply);
+  // Mesma checagem de origem das rotas de sessão. Só apaga cookie de equipe (ou ausente/inválido): o tablet da
+  // cozinha e o responsável usam o mesmo __session e não perdem a sessão por um "Sair" do admin no mesmo navegador.
+  app.post("/api/admin/v1/auth/logout", { config: { auth: "public" } }, async (req, reply) => {
+    assertSameOrigin(req);
+    const kind = await sessionKind(req);
+    if (kind === null || kind === "staff") clearSession(reply);
     return reply.code(204).send();
   });
 

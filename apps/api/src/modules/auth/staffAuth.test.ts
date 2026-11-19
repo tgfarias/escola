@@ -54,6 +54,43 @@ describe("staff authentication", () => {
     }
   });
 
+  describe("logout scope", () => {
+    const logout = (headers: Record<string, string>, cookies: Record<string, string> = {}) =>
+      buildApp().inject({ method: "POST", url: "/api/admin/v1/auth/logout", headers, cookies });
+    const ids = { sub: uuidv7(), schoolId: uuidv7() };
+
+    it("rejects a cross-site POST without touching the cookie", async () => {
+      const staff = await signToken("session", { kind: "staff", ...ids, role: "admin" }, 3600);
+      for (const headers of [{ origin: "https://evil.example" }, { "sec-fetch-site": "cross-site" }] as Record<string, string>[]) {
+        const res = await logout(headers, { [SESSION_COOKIE]: staff });
+        expect(res.statusCode).toBe(403);
+        expect(res.json().error.code).toBe("origin_rejected");
+        expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
+      }
+    });
+
+    it("keeps a kitchen tablet's or a guardian's session", async () => {
+      const kitchen = await signToken("session", { kind: "kitchen", ...ids }, 3600);
+      const expiredKitchen = await signToken("session", { kind: "kitchen", ...ids }, -3600);
+      const guardian = await signToken("session", { kind: "guardian", ...ids, scope: "order" }, 3600);
+      for (const token of [kitchen, expiredKitchen, guardian]) {
+        const res = await logout({ origin: "https://app.test" }, { [SESSION_COOKIE]: token });
+        expect(res.statusCode).toBe(204);
+        expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
+      }
+    });
+
+    it("clears a staff session, same-origin, with no-store", async () => {
+      const staff = await signToken("session", { kind: "staff", ...ids, role: "secretaria" }, 3600);
+      const res = await logout({ origin: "https://app.test", "sec-fetch-site": "same-origin" }, { [SESSION_COOKIE]: staff });
+      expect(res.statusCode).toBe(204);
+      const cleared = res.cookies.find((c) => c.name === SESSION_COOKIE)!;
+      expect(cleared.value).toBe("");
+      expect(cleared.maxAge).toBe(0);
+      expect(res.headers["cache-control"]).toBe("private, no-store");
+    });
+  });
+
   it("logs in with e-mail and code", async () => {
     const schoolId = await createSchool("Escola Sol");
     const seed = await seedTenant(schoolId);
