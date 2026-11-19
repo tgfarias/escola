@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { Link, Route, Routes, useNavigate } from "react-router";
 import { AdminHome } from "../areas/admin/AdminHome";
 import { AdminLogin } from "../areas/admin/AdminLogin";
+import { StudentsAdmin } from "../areas/admin/StudentsAdmin";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
 import { CheckoutPage } from "../areas/guardian/CheckoutPage";
 import { OrderHome } from "../areas/guardian/OrderHome";
@@ -49,6 +50,7 @@ export function App() {
       <Route path="/documentos" element={<OrderHome />} />
       <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminHome />} />
+      <Route path="/admin/alunos" element={<StudentsAdmin />} />
       <Route path="/kds" element={<Suspense fallback={null}><KdsApp /></Suspense>} />
       <Route path="*" element={<Home />} />
     </Routes>

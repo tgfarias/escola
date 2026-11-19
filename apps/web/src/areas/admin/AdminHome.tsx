@@ -1,6 +1,6 @@
 import { ImportStudentsResponse, StaffMeResponse } from "@app-lanche/contracts";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { staffErrorMessage } from "../../ui/messages";
 import { KitchenDevicesAdmin } from "./KitchenDevicesAdmin";
@@ -62,6 +62,8 @@ export function AdminHome() {
         <h2>Importar alunos e responsáveis</h2>
         <p>
           Colunas: <code>codigo_aluno, primeiro_nome, turma, responsavel_nome, responsavel_telefone</code>.
+          Opcionais (para documentos):{" "}
+          <code>nome_completo, data_nascimento, responsavel_nome_completo, responsavel_cpf</code>.
           Um aluno com dois responsáveis ocupa duas linhas.
         </p>
         <form onSubmit={submit}>
@@ -90,6 +92,9 @@ export function AdminHome() {
       </section>
       {(me.role === "admin" || me.role === "secretaria") && (
         <>
+          <nav>
+            <Link to="/admin/alunos">Alunos e responsáveis</Link>
+          </nav>
           <MenuAdmin />
           <ServiceDaysAdmin />
           <KitchenDevicesAdmin />

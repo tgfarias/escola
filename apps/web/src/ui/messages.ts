@@ -26,6 +26,13 @@ const STAFF_MESSAGES: Record<string, string> = {
   service_day_open: "O dia só pode ser fechado depois do horário de corte.",
   menu_item_name_taken: "Já existe um item com esse nome.",
   validation_failed: "Confira os dados e tente de novo.",
+  not_found: "Não encontrado. Atualize a página.",
+  document_template_invalid: "O modelo usa variáveis que não existem. Corrija as marcadas abaixo.",
+  document_template_outdated: "Este modelo foi alterado por outra pessoa. Recarregue a página para editar a versão mais recente.",
+  document_missing_data: "Faltam dados de alguns alunos ou responsáveis. Corrija em Alunos e responsáveis e tente de novo.",
+  document_batch_not_ready: "Ainda há documentos sem PDF. Aguarde a geração ou descarte os que falharam.",
+  document_batch_published: "Este lote já foi publicado.",
+  request_rejected: "Só documentos com falha podem ser descartados.",
 };
 
 export function staffErrorMessage(code: string): string {
