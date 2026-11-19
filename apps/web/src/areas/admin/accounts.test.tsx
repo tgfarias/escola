@@ -14,6 +14,7 @@ function mockApi(replies: Record<string, Reply | Reply[]>) {
     const entry = replies[key];
     if (!entry) throw new Error(`unexpected request ${key}`);
     const reply = Array.isArray(entry) ? (entry.length > 1 ? entry.shift()! : entry[0]!) : entry;
+    if (reply.status === 0) throw new TypeError("offline"); // resposta perdida na rede
     return reply.status === 204 ? new Response(null, { status: 204 }) : new Response(JSON.stringify(reply.body), { status: reply.status });
   });
   vi.stubGlobal("fetch", fn);
@@ -58,9 +59,13 @@ afterEach(() => {
 
 describe("AccountsAdmin", () => {
   it("lists debts first, filters and warns about over-limit sales", async () => {
-    mockApi({ "GET /api/admin/v1/accounts": { status: 200, body: ACCOUNTS }, "GET /api/admin/v1/school/settings": SETTINGS });
+    const unsorted = { ...ACCOUNTS, accounts: [ACCOUNTS.accounts[2]!, ACCOUNTS.accounts[1]!, ACCOUNTS.accounts[0]!] };
+    mockApi({ "GET /api/admin/v1/accounts": { status: 200, body: unsorted }, "GET /api/admin/v1/school/settings": SETTINGS });
     renderAt("/admin/contas");
     expect(await screen.findByText("débito R$ 62,00")).toBeTruthy();
+    const names = within(screen.getByRole("table")).getAllByRole("link").map((a) => a.textContent);
+    expect(names).toEqual(["Ana", "Bruno", "Carla"]);
+    expect(screen.queryByText(/Abra esta página em outro aparelho/)).toBeNull();
     expect(within(screen.getByTestId("over-limit-alert")).getByText(/Bia/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText("Só com débito"));
     expect(screen.queryByText("Carla")).toBeNull();
@@ -69,6 +74,12 @@ describe("AccountsAdmin", () => {
     expect(table.queryByText("Ana")).toBeNull();
     expect(table.getByText("Bruno")).toBeTruthy();
     expect(screen.getByText("Cada responsável pode ficar devendo até R$ 50,00.")).toBeTruthy();
+  });
+
+  it("tells the kitchen role to open the page on another device", async () => {
+    mockApi({ "GET /api/admin/v1/accounts": { status: 200, body: ACCOUNTS }, "GET /api/admin/v1/school/settings": SETTINGS });
+    renderAt("/admin/contas", "cozinha");
+    expect(await screen.findByText("Abra esta página em outro aparelho: entrar aqui no tablet da cozinha desconecta o tablet.")).toBeTruthy();
   });
 
   it("lets an admin change the debt limit", async () => {
@@ -122,6 +133,44 @@ describe("AccountPage", () => {
     await waitFor(() => expect(calls(fn, `GET /api/admin/v1/guardians/${ANA}/statement`)).toHaveLength(2));
   });
 
+  it("sends a single void when Estornar is clicked twice", async () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
+    const fn = mockApi({
+      [`GET /api/admin/v1/guardians/${ANA}/statement`]: { status: 200, body: STATEMENT },
+      [`POST /api/admin/v1/counter-sales/${SALE}/void`]: { status: 200, body: { saleId: SALE, balanceCents: -450 } },
+    });
+    renderAt(`/admin/contas/${ANA}`);
+    const button = await screen.findByRole("button", { name: "Estornar lançamento de Bia" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(calls(fn, `GET /api/admin/v1/guardians/${ANA}/statement`)).toHaveLength(2));
+    expect(calls(fn, `POST /api/admin/v1/counter-sales/${SALE}/void`)).toHaveLength(1);
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces a paid Pix with an accessible badge and stops polling", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const fn = mockApi({
+        [`GET /api/admin/v1/guardians/${ANA}/statement`]: { status: 200, body: STATEMENT },
+        [`POST /api/admin/v1/guardians/${ANA}/topups`]: { status: 200, body: TOPUP_VIEW },
+        [`GET /api/admin/v1/topups/${TOPUP}`]: { status: 200, body: { ...TOPUP_VIEW, status: "paid", paidAt: "2031-11-05T12:05:00.000Z", balanceCents: 0, payment: { ...TOPUP_VIEW.payment, status: "paid" } } },
+      });
+      renderAt(`/admin/contas/${ANA}`);
+      fireEvent.click(await screen.findByRole("button", { name: "Gerar QR de pagamento" }));
+      await screen.findByLabelText("Pix copia e cola");
+      await vi.advanceTimersByTimeAsync(3000);
+      const badge = await screen.findByText("Pagamento recebido");
+      expect(badge.className).toContain("text-bg-success");
+      expect(screen.getByTestId("pix-panel").querySelector(".text-success")).toBeNull();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(calls(fn, `GET /api/admin/v1/topups/${TOPUP}`)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("generates a Pix for the debt and sends the payment link", async () => {
     const fn = mockApi({
       [`GET /api/admin/v1/guardians/${ANA}/statement`]: { status: 200, body: STATEMENT },
@@ -164,5 +213,33 @@ describe("CounterSaleAdmin", () => {
     await waitFor(() => expect(calls(fn, "POST /api/admin/v1/counter-sales")).toHaveLength(2));
     expect(bodyOf(fn, "POST /api/admin/v1/counter-sales", 0)).toEqual({ studentId: LEO, items: [{ menuItemId: MISTO, qty: 1 }] });
     expect(bodyOf(fn, "POST /api/admin/v1/counter-sales", 1)).toEqual({ studentId: LEO, items: [{ menuItemId: MISTO, qty: 1 }], allowOverLimit: true });
+  });
+
+  it("reuses the key of each body when the confirmed sale is retried after a lost response", async () => {
+    vi.stubGlobal("confirm", () => true);
+    const roster = {
+      debtLimitCents: 5000,
+      items: [{ id: MISTO, name: "Misto quente", priceCents: 900 }],
+      students: [{ id: LEO, firstName: "Léo", className: "Infantil 3A", restrictions: null, guardian: { id: ANA, firstName: "Ana", balanceCents: -4500 } }],
+    };
+    const limit = { status: 409, body: { error: { code: "insufficient_balance", message: "x" } } };
+    const fn = mockApi({
+      "GET /api/admin/v1/counter/roster": { status: 200, body: roster },
+      "POST /api/admin/v1/counter-sales": [limit, { status: 0 }, limit, { status: 200, body: { saleId: SALE, totalCents: 900, balanceCents: -5400, overLimit: true } }],
+    });
+    renderAt("/admin/contas/lancar");
+    fireEvent.change(await screen.findByLabelText("Aluno"), { target: { value: LEO } });
+    fireEvent.change(screen.getByLabelText("Quantidade de Misto quente"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Lançar" }));
+    await waitFor(() => expect(calls(fn, "POST /api/admin/v1/counter-sales")).toHaveLength(2));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Lançar" }));
+    await waitFor(() => expect(calls(fn, "POST /api/admin/v1/counter-sales")).toHaveLength(4));
+    const keys = calls(fn, "POST /api/admin/v1/counter-sales").map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+    const confirmed = calls(fn, "POST /api/admin/v1/counter-sales").map((c) => JSON.parse(c[1]!.body as string).allowOverLimit === true);
+    expect(confirmed).toEqual([false, true, false, true]);
+    expect(keys[0]).toBe(keys[2]);
+    expect(keys[1]).toBe(keys[3]);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 });

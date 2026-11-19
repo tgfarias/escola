@@ -24,6 +24,7 @@ export function AccountPage() {
   const [status, setStatus] = useState<string | null>(null);
   const qr = useRequestKey();
   const link = useRequestKey();
+  const voiding = useRequestKey(); // só o guarda de clique: o estorno é naturalmente idempotente, sem chave
 
   const load = useCallback(async () => {
     try {
@@ -78,15 +79,17 @@ export function AccountPage() {
   }
 
   async function voidSale(saleId: string) {
-    if (!window.confirm("Estornar este lançamento? O valor volta para a conta.")) return;
-    setError(null);
-    try {
-      await apiFetch(`/api/admin/v1/counter-sales/${saleId}/void`, CounterVoidResult, { method: "POST" });
-      done("Lançamento estornado.");
-      await load();
-    } catch (err) {
-      fail(err);
-    }
+    await voiding.once(async () => {
+      if (!window.confirm("Estornar este lançamento? O valor volta para a conta.")) return;
+      setError(null);
+      try {
+        await apiFetch(`/api/admin/v1/counter-sales/${saleId}/void`, CounterVoidResult, { method: "POST" });
+        done("Lançamento estornado.");
+        await load();
+      } catch (err) {
+        fail(err);
+      }
+    });
   }
 
   if (!data) return error ? <Alert color="danger" fade={false}>{error}</Alert> : <p>Carregando…</p>;

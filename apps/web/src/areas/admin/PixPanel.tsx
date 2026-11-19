@@ -2,6 +2,7 @@ import { TopupView } from "@app-lanche/contracts";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input, Label } from "reactstrap";
 import { apiFetch } from "../../app/api";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { formatCents } from "../../ui/money";
 
 const POLL_MS = 3000;
@@ -43,7 +44,11 @@ export function PixPanel({ initial, onPaid }: { initial: TopupView; onPaid: () =
   return (
     <div className="border rounded bg-light p-3 my-3" data-testid="pix-panel">
       <p className="fw-semibold">Pix de {formatCents(topup.amountCents)}</p>
-      {topup.status === "paid" && <p className="mb-0 text-success fw-semibold">Pagamento recebido. Saldo agora: {formatCents(topup.balanceCents)}.</p>}
+      {topup.status === "paid" && (
+        <p className="mb-0 fw-semibold">
+          <StatusBadge tone="success">Pagamento recebido</StatusBadge> Saldo agora: {formatCents(topup.balanceCents)}.
+        </p>
+      )}
       {topup.status === "expired" && <p className="mb-0">Este Pix expirou. Gere um novo.</p>}
       {topup.status === "cancelled" && <p className="mb-0">Este Pix foi substituído por outro mais recente.</p>}
       {topup.status === "pending_payment" &&

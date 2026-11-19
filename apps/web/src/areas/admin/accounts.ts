@@ -5,11 +5,12 @@ export type AccountRow = AccountListResponse["accounts"][number];
 
 const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
+/** Filtra e ordena com os débitos primeiro (maior débito no topo); empate mantém a ordem do servidor. */
 export function filterAccounts(rows: AccountRow[], filter: { query: string; onlyDebt: boolean }): AccountRow[] {
   const q = fold(filter.query.trim());
-  return rows.filter(
-    (a) => (!filter.onlyDebt || a.balanceCents < 0) && (q === "" || fold([a.firstName, ...a.students].join(" ")).includes(q)),
-  );
+  return rows
+    .filter((a) => (!filter.onlyDebt || a.balanceCents < 0) && (q === "" || fold([a.firstName, ...a.students].join(" ")).includes(q)))
+    .sort((a, b) => Math.min(a.balanceCents, 0) - Math.min(b.balanceCents, 0));
 }
 
 /** "50,00" para o campo de valor (sem "R$"). */

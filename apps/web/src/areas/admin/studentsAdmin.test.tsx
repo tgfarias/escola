@@ -198,5 +198,4 @@ describe("students admin", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tornar Rui responsável financeiro de Leonardo Souza" }));
     await waitFor(() => expect(bodyOf(fn, `PUT /api/admin/v1/students/${S1}/financial-guardian`)).toEqual({ guardianId: U(6) }));
   });
-
 });

@@ -18,7 +18,10 @@ export function CounterSaleAdmin() {
   const [studentId, setStudentId] = useState("");
   const [cart, setCart] = useState<Cart>({});
   const [status, setStatus] = useState<string | null>(null);
+  // Uma chave por corpo: a venda simples e a confirmada acima do limite. Repetir depois de uma resposta perdida
+  // reaproveita a chave de cada uma e o servidor não lança duas vezes.
   const request = useRequestKey();
+  const confirmed = useRequestKey();
 
   const load = useCallback(async () => {
     try {
@@ -43,8 +46,10 @@ export function CounterSaleAdmin() {
     const body = { studentId: student.studentId, items: lines.map(({ menuItemId, qty }) => ({ menuItemId, qty })), ...(allowOverLimit ? { allowOverLimit: true } : {}) };
     setError(null);
     try {
-      const r = await apiFetch("/api/admin/v1/counter-sales", CounterSaleResult, { method: "POST", body, idempotencyKey: request.keyFor(body) });
+      const key = (allowOverLimit ? confirmed : request).keyFor(body);
+      const r = await apiFetch("/api/admin/v1/counter-sales", CounterSaleResult, { method: "POST", body, idempotencyKey: key });
       request.succeeded();
+      confirmed.succeeded();
       const message = `Lançado para ${student.firstName}: ${formatCents(r.totalCents)}. Saldo de ${student.guardianFirstName}: ${formatCents(r.balanceCents)}.`;
       setStatus(message);
       announce(message);

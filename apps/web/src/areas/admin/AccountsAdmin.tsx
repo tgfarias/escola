@@ -18,10 +18,20 @@ function DebtLimitCard({ canEdit, onSaved }: { canEdit: boolean; onSaved: () => 
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch("/api/admin/v1/school/settings", SchoolSettings).then((s) => {
-      setLimit(s.debtLimitCents);
-      setText(centsToInput(s.debtLimitCents));
-    }, fail);
+    let active = true;
+    apiFetch("/api/admin/v1/school/settings", SchoolSettings).then(
+      (s) => {
+        if (!active) return;
+        setLimit(s.debtLimitCents);
+        setText(centsToInput(s.debtLimitCents));
+      },
+      (err: unknown) => {
+        if (active) fail(err);
+      },
+    );
+    return () => {
+      active = false;
+    };
   }, [fail]);
 
   async function save(event: FormEvent) {
@@ -96,6 +106,11 @@ export function AccountsAdmin() {
         actions={office ? <Link className="btn btn-primary" to="/admin/contas/lancar">Lançar no balcão</Link> : undefined}
       />
       {error && <Alert color="danger" fade={false}>{error}</Alert>}
+      {me?.role === "cozinha" && (
+        <Alert color="info" fade={false}>
+          Abra esta página em outro aparelho: entrar aqui no tablet da cozinha desconecta o tablet.
+        </Alert>
+      )}
       {data && data.overLimitSales.length > 0 && (
         <Alert color="warning" fade={false} data-testid="over-limit-alert">
           <p className="mb-1 fw-semibold">Lançamentos acima do limite de débito nos últimos 7 dias</p>
