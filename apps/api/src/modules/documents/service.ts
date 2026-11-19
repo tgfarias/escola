@@ -121,8 +121,12 @@ export async function createVersion(session: SessionClaims, key: string, baseId:
   const hash = requestHash({ route: `POST /api/admin/v1/document-templates/${baseId}/versions`, actorId: session.sub, body: input });
   return withTenant(session.schoolId, async (trx) => {
     const { response } = await idempotent(trx, { schoolId: session.schoolId, key, requestHash: hash }, async () => {
-      const base = await repo.findTemplate(trx, baseId);
-      if (!base || base.archivedAt !== null) throw new DomainError("not_found");
+      const found = await repo.findTemplate(trx, baseId);
+      if (!found) throw new DomainError("not_found");
+      // Com o grupo travado, um arquivamento concorrente termina antes (e a releitura o vê) ou espera esta versão.
+      await repo.lockGroup(trx, found.templateGroupId);
+      const base = (await repo.findTemplate(trx, baseId))!;
+      if (base.archivedAt !== null) throw new DomainError("not_found");
       if (!base.latest) throw new DomainError("document_template_outdated");
       return insertVersion(trx, session, input, { id: base.templateGroupId, version: base.version + 1 });
     });
@@ -134,6 +138,7 @@ export async function archiveTemplate(session: SessionClaims, id: string): Promi
   await withTenant(session.schoolId, async (trx) => {
     const t = await repo.findTemplate(trx, id);
     if (!t) throw new DomainError("not_found");
+    await repo.lockGroup(trx, t.templateGroupId);
     if ((await repo.archiveGroup(trx, t.templateGroupId)) > 0) {
       await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "document_template.archived", detail: { group_id: t.templateGroupId } });
     }

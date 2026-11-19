@@ -38,6 +38,30 @@ describe("students and guardians (staff)", () => {
     expect(clear.statusCode).toBe(204);
   });
 
+  it("refuses a birth date in the future without echoing it", async () => {
+    const f = await family();
+    const app = buildApp();
+    const { rows } = await sql<{ tomorrow: string }>`SELECT ((now() AT TIME ZONE 'America/Sao_Paulo')::date + 1)::text AS tomorrow`.execute(adminDb());
+    const res = await app.inject({ method: "PUT", url: `/api/admin/v1/students/${f.studentId}`, cookies: f.cookies, payload: { fullName: "Leonardo Souza", birthDate: rows[0]!.tomorrow } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("validation_failed");
+    expect(res.body).not.toContain(rows[0]!.tomorrow);
+    const row = await adminDb().selectFrom("students").select(["fullName", "birthDate"]).where("id", "=", f.studentId).executeTakeFirstOrThrow();
+    expect(row).toEqual({ fullName: null, birthDate: null });
+    const { rows: today } = await sql<{ d: string }>`SELECT (now() AT TIME ZONE 'America/Sao_Paulo')::date::text AS d`.execute(adminDb());
+    const ok = await app.inject({ method: "PUT", url: `/api/admin/v1/students/${f.studentId}`, cookies: f.cookies, payload: { fullName: null, birthDate: today[0]!.d } });
+    expect(ok.statusCode).toBe(204);
+  });
+
+  it("audits a guardian update without the CPF or the name", async () => {
+    const f = await family();
+    const put = await buildApp().inject({ method: "PUT", url: `/api/admin/v1/guardians/${f.guardianId}`, cookies: f.cookies, payload: { fullName: "Ana Paula Lima", cpf: "529.982.247-25" } });
+    expect(put.statusCode).toBe(204);
+    const audit = await adminDb().selectFrom("auditLog").select(sql<string>`detail::text`.as("detail")).where("schoolId", "=", f.schoolId).where("action", "=", "guardian.updated").executeTakeFirstOrThrow();
+    expect(audit.detail).toContain(f.guardianId);
+    for (const secret of ["52998224725", "529.982.247-25", "Ana Paula Lima", "Lima"]) expect(audit.detail).not.toContain(secret);
+  });
+
   it("shows the full CPF only in the guardian detail and stores digits only", async () => {
     const f = await family();
     const app = buildApp();
@@ -59,6 +83,10 @@ describe("students and guardians (staff)", () => {
     expect(res.statusCode).toBe(404);
     const g = await app.inject({ method: "GET", url: `/api/admin/v1/guardians/${other.guardianId}`, cookies: f.cookies });
     expect(g.statusCode).toBe(404);
+    const put = await app.inject({ method: "PUT", url: `/api/admin/v1/guardians/${other.guardianId}`, cookies: f.cookies, payload: { fullName: "X", cpf: null } });
+    expect(put.statusCode).toBe(404);
+    const untouched = await adminDb().selectFrom("guardians").select(["fullName", "cpf"]).where("id", "=", other.guardianId).executeTakeFirstOrThrow();
+    expect(untouched).toEqual({ fullName: "Ana Paula Souza", cpf: "12345678909" });
     const { cookies } = await staffCookie(f.schoolId, "cozinha");
     const k = await app.inject({ method: "GET", url: `/api/admin/v1/guardians/${f.guardianId}`, cookies });
     expect(k.statusCode).toBe(403);

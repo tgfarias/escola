@@ -118,6 +118,26 @@ describe("optional personal columns", () => {
     expect(errors).toEqual([{ line: 3, message: "responsavel_telefone repetido com dados diferentes" }]);
   });
 
+  it("detects a conflict after an empty value: empty, A, B for the same key", () => {
+    const guardian = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,,,\nA002,Bia,Infantil 3A,Ana,11999990001,,,Ana Souza,\nA003,Caio,Infantil 3A,Ana,11999990001,,,Ana Lima,\n`,
+    );
+    expect(guardian.errors).toEqual([{ line: 4, message: "responsavel_telefone repetido com dados diferentes" }]);
+    const student = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,,,\nA001,Léo,Infantil 3A,Rui,11988880002,Leonardo Souza,,,\nA001,Léo,Infantil 3A,Eva,11977770003,Leonardo Lima,,,\n`,
+    );
+    expect(student.errors).toEqual([{ line: 4, message: "codigo_aluno repetido com dados diferentes" }]);
+    const birth = parseStudentsCsv(
+      `${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,,,\nA001,Léo,Infantil 3A,Rui,11988880002,,15/03/2021,,\nA001,Léo,Infantil 3A,Eva,11977770003,,16/03/2021,,\n`,
+    );
+    expect(birth.errors).toEqual([{ line: 4, message: "codigo_aluno repetido com dados diferentes" }]);
+  });
+
+  it("hints at a lost leading zero for a CPF with 10 digits", () => {
+    const { errors } = parseStudentsCsv(`${H}\nA001,Léo,Infantil 3A,Ana,11999990001,,,,1234567890\n`);
+    expect(errors).toEqual([{ line: 2, message: "responsavel_cpf inválido. CPF com 10 dígitos: confira se o zero inicial foi perdido na planilha." }]);
+  });
+
   it("keeps working without the optional columns", () => {
     const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,11999990001\n`);
     expect(errors).toEqual([]);

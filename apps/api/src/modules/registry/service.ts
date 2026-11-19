@@ -20,6 +20,11 @@ export async function importStudents(session: SessionClaims, csv: string): Promi
   const schoolId = session.schoolId;
 
   return withTenant(schoolId, async (trx) => {
+    // Data no futuro é recusada contra o relógio do banco; a mensagem nunca repete o valor.
+    const today = await repo.schoolToday(trx);
+    const future = rows.filter((r) => r.birthDate !== null && r.birthDate > today).map((r) => ({ line: r.line, message: "data_nascimento no futuro" }));
+    if (future.length > 0) return { applied: false, errors: future, classes: 0, students: 0, guardians: 0 };
+
     const classIds = new Map<string, string>();
     const studentIds = new Map<string, string>();
     const guardianIds = new Map<string, string>();
@@ -97,6 +102,9 @@ export async function listStudents(session: SessionClaims): Promise<StudentListR
 
 export async function updateStudent(session: SessionClaims, studentId: string, body: UpdateStudentRequest): Promise<void> {
   await withTenant(session.schoolId, async (trx) => {
+    if (body.birthDate !== null && body.birthDate > (await repo.schoolToday(trx))) {
+      throw new DomainError("validation_failed", "birth date is in the future");
+    }
     if (!(await repo.updateStudent(trx, studentId, body))) throw new DomainError("not_found");
     await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "student.updated", detail: { student_id: studentId, fields: ["full_name", "birth_date"] } });
   });

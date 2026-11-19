@@ -1,3 +1,5 @@
+import { sql } from "kysely";
+import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, staffCookie } from "../../../test/helpers";
 import { buildApp } from "../../app";
@@ -18,6 +20,18 @@ async function setup(role: "admin" | "secretaria" = "secretaria") {
     app.inject({ method: "POST", url, cookies, payload: payload as object, headers: key ? { "idempotency-key": key } : {} });
   const get = (url: string) => app.inject({ method: "GET", url, cookies });
   return { schoolId, staffUserId, cookies, app, post, get };
+}
+
+/** Espera até alguma sessão estar parada esperando um lock numa consulta que contém `fragment`. */
+async function waitForLockWait(fragment: string): Promise<void> {
+  for (let i = 0; i < 200; i += 1) {
+    const { rows } = await sql<{ n: number }>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE wait_event_type = 'Lock' AND query ILIKE ${`%${fragment}%`}`.execute(adminDb());
+    if (rows[0]!.n > 0) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error("no session waited for the lock");
 }
 
 describe("document templates", () => {
@@ -108,5 +122,69 @@ describe("document templates", () => {
     expect((await b.get(BASE)).json().templates).toEqual([]);
     const { cookies } = await staffCookie(a.schoolId, "cozinha");
     expect((await a.app.inject({ method: "GET", url: BASE, cookies })).statusCode).toBe(403);
+    const post = await a.app.inject({ method: "POST", url: BASE, cookies, payload: TEMPLATE, headers: { "idempotency-key": crypto.randomUUID() } });
+    expect(post.statusCode).toBe(403);
+    expect(await adminDb().selectFrom("documentTemplates").select("id").where("schoolId", "=", a.schoolId).execute()).toHaveLength(1);
+  });
+
+  it("answers 409 when another edit inserts the same version first (constraint race)", async () => {
+    const s = await setup();
+    const v1 = (await s.post(BASE, TEMPLATE)).json();
+    let pending!: ReturnType<typeof s.post>;
+    // A outra edição grava a versão 2 e ainda não confirmou: esta enxerga a v1 como a mais recente e esbarra na constraint.
+    await adminDb()
+      .transaction()
+      .execute(async (tx) => {
+        await tx
+          .insertInto("documentTemplates")
+          .values({ id: uuidv7(), schoolId: s.schoolId, templateGroupId: v1.id, version: 2, name: "Outra", category: "outro", bodyMd: "# Outra", fields: JSON.stringify([]), createdBy: s.staffUserId })
+          .execute();
+        pending = s.post(`${BASE}/${v1.id}/versions`, TEMPLATE);
+        await waitForLockWait("document_templates");
+      });
+    const res = await pending;
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("document_template_outdated");
+    const versions = await adminDb().selectFrom("documentTemplates").select("name").where("templateGroupId", "=", v1.id).orderBy("version").execute();
+    expect(versions.map((v) => v.name)).toEqual(["Autorização de passeio", "Outra"]);
+  });
+
+  it("never adds an unarchived version to a group archived concurrently", async () => {
+    const s = await setup();
+    const v1 = (await s.post(BASE, TEMPLATE)).json();
+    let pending!: ReturnType<typeof s.post>;
+    // O arquivamento trava as versões do grupo e ainda não confirmou quando a nova versão chega.
+    await adminDb()
+      .transaction()
+      .execute(async (tx) => {
+        await sql`SELECT id FROM document_templates WHERE template_group_id = ${v1.id} FOR UPDATE`.execute(tx);
+        await tx.updateTable("documentTemplates").set({ archivedAt: sql`now()` }).where("templateGroupId", "=", v1.id).execute();
+        pending = s.post(`${BASE}/${v1.id}/versions`, TEMPLATE);
+        await waitForLockWait("document_templates");
+      });
+    expect((await pending).statusCode).toBe(404);
+    const live = await adminDb().selectFrom("documentTemplates").select("id").where("templateGroupId", "=", v1.id).where("archivedAt", "is", null).execute();
+    expect(live).toEqual([]);
+  });
+
+  it("archives a version created while the archive waited for the group", async () => {
+    const s = await setup();
+    const v1 = (await s.post(BASE, TEMPLATE)).json();
+    let pending!: ReturnType<typeof s.post>;
+    // Uma nova versão em andamento trava o grupo e grava a v2; o arquivamento chega antes de ela confirmar.
+    await adminDb()
+      .transaction()
+      .execute(async (tx) => {
+        await sql`SELECT id FROM document_templates WHERE template_group_id = ${v1.id} FOR UPDATE`.execute(tx);
+        await tx
+          .insertInto("documentTemplates")
+          .values({ id: uuidv7(), schoolId: s.schoolId, templateGroupId: v1.id, version: 2, name: "Nova", category: "outro", bodyMd: "# Nova", fields: JSON.stringify([]), createdBy: s.staffUserId })
+          .execute();
+        pending = s.post(`${BASE}/${v1.id}/archive`, undefined, null);
+        await waitForLockWait("document_templates");
+      });
+    expect((await pending).statusCode).toBe(204);
+    const live = await adminDb().selectFrom("documentTemplates").select("version").where("templateGroupId", "=", v1.id).where("archivedAt", "is", null).execute();
+    expect(live).toEqual([]);
   });
 });

@@ -2,6 +2,13 @@ import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import type { Trx } from "../../db/index";
 
+/** Hoje no fuso da escola, pelo relógio do banco (AAAA-MM-DD). */
+export async function schoolToday(trx: Trx): Promise<string> {
+  const { rows } = await sql<{ today: string }>`
+    SELECT (now() AT TIME ZONE s.timezone)::date::text AS today FROM schools s WHERE s.id = app_school_id()`.execute(trx);
+  return rows[0]!.today;
+}
+
 export async function upsertClass(trx: Trx, schoolId: string, name: string): Promise<string> {
   const row = await trx
     .insertInto("classes")

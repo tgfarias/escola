@@ -86,6 +86,25 @@ describe("document batches", () => {
     expect((await s.post("/api/admin/v1/document-batches", { templateId, studentIds: [s.leo], fieldValues: values })).statusCode).toBe(404);
   });
 
+  it("keeps batches per school: another school gets 404 on the detail and an empty list", async () => {
+    const s = await documentsSetup();
+    const other = await documentsSetup();
+    const templateId = await s.template(STUDENT_BODY, FIELDS);
+    const batch = (await s.post("/api/admin/v1/document-batches", { templateId, studentIds: [s.leo], fieldValues: { destino: "Zoo", data_passeio: "2026-12-05" } })).json();
+    expect((await other.get(`/api/admin/v1/document-batches/${batch.id}`)).statusCode).toBe(404);
+    expect((await other.get("/api/admin/v1/document-batches")).json()).toEqual({ batches: [] });
+  });
+
+  // Decisão: aluno repetido na seleção é recusado (400 pelo contrato), não deduplicado em silêncio.
+  it("rejects duplicate studentIds with 400 and creates nothing", async () => {
+    const s = await documentsSetup();
+    const templateId = await s.template(STUDENT_BODY, FIELDS);
+    const res = await s.post("/api/admin/v1/document-batches", { templateId, studentIds: [s.leo, s.bia, s.leo], fieldValues: { destino: "Zoo", data_passeio: "2026-12-05" } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("validation_failed");
+    expect(await adminDb().selectFrom("documentBatches").select("id").where("schoolId", "=", s.schoolId).execute()).toEqual([]);
+  });
+
   it("lists batches and shows the detail with documents and an audit entry", async () => {
     const s = await documentsSetup();
     const templateId = await s.template(STUDENT_BODY, FIELDS);

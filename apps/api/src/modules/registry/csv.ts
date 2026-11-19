@@ -96,7 +96,9 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
     const rawCpf = optional(record.responsavel_cpf);
     const guardianCpf = rawCpf === null ? null : rawCpf.replace(/[.\-\s]/g, "");
     if (guardianCpf !== null && !isValidCpf(guardianCpf)) {
-      errors.push({ line, message: "responsavel_cpf inválido" });
+      // Planilhas tratam o CPF como número e perdem o zero inicial.
+      const hint = /^\d{10}$/.test(guardianCpf) ? ". CPF com 10 dígitos: confira se o zero inicial foi perdido na planilha." : "";
+      errors.push({ line, message: `responsavel_cpf inválido${hint}` });
       return;
     }
     const row: StudentRow = {
@@ -111,9 +113,10 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
       guardianFullName,
       guardianCpf,
     };
+    // Os mapas guardam cópias que acumulam os valores não vazios já vistos: vazio, "A" e depois "B" é conflito.
     const first = firstSeen.get(row.externalCode);
     if (!first) {
-      firstSeen.set(row.externalCode, row);
+      firstSeen.set(row.externalCode, { ...row });
     } else if (
       first.firstName !== row.firstName ||
       first.className !== row.className ||
@@ -125,10 +128,18 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
     }
     const g = guardianSeen.get(row.guardianPhone);
     if (!g) {
-      guardianSeen.set(row.guardianPhone, row);
+      guardianSeen.set(row.guardianPhone, { ...row });
     } else if (differs(g.guardianCpf, row.guardianCpf) || differs(g.guardianFullName, row.guardianFullName)) {
       errors.push({ line, message: "responsavel_telefone repetido com dados diferentes" });
       return;
+    }
+    if (first) {
+      first.fullName ??= row.fullName;
+      first.birthDate ??= row.birthDate;
+    }
+    if (g) {
+      g.guardianCpf ??= row.guardianCpf;
+      g.guardianFullName ??= row.guardianFullName;
     }
     rows.push(row);
   });

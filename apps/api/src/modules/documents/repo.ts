@@ -50,6 +50,11 @@ export async function findTemplate(trx: Trx, id: string): Promise<TemplateRow | 
   return rows[0] && toTemplate(rows[0]);
 }
 
+/** Trava as versões do grupo: arquivar e criar versão passam a ser serializados. */
+export async function lockGroup(trx: Trx, groupId: string): Promise<void> {
+  await sql`SELECT id FROM document_templates WHERE template_group_id = ${groupId} FOR UPDATE`.execute(trx);
+}
+
 export async function archiveGroup(trx: Trx, groupId: string): Promise<number> {
   const res = await trx
     .updateTable("documentTemplates")

@@ -187,6 +187,16 @@ describe("student import", () => {
     expect(guardian).toEqual({ fullName: "Ana Paula Souza", cpf: "52998224725" });
   });
 
+  it("refuses a birth date in the future without echoing it and writes nothing", async () => {
+    const schoolId = await createSchool();
+    const header = "codigo_aluno,primeiro_nome,turma,responsavel_nome,responsavel_telefone,nome_completo,data_nascimento,responsavel_nome_completo,responsavel_cpf";
+    const csv = `${header}\nA001,Léo,Infantil 3A,Ana,(11) 99999-0001,,15/03/2021,,\nA002,Bia,Infantil 3A,Ana,(11) 99999-0001,,01/01/2999,,`;
+    const res = await importCsv(await staffCookie(schoolId), csv);
+    expect(res.json()).toEqual({ applied: false, errors: [{ line: 3, message: "data_nascimento no futuro" }], classes: 0, students: 0, guardians: 0 });
+    expect(res.body).not.toContain("2999");
+    expect(await counts(schoolId)).toEqual({ classes: 0, students: 0, guardians: 0, links: 0 });
+  });
+
   describe("staff session re-checked against the database", () => {
     it("rejects a session whose staff user was deactivated and writes nothing", async () => {
       const schoolId = await createSchool();

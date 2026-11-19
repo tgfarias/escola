@@ -99,7 +99,8 @@ function diskStorage(root: string): ObjectStorage {
         await rm(tmp, { force: true });
       }
     },
-    read: (path) => readFile(full(path)),
+    // async: um caminho fora da raiz vira promessa rejeitada, como qualquer falha de leitura.
+    read: async (path) => readFile(full(path)),
     async signedUrl(path) {
       const expiresAt = expiry();
       return { url: `${LOCAL_FILES_ROUTE}?t=${signLocalToken(path, expiresAt.getTime())}`, expiresAt };
