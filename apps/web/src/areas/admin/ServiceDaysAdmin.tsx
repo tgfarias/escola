@@ -7,7 +7,10 @@ import {
   type ServiceDay,
 } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Alert, Button, Card, CardBody, CardHeader, Col, Form, FormGroup, Input, Label, Row, Table } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
+import { announce, StatusNotice } from "../../theme/notify";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 import { formatCents } from "../../ui/money";
 
@@ -80,7 +83,9 @@ export function ServiceDaysAdmin() {
       const manifest = await apiFetch(`/api/admin/v1/service-days/${day.serviceDate}/close`, ManifestResponse, {
         method: "POST",
       });
-      setNotice(`Dia fechado: ${manifest.totals.orders} pedidos.`);
+      const message = `Dia fechado: ${manifest.totals.orders} pedidos.`;
+      setNotice(message);
+      announce(message);
       await reload();
     } catch (err) {
       fail(err);
@@ -90,48 +95,94 @@ export function ServiceDaysAdmin() {
   }
 
   return (
-    <section>
-      <h2>Dias de serviço</h2>
-      <ul>
-        {days.map((d) => (
-          <li key={d.serviceDate}>
-            <span>
-              {formatDate(d.serviceDate)} · corte {formatTime(d.cutoffAt)} · {d.status === "open" ? "Aberto" : "Fechado"}
-            </span>
-            <ul>
-              {d.items.map((i) => (
-                <li key={i.menuItemId}>{`${i.name} — ${formatCents(i.priceCents)}`}</li>
+    <Card tag="section" id="dias" className="main-card mb-3">
+      <CardHeader tag="h2" className="h6 mb-0">
+        Dias de serviço
+      </CardHeader>
+      <CardBody>
+        {days.length === 0 ? (
+          <p>Nenhum dia de serviço aberto.</p>
+        ) : (
+          <Table responsive hover striped className="mb-4">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Corte</th>
+                <th>Situação</th>
+                <th>Itens</th>
+                <th>
+                  <span className="visually-hidden">Ações</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {days.map((d) => (
+                <tr key={d.serviceDate}>
+                  <td>{formatDate(d.serviceDate)}</td>
+                  <td>{formatTime(d.cutoffAt)}</td>
+                  <td>
+                    <StatusBadge tone={d.status === "open" ? "success" : "secondary"}>
+                      {d.status === "open" ? "Aberto" : "Fechado"}
+                    </StatusBadge>
+                  </td>
+                  <td>
+                    <ul className="list-unstyled mb-0">
+                      {d.items.map((i) => (
+                        <li key={i.menuItemId}>{`${i.name} — ${formatCents(i.priceCents)}`}</li>
+                      ))}
+                    </ul>
+                  </td>
+                  <td className="text-end">
+                    {d.status === "open" && (
+                      <Button size="sm" outline color="danger" type="button" disabled={busy} onClick={() => close(d)}>
+                        Fechar dia
+                      </Button>
+                    )}
+                  </td>
+                </tr>
               ))}
-            </ul>
-            {d.status === "open" && (
-              <button type="button" disabled={busy} onClick={() => close(d)}>
-                Fechar dia
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-      <form onSubmit={save}>
-        <h3>Abrir dia</h3>
-        <label htmlFor="day-date">Data</label>
-        <input id="day-date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
-        <label htmlFor="day-cutoff">Horário de corte (opcional)</label>
-        <input id="day-cutoff" type="time" value={cutoff} onChange={(e) => setCutoff(e.target.value)} />
-        <fieldset>
-          <legend>Itens</legend>
-          {menu
-            .filter((i) => i.active)
-            .map((i) => (
-              <label key={i.id}>
-                <input type="checkbox" checked={selected.has(i.id)} onChange={() => toggleItem(i.id)} />
-                {i.name}
-              </label>
-            ))}
-        </fieldset>
-        <button type="submit" disabled={busy || selected.size === 0}>Salvar dia</button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
-    </section>
+            </tbody>
+          </Table>
+        )}
+        <Form onSubmit={save}>
+          <h3 className="h6">Abrir dia</h3>
+          <Row className="g-2">
+            <Col md={4}>
+              <FormGroup>
+                <Label for="day-date">Data</Label>
+                <Input id="day-date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+              </FormGroup>
+            </Col>
+            <Col md={4}>
+              <FormGroup>
+                <Label for="day-cutoff">Horário de corte (opcional)</Label>
+                <Input id="day-cutoff" type="time" value={cutoff} onChange={(e) => setCutoff(e.target.value)} />
+              </FormGroup>
+            </Col>
+          </Row>
+          <fieldset className="mb-3">
+            <legend className="fs-6">Itens</legend>
+            {menu
+              .filter((i) => i.active)
+              .map((i) => (
+                <FormGroup check inline key={i.id}>
+                  <Label check>
+                    <Input type="checkbox" checked={selected.has(i.id)} onChange={() => toggleItem(i.id)} /> {i.name}
+                  </Label>
+                </FormGroup>
+              ))}
+          </fieldset>
+          <Button color="primary" type="submit" disabled={busy || selected.size === 0}>
+            Salvar dia
+          </Button>
+        </Form>
+        {error && (
+          <Alert color="danger" fade={false} className="mt-3">
+            {error}
+          </Alert>
+        )}
+        <StatusNotice message={notice} />
+      </CardBody>
+    </Card>
   );
 }

@@ -1,6 +1,8 @@
 import { MenuItem, MenuItemListResponse } from "@app-lanche/contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Alert, Button, Card, CardBody, CardHeader, Col, Form, FormGroup, Input, Label, Row, Table } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 import { formatCents, parsePriceToCents } from "../../ui/money";
 
@@ -60,33 +62,89 @@ export function MenuAdmin() {
   }
 
   return (
-    <section>
-      <h2>Cardápio</h2>
-      <ul>
-        {items.map((i) => (
-          <li key={i.id}>
-            <span>{`${i.name} — ${formatCents(i.priceCents)}${i.active ? "" : " (inativo)"}`}</span>{" "}
-            <button type="button" onClick={() => toggle(i)}>
-              {i.active ? "Desativar" : "Ativar"}
-            </button>
-          </li>
-        ))}
-      </ul>
-      <form onSubmit={add}>
-        <h3>Novo item</h3>
-        <label htmlFor="menu-name">Nome</label>
-        <input id="menu-name" required maxLength={80} value={name} onChange={(e) => {
-            keyRef.current = null;
-            setName(e.target.value);
-          }} />
-        <label htmlFor="menu-price">Preço (R$)</label>
-        <input id="menu-price" required inputMode="decimal" value={price} onChange={(e) => {
-            keyRef.current = null;
-            setPrice(e.target.value);
-          }} />
-        <button type="submit" disabled={busy}>Adicionar</button>
-      </form>
-      {error && <p role="alert">{error}</p>}
-    </section>
+    <Card tag="section" id="cardapio" className="main-card mb-3">
+      <CardHeader tag="h2" className="h6 mb-0">
+        Cardápio
+      </CardHeader>
+      <CardBody>
+        {items.length === 0 ? (
+          <p>Nenhum item no cardápio.</p>
+        ) : (
+          <Table responsive hover striped className="mb-4">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Situação</th>
+                <th>
+                  <span className="visually-hidden">Ações</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.id}>
+                  <td>{`${i.name} — ${formatCents(i.priceCents)}${i.active ? "" : " (inativo)"}`}</td>
+                  <td>
+                    <StatusBadge tone={i.active ? "success" : "secondary"}>{i.active ? "Ativo" : "Inativo"}</StatusBadge>
+                  </td>
+                  <td className="text-end">
+                    <Button size="sm" outline color={i.active ? "secondary" : "primary"} type="button" onClick={() => toggle(i)}>
+                      {i.active ? "Desativar" : "Ativar"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+        <Form onSubmit={add}>
+          <h3 className="h6">Novo item</h3>
+          <Row className="g-2 align-items-end">
+            <Col md={6}>
+              <FormGroup>
+                <Label for="menu-name">Nome</Label>
+                <Input
+                  id="menu-name"
+                  required
+                  maxLength={80}
+                  value={name}
+                  onChange={(e) => {
+                    keyRef.current = null;
+                    setName(e.target.value);
+                  }}
+                />
+              </FormGroup>
+            </Col>
+            <Col md={3}>
+              <FormGroup>
+                <Label for="menu-price">Preço (R$)</Label>
+                <Input
+                  id="menu-price"
+                  required
+                  inputMode="decimal"
+                  value={price}
+                  onChange={(e) => {
+                    keyRef.current = null;
+                    setPrice(e.target.value);
+                  }}
+                />
+              </FormGroup>
+            </Col>
+            <Col md={3}>
+              <FormGroup>
+                <Button color="primary" type="submit" className="w-100" disabled={busy}>
+                  Adicionar
+                </Button>
+              </FormGroup>
+            </Col>
+          </Row>
+        </Form>
+        {error && (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        )}
+      </CardBody>
+    </Card>
   );
 }

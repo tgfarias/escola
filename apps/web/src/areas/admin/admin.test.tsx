@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
@@ -98,6 +98,7 @@ describe("admin area", () => {
     fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "a,b\n1,2" } });
     fireEvent.click(screen.getByRole("button", { name: "Importar" }));
     await screen.findByText("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis.");
+    expect(within(document.getElementById("importar")!).getByRole("status").textContent).toBe("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis.");
     const call = fetchMock.mock.calls.find((c) => c[0] === "/api/admin/v1/import/students")!;
     expect(JSON.parse(call[1]!.body as string)).toEqual({ csv: "a,b\n1,2" });
   });

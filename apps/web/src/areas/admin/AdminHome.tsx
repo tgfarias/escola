@@ -1,7 +1,10 @@
 import { ImportStudentsResponse, StaffMeResponse } from "@app-lanche/contracts";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
+import { Alert, Button, Card, CardBody, CardHeader, Form, FormGroup, Input, Label } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
+import { PageTitle } from "../../theme/layout/PageTitle";
+import { announce, StatusNotice } from "../../theme/notify";
 import { staffErrorMessage } from "../../ui/messages";
 import { KitchenDevicesAdmin } from "./KitchenDevicesAdmin";
 import { MenuAdmin } from "./MenuAdmin";
@@ -9,10 +12,12 @@ import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
 
 export function AdminHome() {
   const navigate = useNavigate();
+  const { hash } = useLocation();
   const [me, setMe] = useState<StaffMeResponse | null>(null);
   const [csv, setCsv] = useState("");
   const [result, setResult] = useState<ImportStudentsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -25,6 +30,11 @@ export function AdminHome() {
     });
   }, [navigate]);
 
+  // Cardápio, dias e tablets são seções desta página: o menu lateral aponta para elas por âncora.
+  useEffect(() => {
+    if (me && hash) document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
+  }, [me, hash]);
+
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (file) setCsv(await file.text());
@@ -34,14 +44,19 @@ export function AdminHome() {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     setResult(null);
     try {
-      setResult(
-        await apiFetch("/api/admin/v1/import/students", ImportStudentsResponse, {
-          method: "POST",
-          body: { csv },
-        }),
-      );
+      const res = await apiFetch("/api/admin/v1/import/students", ImportStudentsResponse, {
+        method: "POST",
+        body: { csv },
+      });
+      setResult(res);
+      if (res.applied) {
+        const message = `Importação concluída: ${res.classes} turmas, ${res.students} alunos, ${res.guardians} responsáveis.`;
+        setNotice(message);
+        announce(message);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         navigate("/admin/login", { replace: true });
@@ -53,55 +68,72 @@ export function AdminHome() {
     }
   }
 
-  if (!me) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  if (!me) {
+    return (
+      <div>
+        {error ? (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        ) : (
+          <p>Carregando…</p>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <main>
-      <h1>{me.schoolName}</h1>
-      <section>
-        <h2>Importar alunos e responsáveis</h2>
-        <p>
-          Colunas: <code>codigo_aluno, primeiro_nome, turma, responsavel_nome, responsavel_telefone</code>.
-          Opcionais (para documentos):{" "}
-          <code>nome_completo, data_nascimento, responsavel_nome_completo, responsavel_cpf</code>.
-          Um aluno com dois responsáveis ocupa duas linhas.
-        </p>
-        <form onSubmit={submit}>
-          <label htmlFor="file">Arquivo CSV</label>
-          <input id="file" type="file" accept=".csv,text/csv" onChange={loadFile} />
-          <label htmlFor="csv">Conteúdo do CSV</label>
-          <textarea id="csv" rows={8} required value={csv} onChange={(e) => setCsv(e.target.value)} />
-          <button type="submit" disabled={busy}>Importar</button>
-        </form>
-        {error && <p role="alert">{error}</p>}
-        {result?.applied && (
-          <p role="status">
-            Importação concluída: {result.classes} turmas, {result.students} alunos, {result.guardians} responsáveis.
+    <>
+      <PageTitle heading={me.schoolName} subheading="Início" icon="pe-7s-home" />
+      <Card tag="section" id="importar" className="main-card mb-3">
+        <CardHeader tag="h2" className="h6 mb-0">
+          Importar alunos e responsáveis
+        </CardHeader>
+        <CardBody>
+          <p>
+            Colunas: <code>codigo_aluno, primeiro_nome, turma, responsavel_nome, responsavel_telefone</code>.
+            Opcionais (para documentos):{" "}
+            <code>nome_completo, data_nascimento, responsavel_nome_completo, responsavel_cpf</code>.
+            Um aluno com dois responsáveis ocupa duas linhas.
           </p>
-        )}
-        {result && !result.applied && (
-          <div role="alert">
-            <p>Nada foi importado. Corrija as linhas abaixo e envie de novo.</p>
-            <ul>
-              {result.errors.map((e) => (
-                <li key={`${e.line}-${e.message}`}>Linha {e.line}: {e.message}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </section>
+          <Form onSubmit={submit}>
+            <FormGroup>
+              <Label for="file">Arquivo CSV</Label>
+              <Input id="file" type="file" accept=".csv,text/csv" onChange={loadFile} />
+            </FormGroup>
+            <FormGroup>
+              <Label for="csv">Conteúdo do CSV</Label>
+              <Input id="csv" type="textarea" rows={8} required value={csv} onChange={(e) => setCsv(e.target.value)} />
+            </FormGroup>
+            <Button color="primary" type="submit" disabled={busy}>
+              Importar
+            </Button>
+          </Form>
+          {error && (
+            <Alert color="danger" fade={false} className="mt-3">
+              {error}
+            </Alert>
+          )}
+          <StatusNotice message={notice} />
+          {result && !result.applied && (
+            <Alert color="danger" fade={false} className="mt-3">
+              <p>Nada foi importado. Corrija as linhas abaixo e envie de novo.</p>
+              <ul className="mb-0">
+                {result.errors.map((e) => (
+                  <li key={`${e.line}-${e.message}`}>Linha {e.line}: {e.message}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+        </CardBody>
+      </Card>
       {(me.role === "admin" || me.role === "secretaria") && (
         <>
-          <nav>
-            <Link to="/admin/alunos">Alunos e responsáveis</Link>
-            {" · "}
-            <Link to="/admin/documentos">Documentos</Link>
-          </nav>
           <MenuAdmin />
           <ServiceDaysAdmin />
           <KitchenDevicesAdmin />
         </>
       )}
-    </main>
+    </>
   );
 }

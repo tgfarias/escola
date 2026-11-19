@@ -1,7 +1,9 @@
 import { KitchenDeviceListResponse, PairingCodeResponse } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Card, CardBody, CardHeader, Table } from "reactstrap";
 import { z } from "zod";
 import { ApiError, apiFetch } from "../../app/api";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 
 export function KitchenDevicesAdmin() {
@@ -40,27 +42,62 @@ export function KitchenDevicesAdmin() {
   }
 
   return (
-    <section>
-      <h2>Tablets da cozinha</h2>
-      <button type="button" onClick={() => void generate()}>Gerar código de pareamento</button>
-      {code && (
-        <p>
-          <strong>{code.code}</strong> — Digite este código no tablet da cozinha, em /kds. Vale até{" "}
-          {new Date(code.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
-        </p>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {devices.map((d) => (
-          <li key={d.id}>
-            Tablet de {new Date(d.createdAt).toLocaleDateString("pt-BR")} —{" "}
-            {d.revokedAt ? "revogado" : d.paired ? "pareado" : "aguardando pareamento"}
-            {!d.revokedAt && (
-              <button type="button" onClick={() => void revoke(d.id)}>Revogar</button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <Card tag="section" id="tablets" className="main-card mb-3">
+      <CardHeader tag="h2" className="h6 mb-0">
+        Tablets da cozinha
+      </CardHeader>
+      <CardBody>
+        <Button color="primary" type="button" onClick={() => void generate()}>
+          Gerar código de pareamento
+        </Button>
+        {code && (
+          <div className="border rounded bg-light p-3 my-3">
+            <p className="mb-0">
+              <strong className="fs-4 font-monospace">{code.code}</strong> — Digite este código no tablet da cozinha, em /kds. Vale até{" "}
+              {new Date(code.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
+            </p>
+          </div>
+        )}
+        {error && (
+          <Alert color="danger" fade={false} className="mt-3">
+            {error}
+          </Alert>
+        )}
+        {devices.length === 0 ? (
+          <p className="mt-3 mb-0">Nenhum tablet cadastrado.</p>
+        ) : (
+          <Table responsive hover striped className="mt-3 mb-0">
+            <thead>
+              <tr>
+                <th>Tablet</th>
+                <th>Situação</th>
+                <th>
+                  <span className="visually-hidden">Ações</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {devices.map((d) => (
+                <tr key={d.id}>
+                  <td>Tablet de {new Date(d.createdAt).toLocaleDateString("pt-BR")}</td>
+                  <td>
+                    <StatusBadge tone={d.revokedAt ? "secondary" : d.paired ? "success" : "warning"}>
+                      {d.revokedAt ? "revogado" : d.paired ? "pareado" : "aguardando pareamento"}
+                    </StatusBadge>
+                  </td>
+                  <td className="text-end">
+                    {!d.revokedAt && (
+                      <Button size="sm" outline color="danger" type="button" onClick={() => void revoke(d.id)}>
+                        Revogar
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </CardBody>
+    </Card>
   );
 }

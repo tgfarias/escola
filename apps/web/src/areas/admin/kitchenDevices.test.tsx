@@ -43,4 +43,15 @@ describe("KitchenDevicesAdmin", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Revogar" }));
     await waitFor(() => expect(fn.mock.calls.some((c) => c[0] === `/api/admin/v1/kds/devices/${DEV}/revoke`)).toBe(true));
   });
+
+  it("shows each tablet's situation as a badge", async () => {
+    mockApi({
+      "GET /api/admin/v1/kds/devices": {
+        status: 200,
+        body: { devices: [{ id: DEV, createdAt: "2031-11-01T10:00:00.000Z", paired: false, revokedAt: null }] },
+      },
+    });
+    render(<KitchenDevicesAdmin />);
+    expect((await screen.findByText("aguardando pareamento")).className).toContain("badge");
+  });
 });

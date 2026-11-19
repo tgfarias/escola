@@ -49,9 +49,9 @@ const OPEN_DAY = {
   items: [{ menuItemId: ID_PAO, name: "Pão", priceCents: 350 }],
 };
 
-function renderAdmin() {
+function renderAdmin(path = "/admin") {
   render(
-    <MemoryRouter initialEntries={["/admin"]}>
+    <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/admin" element={<AdminHome />} />
         <Route path="/admin/login" element={<p>login</p>} />
@@ -204,6 +204,7 @@ describe("service days admin", () => {
     await screen.findByText(/04\/03\/2030/);
     fireEvent.click(screen.getByRole("button", { name: "Fechar dia" }));
     await screen.findByText("Dia fechado: 3 pedidos.");
+    expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Dia fechado: 3 pedidos.");
     expect(window.confirm).toHaveBeenCalledWith("Fechar o dia? Os pedidos não pagos expiram e o romaneio fica congelado.");
   });
 
@@ -227,5 +228,38 @@ describe("service days admin", () => {
     await screen.findByText("Escola Sol");
     expect(screen.queryByText("Cardápio")).toBeNull();
     expect(screen.queryByText("Dias de serviço")).toBeNull();
+  });
+});
+
+describe("home sections", () => {
+  it("puts menu, days and tablets at the sidebar anchors and scrolls to the requested one", async () => {
+    const scrolled: string[] = [];
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value(this: HTMLElement) {
+        scrolled.push(this.id);
+      },
+    });
+    try {
+      mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
+      renderAdmin("/admin#dias");
+      await screen.findByText("Pão — R$ 3,50");
+      expect(document.getElementById("cardapio")).not.toBeNull();
+      expect(document.getElementById("tablets")).not.toBeNull();
+      expect(scrolled).toEqual(["dias"]);
+    } finally {
+      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("shows each day's situation and each item's state as badges", async () => {
+    mockApi({
+      "GET /api/admin/v1/menu-items": MENU,
+      "GET /api/admin/v1/service-days": { status: 200, body: { serviceDays: [OPEN_DAY] } },
+      "GET /api/admin/v1/me": me("admin"),
+    });
+    renderAdmin();
+    expect((await screen.findByText("Aberto")).className).toContain("badge");
+    expect(screen.getByText("Inativo").className).toContain("badge");
   });
 });
