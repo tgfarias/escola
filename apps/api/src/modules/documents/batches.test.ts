@@ -86,6 +86,25 @@ describe("document batches", () => {
     expect((await s.post("/api/admin/v1/document-batches", { templateId, studentIds: [s.leo], fieldValues: values })).statusCode).toBe(404);
   });
 
+  it("counts the documents that reach no linked guardian in the detail", async () => {
+    const s = await documentsSetup();
+    const lonely = (await seedFamily(s.schoolId, ["Caio"])).studentIds[0]!;
+    await adminDb().updateTable("students").set({ fullName: "Caio Lima" }).where("id", "=", lonely).execute();
+    await adminDb().deleteFrom("guardianStudents").where("studentId", "=", lonely).execute();
+    const templateId = await s.template("# Declaração\n\n{{aluno.nome_completo}}");
+    const batch = (await s.post("/api/admin/v1/document-batches", { templateId, studentIds: [s.leo, s.bia, lonely], fieldValues: {} })).json();
+    expect((await s.get(`/api/admin/v1/document-batches/${batch.id}`)).json()).toMatchObject({ counts: { total: 3 }, recipients: 1, unreachable: 1 });
+
+    const second = uuidv7();
+    await adminDb().insertInto("guardians").values({ id: second, schoolId: s.schoolId, phoneE164: "+5511977770009", firstName: "Rui", fullName: "Rui Souza", cpf: "11144477735" }).execute();
+    await adminDb().insertInto("guardianStudents").values({ schoolId: s.schoolId, guardianId: second, studentId: s.leo }).execute();
+    const g = await s.template(GUARDIAN_BODY);
+    const pairs = (await s.post("/api/admin/v1/document-batches", { templateId: g, studentIds: [s.leo], fieldValues: {} })).json();
+    expect((await s.get(`/api/admin/v1/document-batches/${pairs.id}`)).json()).toMatchObject({ unreachable: 0 });
+    await adminDb().deleteFrom("guardianStudents").where("guardianId", "=", second).execute();
+    expect((await s.get(`/api/admin/v1/document-batches/${pairs.id}`)).json()).toMatchObject({ counts: { total: 2 }, unreachable: 1 });
+  });
+
   it("keeps batches per school: another school gets 404 on the detail and an empty list", async () => {
     const s = await documentsSetup();
     const other = await documentsSetup();

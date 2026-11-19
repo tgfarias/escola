@@ -2,7 +2,7 @@ import { ClassListResponse, GuardianDetail, StudentListResponse, formatCpf } fro
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { z } from "zod";
-import { apiFetch } from "../../app/api";
+import { ApiError, apiFetch } from "../../app/api";
 import { formatIsoDate } from "../../ui/dates";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
 import { useStaffErrors } from "./useStaffErrors";
@@ -23,15 +23,22 @@ export function StudentFilters(props: { classes: ClassRow[]; classId: string; qu
   );
 }
 
-type FormProps = { onSaved: () => Promise<void>; onCancel: () => void; onError: (err: unknown) => void };
+type FormProps = { onSubmit: () => void; onSaved: () => Promise<void>; onCancel: () => void; onError: (err: unknown) => void };
 
-function StudentForm({ student, onSaved, onCancel, onError }: FormProps & { student: StudentRow }) {
+/** Só dígitos, no máximo 11; formatado quando completo. Colar "CPF 111.444.777-35 " não perde dígito. */
+function cpfInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 11);
+  return digits.length === 11 ? formatCpf(digits) : digits;
+}
+
+function StudentForm({ student, onSubmit, onSaved, onCancel, onError }: FormProps & { student: StudentRow }) {
   const [fullName, setFullName] = useState(student.fullName ?? "");
   const [birthDate, setBirthDate] = useState(student.birthDate ?? "");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    onSubmit();
     setBusy(true);
     try {
       await apiFetch(`/api/admin/v1/students/${student.id}`, z.undefined(), {
@@ -59,22 +66,31 @@ function StudentForm({ student, onSaved, onCancel, onError }: FormProps & { stud
   );
 }
 
-function GuardianForm({ guardianId, onSaved, onCancel, onError }: FormProps & { guardianId: string }) {
+function GuardianForm({ guardianId, onSubmit, onSaved, onCancel, onError }: FormProps & { guardianId: string }) {
   const [detail, setDetail] = useState<GuardianDetail | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [fullName, setFullName] = useState("");
   const [cpf, setCpf] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    apiFetch(`/api/admin/v1/guardians/${guardianId}`, GuardianDetail).then((d) => {
-      setDetail(d);
-      setFullName(d.fullName ?? "");
-      setCpf(d.cpf ? formatCpf(d.cpf) : "");
-    }, onError);
+    apiFetch(`/api/admin/v1/guardians/${guardianId}`, GuardianDetail).then(
+      (d) => {
+        setDetail(d);
+        setFullName(d.fullName ?? "");
+        setCpf(d.cpf ? formatCpf(d.cpf) : "");
+      },
+      (err: unknown) => {
+        // Sessão vencida segue para o login; o resto vira a mensagem do próprio formulário.
+        if (err instanceof ApiError && err.status === 401) onError(err);
+        else setLoadFailed(true);
+      },
+    );
   }, [guardianId, onError]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    onSubmit();
     setBusy(true);
     try {
       await apiFetch(`/api/admin/v1/guardians/${guardianId}`, z.undefined(), {
@@ -89,6 +105,7 @@ function GuardianForm({ guardianId, onSaved, onCancel, onError }: FormProps & { 
     }
   }
 
+  if (loadFailed) return <p role="alert">Não foi possível carregar o responsável.</p>;
   if (!detail) return <p>Carregando…</p>;
   return (
     <form onSubmit={submit}>
@@ -96,7 +113,7 @@ function GuardianForm({ guardianId, onSaved, onCancel, onError }: FormProps & { 
       <label htmlFor="guardian-full-name">Nome completo do responsável</label>
       <input id="guardian-full-name" maxLength={200} value={fullName} onChange={(e) => setFullName(e.target.value)} />
       <label htmlFor="guardian-cpf">CPF</label>
-      <input id="guardian-cpf" inputMode="numeric" autoComplete="off" maxLength={14} value={cpf} onChange={(e) => setCpf(e.target.value)} />
+      <input id="guardian-cpf" inputMode="numeric" autoComplete="off" value={cpf} onChange={(e) => setCpf(cpfInput(e.target.value))} />
       <button type="submit" disabled={busy}>Salvar</button>
       <button type="button" onClick={onCancel}>Cancelar</button>
     </form>
@@ -135,13 +152,25 @@ export function StudentsAdmin() {
 
   async function saved() {
     setEditing(null);
+    setError(null);
     setStatus("Dados salvos.");
     await load();
   }
 
   if (!students) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
   const visible = filterStudents(students, { classId, query });
-  const formProps = { onSaved: saved, onCancel: () => setEditing(null), onError: fail };
+  const formProps = {
+    onSubmit: () => {
+      setStatus(null);
+      setError(null);
+    },
+    onSaved: saved,
+    onCancel: () => {
+      setEditing(null);
+      setError(null);
+    },
+    onError: fail,
+  };
 
   return (
     <main>

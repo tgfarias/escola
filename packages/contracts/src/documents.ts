@@ -136,6 +136,8 @@ export type BatchDocument = z.infer<typeof BatchDocument>;
 export const BatchDetail = BatchSummary.extend({
   issuedOn: IsoDate,
   fieldValues: z.record(z.string(), z.string()),
+  /** Documentos não descartados sem responsável vinculado hoje ao aluno (ou ao par): não serão enviados a ninguém. */
+  unreachable: z.number().int(),
   documents: z.array(BatchDocument),
 });
 export type BatchDetail = z.infer<typeof BatchDetail>;

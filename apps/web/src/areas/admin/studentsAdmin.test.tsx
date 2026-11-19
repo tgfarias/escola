@@ -117,6 +117,58 @@ describe("students admin", () => {
     await screen.findByText("Confira os dados e tente de novo.");
   });
 
+  it("clears the error on a new submit, on cancel and after a save", async () => {
+    let attempt = 0;
+    const fn = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url, init) => {
+      const key = `${init?.method ?? "GET"} ${url}`;
+      if (key === "GET /api/admin/v1/students") return new Response(JSON.stringify(STUDENTS), { status: 200 });
+      if (key === "GET /api/admin/v1/classes") return new Response(JSON.stringify(CLASSES), { status: 200 });
+      if (key === `PUT /api/admin/v1/students/${S2}`) {
+        attempt += 1;
+        // A segunda tentativa fica pendurada até o teste conferir que o erro sumiu ao enviar.
+        if (attempt === 2) return new Promise<Response>((resolve) => setTimeout(() => resolve(new Response(null, { status: 204 })), 50));
+        return new Response(JSON.stringify({ error: { code: "validation_failed", message: "x" } }), { status: 400 });
+      }
+      throw new Error(`unexpected request ${key}`);
+    });
+    vi.stubGlobal("fetch", fn);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Editar aluno Caio" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await screen.findByText("Confira os dados e tente de novo.");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(screen.queryByText("Confira os dados e tente de novo.")).toBeNull();
+    await screen.findByText("Dados salvos.");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar aluno Caio" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await screen.findByText("Confira os dados e tente de novo.");
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says when the guardian cannot be loaded", async () => {
+    mockApi({ ...BASE, [`GET /api/admin/v1/guardians/${G1}`]: { status: 500, body: { error: { code: "internal_error", message: "x" } } } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Editar responsável Ana" }));
+    await screen.findByText("Não foi possível carregar o responsável.");
+    expect(screen.queryByText("Carregando…")).toBeNull();
+  });
+
+  it("keeps all CPF digits of a pasted value with punctuation and spaces", async () => {
+    const fn = mockApi({ ...BASE, [`GET /api/admin/v1/guardians/${G1}`]: { status: 200, body: { id: G1, firstName: "Ana", fullName: null, cpf: null } }, [`PUT /api/admin/v1/guardians/${G1}`]: { status: 204 } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Editar responsável Ana" }));
+    const cpf = (await screen.findByLabelText("CPF")) as HTMLInputElement;
+    expect(cpf.maxLength).toBe(-1);
+    fireEvent.change(cpf, { target: { value: "  CPF 111.444.777-35  " } });
+    expect(cpf.value).toBe("111.444.777-35");
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await screen.findByText("Dados salvos.");
+    expect(bodyOf(fn, `PUT /api/admin/v1/guardians/${G1}`)).toEqual({ fullName: null, cpf: "111.444.777-35" });
+  });
+
   it("sends an expired session to the login", async () => {
     mockApi({ ...BASE, "GET /api/admin/v1/students": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } } });
     renderPage();

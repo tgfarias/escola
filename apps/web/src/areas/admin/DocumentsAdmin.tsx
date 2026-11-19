@@ -5,11 +5,13 @@ import { z } from "zod";
 import { apiFetch } from "../../app/api";
 import { formatInstantDate } from "../../ui/dates";
 import { BATCH_STATUS_LABELS, CATEGORY_LABELS } from "./documentLabels";
+import { useRequestKey } from "./useRequestKey";
 import { useStaffErrors } from "./useStaffErrors";
 
 export function DocumentsAdmin() {
   const navigate = useNavigate();
-  const { error, fail } = useStaffErrors();
+  const { error, setError, fail } = useStaffErrors();
+  const copyKey = useRequestKey();
   const [templates, setTemplates] = useState<TemplateListResponse["templates"] | null>(null);
   const [examples, setExamples] = useState<TemplateExampleListResponse["examples"]>([]);
   const [batches, setBatches] = useState<BatchListResponse["batches"]>([]);
@@ -31,18 +33,18 @@ export function DocumentsAdmin() {
 
   useEffect(() => void load(), [load]);
 
-  async function copyExample(exampleKey: string) {
-    try {
-      const t = await apiFetch("/api/admin/v1/document-templates/from-example", Template, {
-        method: "POST",
-        body: { exampleKey },
-        idempotencyKey: crypto.randomUUID(),
-      });
-      navigate(`/admin/documentos/modelos/${t.id}`);
-    } catch (err) {
-      fail(err);
-    }
-  }
+  const copyExample = (exampleKey: string) =>
+    copyKey.once(async () => {
+      setError(null);
+      try {
+        const body = { exampleKey };
+        const t = await apiFetch("/api/admin/v1/document-templates/from-example", Template, { method: "POST", body, idempotencyKey: copyKey.keyFor(body) });
+        copyKey.succeeded();
+        navigate(`/admin/documentos/modelos/${t.id}`);
+      } catch (err) {
+        fail(err);
+      }
+    });
 
   async function archive(id: string, name: string) {
     if (!window.confirm(`Arquivar o modelo "${name}"? Ele deixa de aparecer para gerar documentos.`)) return;

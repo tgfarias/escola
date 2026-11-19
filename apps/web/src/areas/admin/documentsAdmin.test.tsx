@@ -6,11 +6,13 @@ import { TemplateEditor } from "./TemplateEditor";
 
 type Reply = { status: number; body?: unknown; raw?: () => Response };
 
-function mockApi(replies: Record<string, Reply>) {
+/** Respostas por "MÉTODO url"; uma lista é consumida em ordem e a última se repete. */
+function mockApi(replies: Record<string, Reply | Reply[]>) {
   const fn = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url, init) => {
     const key = `${init?.method ?? "GET"} ${url}`;
-    const reply = replies[key];
-    if (!reply) throw new Error(`unexpected request ${key}`);
+    const entry = replies[key];
+    if (!entry) throw new Error(`unexpected request ${key}`);
+    const reply = Array.isArray(entry) ? (entry.length > 1 ? entry.shift()! : entry[0]!) : entry;
     if (reply.raw) return reply.raw();
     return reply.status === 204 ? new Response(null, { status: 204 }) : new Response(JSON.stringify(reply.body), { status: reply.status });
   });
@@ -34,6 +36,10 @@ const LIST: Record<string, Reply> = {
   "GET /api/admin/v1/document-templates/examples": { status: 200, body: { examples: [{ key: "declaracao-matricula", name: "Declaração de matrícula", category: "declaracao" }] } },
   "GET /api/admin/v1/document-batches": { status: 200, body: { batches: [BATCH] } },
 };
+
+const keysOf = (fn: ReturnType<typeof mockApi>, key: string) =>
+  fn.mock.calls.filter((c) => `${c[1]?.method ?? "GET"} ${c[0]}` === key).map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+const FAILURE: Reply = { status: 500, body: { error: { code: "internal_error", message: "x" } } };
 
 function renderAt(path: string) {
   render(
@@ -81,6 +87,25 @@ describe("documents admin", () => {
     expect(call.headers["idempotency-key"]).toBeTruthy();
   });
 
+  it("copies an example once on a double click and keeps the key for a retry", async () => {
+    const copied = { ...TEMPLATE, id: T2, groupId: T2, version: 1, name: "Declaração de matrícula" };
+    const fn = mockApi({
+      ...LIST,
+      "POST /api/admin/v1/document-templates/from-example": [FAILURE, { status: 200, body: copied }],
+      [`GET /api/admin/v1/document-templates/${T2}`]: { status: 200, body: copied },
+    });
+    renderAt("/admin/documentos");
+    const button = await screen.findByRole("button", { name: "Usar exemplo Declaração de matrícula" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByRole("alert");
+    expect(keysOf(fn, "POST /api/admin/v1/document-templates/from-example")).toHaveLength(1);
+    fireEvent.click(button);
+    await waitFor(() => expect((screen.getByLabelText("Nome") as HTMLInputElement).value).toBe("Declaração de matrícula"));
+    const [first, retry] = keysOf(fn, "POST /api/admin/v1/document-templates/from-example");
+    expect(retry).toBe(first);
+  });
+
   it("archives a template after confirmation", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const fn = mockApi({ ...LIST, [`POST /api/admin/v1/document-templates/${T1}/archive`]: { status: 204 } });
@@ -119,6 +144,46 @@ describe("template editor", () => {
     });
   });
 
+  it("keeps the save key across a failure and changes it when the draft changes", async () => {
+    const fn = mockApi({ "POST /api/admin/v1/document-templates": FAILURE });
+    renderAt("/admin/documentos/modelos/novo");
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Passeio" } });
+    fireEvent.change(screen.getByLabelText("Texto do modelo"), { target: { value: "Oi" } });
+    const save = screen.getByRole("button", { name: "Salvar" });
+    fireEvent.click(save);
+    await screen.findByRole("alert");
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(keysOf(fn, "POST /api/admin/v1/document-templates")).toHaveLength(2));
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Passeio ao zoo" } });
+    fireEvent.click(save);
+    await waitFor(() => expect(keysOf(fn, "POST /api/admin/v1/document-templates")).toHaveLength(3));
+    const [a, b, c] = keysOf(fn, "POST /api/admin/v1/document-templates");
+    expect(b).toBe(a);
+    expect(c).not.toBe(a);
+  });
+
+  it("refuses repeated field keys before calling the server", async () => {
+    const fn = mockApi({});
+    renderAt("/admin/documentos/modelos/novo");
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Passeio" } });
+    fireEvent.change(screen.getByLabelText("Texto do modelo"), { target: { value: "Oi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar campo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar campo" }));
+    const keys = screen.getAllByLabelText("Chave");
+    const labels = screen.getAllByLabelText("Rótulo");
+    for (const [i, el] of keys.entries()) {
+      fireEvent.change(el, { target: { value: "destino" } });
+      fireEvent.change(labels[i]!, { target: { value: `Destino ${i}` } });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await screen.findByText("Chaves de campo repetidas.");
+    fireEvent.click(screen.getByRole("button", { name: "Ver prévia" }));
+    expect(screen.getByText("Chaves de campo repetidas.")).toBeTruthy();
+    expect(fn).not.toHaveBeenCalled();
+  });
+
   it("marks the invalid variables the server reports", async () => {
     mockApi({
       "POST /api/admin/v1/document-templates": {
@@ -147,6 +212,9 @@ describe("template editor", () => {
     const frame = await screen.findByTitle("Prévia do PDF");
     expect(frame.getAttribute("src")).toBe("blob:preview");
     expect(callOf(fn, "POST /api/admin/v1/document-templates/preview")!.body).toMatchObject({ name: "Autorização de passeio", bodyMd: TEMPLATE.bodyMd });
+    fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Outro nome" } });
+    expect(screen.queryByTitle("Prévia do PDF")).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
   });
 
   it("saves an edit as a new version and explains a stale one", async () => {

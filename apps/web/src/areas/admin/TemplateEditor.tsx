@@ -11,7 +11,11 @@ import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ApiError, apiFetch, apiFetchBlob } from "../../app/api";
 import { staffErrorMessage } from "../../ui/messages";
 import { CATEGORY_LABELS } from "./documentLabels";
+import { useRequestKey } from "./useRequestKey";
 import { useStaffErrors } from "./useStaffErrors";
+
+const DUPLICATE_KEYS = "Chaves de campo repetidas.";
+const hasDuplicateKeys = (fields: DocumentField[]) => new Set(fields.map((f) => f.key)).size !== fields.length;
 
 const EMPTY: TemplateInput = { name: "", category: "declaracao", bodyMd: "", fields: [] };
 
@@ -26,6 +30,7 @@ export function TemplateEditor() {
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const body = useRef<HTMLTextAreaElement>(null);
+  const saveKey = useRequestKey();
   const savedVersion = (location.state as { savedVersion?: number } | null)?.savedVersion;
 
   useEffect(() => {
@@ -42,7 +47,11 @@ export function TemplateEditor() {
 
   if (!draft) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
 
-  const update = (patch: Partial<TemplateInput>) => setDraft((d) => (d ? { ...d, ...patch } : d));
+  // A prévia mostra o rascunho de quando foi pedida: qualquer mudança a descarta (o efeito acima libera a URL).
+  const update = (patch: Partial<TemplateInput>) => {
+    setPreview(null);
+    setDraft((d) => (d ? { ...d, ...patch } : d));
+  };
   const updateField = (i: number, patch: Partial<DocumentField>) =>
     update({ fields: draft.fields.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
 
@@ -64,7 +73,16 @@ export function TemplateEditor() {
     fail(err);
   }
 
+  /** Chave repetida: a API recusaria com validation_failed; aqui a mensagem diz o que corrigir. */
+  function refuseDuplicateKeys(): boolean {
+    if (!hasDuplicateKeys(draft!.fields)) return false;
+    setInvalid([]);
+    setError(DUPLICATE_KEYS);
+    return true;
+  }
+
   async function showPreview() {
+    if (refuseDuplicateKeys()) return;
     setBusy(true);
     setError(null);
     setInvalid([]);
@@ -78,20 +96,24 @@ export function TemplateEditor() {
     }
   }
 
-  async function save(event: FormEvent) {
+  function save(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    setInvalid([]);
-    try {
-      const url = loaded ? `/api/admin/v1/document-templates/${loaded.id}/versions` : "/api/admin/v1/document-templates";
-      const saved = await apiFetch(url, Template, { method: "POST", body: draft, idempotencyKey: crypto.randomUUID() });
-      navigate(`/admin/documentos/modelos/${saved.id}`, { replace: true, state: { savedVersion: saved.version } });
-    } catch (err) {
-      handle(err);
-    } finally {
-      setBusy(false);
-    }
+    if (refuseDuplicateKeys()) return;
+    void saveKey.once(async () => {
+      setBusy(true);
+      setError(null);
+      setInvalid([]);
+      try {
+        const url = loaded ? `/api/admin/v1/document-templates/${loaded.id}/versions` : "/api/admin/v1/document-templates";
+        const saved = await apiFetch(url, Template, { method: "POST", body: draft, idempotencyKey: saveKey.keyFor({ url, draft }) });
+        saveKey.succeeded();
+        navigate(`/admin/documentos/modelos/${saved.id}`, { replace: true, state: { savedVersion: saved.version } });
+      } catch (err) {
+        handle(err);
+      } finally {
+        setBusy(false);
+      }
+    });
   }
 
   return (

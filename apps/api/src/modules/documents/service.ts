@@ -247,6 +247,7 @@ export async function getBatch(session: SessionClaims, batchId: string): Promise
       ...toSummary(summary),
       issuedOn: info.issuedOn,
       fieldValues: info.fieldValues,
+      unreachable: await repo.unreachableCount(trx, batchId),
       documents: docs.map((d) => ({
         id: d.id,
         studentId: d.studentId,

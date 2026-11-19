@@ -32,7 +32,7 @@ const STAFF_MESSAGES: Record<string, string> = {
   document_missing_data: "Faltam dados de alguns alunos ou responsáveis. Corrija em Alunos e responsáveis e tente de novo.",
   document_batch_not_ready: "Ainda há documentos sem PDF. Aguarde a geração ou descarte os que falharam.",
   document_batch_published: "Este lote já foi publicado.",
-  request_rejected: "Só documentos com falha podem ser descartados.",
+  request_rejected: "Não foi possível concluir esta ação. Atualize a página e tente de novo.",
 };
 
 export function staffErrorMessage(code: string): string {

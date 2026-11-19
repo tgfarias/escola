@@ -13,9 +13,31 @@ import { ApiError, apiFetch } from "../../app/api";
 import { staffErrorMessage } from "../../ui/messages";
 import { StudentFilters } from "./StudentsAdmin";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
+import { useRequestKey } from "./useRequestKey";
 import { useStaffErrors } from "./useStaffErrors";
 
 const label = (v: string) => TEMPLATE_VARIABLE_LABELS[v as TemplateVariable] ?? v;
+
+type MissingLine = { key: string; studentId: string; guardianId: string | null; variables: string[] };
+
+/**
+ * Uma linha por aluno com as variáveis dele (sem repetir por responsável) e uma por responsável com as `responsavel.*`.
+ * Aluno sem responsável (guardianId null) fica numa linha sem sufixo.
+ */
+export function missingLines(missing: MissingDataDetails["missing"]): MissingLine[] {
+  const lines: MissingLine[] = [];
+  for (const studentId of [...new Set(missing.map((m) => m.studentId))]) {
+    const entries = missing.filter((m) => m.studentId === studentId);
+    const own = [...new Set(entries.flatMap((m) => (m.guardianId === null ? m.variables : m.variables.filter((v) => !v.startsWith("responsavel.")))))];
+    if (own.length > 0) lines.push({ key: `${studentId}-`, studentId, guardianId: null, variables: own });
+    for (const m of entries) {
+      if (m.guardianId === null) continue;
+      const guardianVars = m.variables.filter((v) => v.startsWith("responsavel."));
+      if (guardianVars.length > 0) lines.push({ key: `${studentId}-${m.guardianId}`, studentId, guardianId: m.guardianId, variables: guardianVars });
+    }
+  }
+  return lines;
+}
 
 export function GenerateBatch() {
   const { templateId } = useParams();
@@ -30,6 +52,7 @@ export function GenerateBatch() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [missing, setMissing] = useState<MissingDataDetails["missing"]>([]);
   const [busy, setBusy] = useState(false);
+  const createKey = useRequestKey();
 
   useEffect(() => {
     Promise.all([
@@ -61,28 +84,28 @@ export function GenerateBatch() {
   };
   const guardianOf = (id: string) => students.flatMap((s) => s.guardians).find((g) => g.id === id)?.firstName ?? id;
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError(null);
-    setMissing([]);
-    try {
-      const batch = await apiFetch("/api/admin/v1/document-batches", BatchSummary, {
-        method: "POST",
-        body: { templateId: template!.id, studentIds: [...selected], fieldValues: values },
-        idempotencyKey: crypto.randomUUID(),
-      });
-      navigate(`/admin/documentos/lotes/${batch.id}`);
-    } catch (err) {
-      if (err instanceof ApiError && err.code === "document_missing_data") {
-        setMissing(MissingDataDetails.safeParse(err.details).data?.missing ?? []);
-        setError(staffErrorMessage(err.code));
-      } else {
-        fail(err);
+    void createKey.once(async () => {
+      setBusy(true);
+      setError(null);
+      setMissing([]);
+      const body = { templateId: template!.id, studentIds: [...selected], fieldValues: values };
+      try {
+        const batch = await apiFetch("/api/admin/v1/document-batches", BatchSummary, { method: "POST", body, idempotencyKey: createKey.keyFor(body) });
+        createKey.succeeded();
+        navigate(`/admin/documentos/lotes/${batch.id}`);
+      } catch (err) {
+        if (err instanceof ApiError && err.code === "document_missing_data") {
+          setMissing(MissingDataDetails.safeParse(err.details).data?.missing ?? []);
+          setError(staffErrorMessage(err.code));
+        } else {
+          fail(err);
+        }
+      } finally {
+        setBusy(false);
       }
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -94,8 +117,8 @@ export function GenerateBatch() {
           <p>{error}</p>
           {missing.length > 0 && (
             <ul>
-              {missing.map((m) => (
-                <li key={`${m.studentId}-${m.guardianId}`}>
+              {missingLines(missing).map((m) => (
+                <li key={m.key}>
                   {nameOf(m.studentId)}
                   {m.guardianId ? ` (responsável ${guardianOf(m.guardianId)})` : ""}: {m.variables.map(label).join(", ")}
                 </li>

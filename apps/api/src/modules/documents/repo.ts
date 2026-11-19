@@ -176,6 +176,17 @@ export async function batchDocuments(trx: Trx, batchId: string) {
     .execute();
 }
 
+/** Documentos não descartados que não chegam a nenhum responsável: sem vínculo atual com o aluno (ou com o par). */
+export async function unreachableCount(trx: Trx, batchId: string): Promise<number> {
+  const { rows } = await sql<{ n: number }>`
+    SELECT count(*)::int AS n FROM documents d
+    WHERE d.batch_id = ${batchId} AND d.discarded_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM guardian_students gs
+        WHERE gs.student_id = d.student_id AND (d.guardian_id IS NULL OR gs.guardian_id = d.guardian_id))`.execute(trx);
+  return rows[0]!.n;
+}
+
 export type BatchInfo = {
   id: string;
   status: string;

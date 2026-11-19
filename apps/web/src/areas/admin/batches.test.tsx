@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { staffErrorMessage } from "../../ui/messages";
 import { BatchPage } from "./BatchPage";
 import { GenerateBatch } from "./GenerateBatch";
 
@@ -56,7 +57,9 @@ const doc = (id: string, status: string, extra: Record<string, unknown> = {}) =>
   id, studentId: S1, studentFirstName: id === D1 ? "Léo" : "Bia", className: "Infantil 3A", guardianId: null, guardianFirstName: null,
   status, discarded: false, viewed: false, ...extra,
 });
-const detail = (status: string, c: ReturnType<typeof counts>, docs: unknown[]) => ({ ...summary(status, c), issuedOn: "2026-11-18", fieldValues: {}, documents: docs });
+const detail = (status: string, c: ReturnType<typeof counts>, docs: unknown[], extra: Record<string, unknown> = {}) => ({
+  ...summary(status, c), issuedOn: "2026-11-18", fieldValues: {}, unreachable: 0, documents: docs, ...extra,
+});
 
 function renderAt(path: string) {
   render(
@@ -72,9 +75,23 @@ function renderAt(path: string) {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+/** Resposta só com promessas (sem stream), para os testes com relógio falso. */
+function stubFetch(handler: (key: string) => { status: number; body?: unknown }) {
+  const fn = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url, init) => {
+    const { status, body } = handler(`${init?.method ?? "GET"} ${url}`);
+    return { ok: status < 400, status, json: async () => body } as unknown as Response;
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+/** Deixa o relógio falso andar `ms` e resolve as promessas pendentes, dentro de act. */
+const tick = (ms: number) => act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
 
 describe("generate batch", () => {
   it("marks a class, fills the batch fields and creates the batch", async () => {
@@ -124,6 +141,82 @@ describe("generate batch", () => {
   });
 });
 
+describe("generate batch: one request per action", () => {
+  async function fill() {
+    renderAt(`/admin/documentos/gerar/${T1}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Marcar todos" }));
+    fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "Zoo" } });
+    fireEvent.change(screen.getByLabelText("Data do passeio"), { target: { value: "2026-12-05" } });
+  }
+  const keysOf = (fn: ReturnType<typeof mockApi>) =>
+    fn.mock.calls.filter((c) => c[1]?.method === "POST" && c[0] === "/api/admin/v1/document-batches").map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+
+  it("ignores a double click on Gerar documentos", async () => {
+    const fn = mockApi({
+      ...GENERATE,
+      "POST /api/admin/v1/document-batches": { status: 200, body: summary("rendering", counts({ pending: 1, total: 1 })) },
+      [`GET /api/admin/v1/document-batches/${B1}`]: { status: 200, body: detail("ready", counts({ total: 1, rendered: 1 }), [doc(D1, "rendered")]) },
+    });
+    await fill();
+    const button = screen.getByRole("button", { name: "Gerar documentos" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await screen.findByText("Autorização de passeio — versão 1");
+    expect(keysOf(fn)).toHaveLength(1);
+  });
+
+  it("retries with the same key and uses a new one when the input changes", async () => {
+    const fn = mockApi({
+      ...GENERATE,
+      "POST /api/admin/v1/document-batches": { status: 500, body: { error: { code: "internal_error", message: "x" } } },
+    });
+    await fill();
+    const button = screen.getByRole("button", { name: "Gerar documentos" });
+    fireEvent.click(button);
+    await screen.findByRole("alert");
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(keysOf(fn)).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("Destino"), { target: { value: "Museu" } });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(button);
+    await waitFor(() => expect(keysOf(fn)).toHaveLength(3));
+    const [a, b, c] = keysOf(fn);
+    expect(b).toBe(a);
+    expect(c).not.toBe(a);
+  });
+
+  it("lists a student's own missing data once, not once per guardian", async () => {
+    const two = {
+      students: [{ ...STUDENTS.students[0]!, guardians: [...STUDENTS.students[0]!.guardians, { id: U(20), firstName: "Rui", fullName: "Rui Souza", phone: "+5511999990002", cpfMasked: null }] }],
+    };
+    mockApi({
+      ...GENERATE,
+      "GET /api/admin/v1/students": { status: 200, body: two },
+      "POST /api/admin/v1/document-batches": {
+        status: 422,
+        body: {
+          error: {
+            code: "document_missing_data",
+            message: "x",
+            details: {
+              missing: [
+                { studentId: S1, guardianId: G1, variables: ["aluno.data_nascimento", "responsavel.cpf"] },
+                { studentId: S1, guardianId: U(20), variables: ["aluno.data_nascimento"] },
+              ],
+            },
+          },
+        },
+      },
+    });
+    await fill();
+    fireEvent.click(screen.getByRole("button", { name: "Gerar documentos" }));
+    await screen.findByText("Leonardo Souza: Data de nascimento do aluno");
+    expect(screen.getByText("Leonardo Souza (responsável Ana): CPF do responsável")).toBeTruthy();
+    expect(screen.getAllByRole("listitem").filter((li) => li.textContent?.includes("Data de nascimento"))).toHaveLength(1);
+  });
+});
+
 describe("batch page", () => {
   it("renders until ready, then publishes after confirmation", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -141,11 +234,64 @@ describe("batch page", () => {
     });
     renderAt(`/admin/documentos/lotes/${B1}`);
     const publish = await screen.findByRole("button", { name: "Publicar e avisar os responsáveis" });
-    await waitFor(() => expect((publish as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((publish as HTMLButtonElement).disabled).toBe(false), { timeout: 3000 });
     expect(fn.mock.calls.filter((c) => c[0] === `/api/admin/v1/document-batches/${B1}/render`)).toHaveLength(2);
+    fireEvent.click(publish);
     fireEvent.click(publish);
     await screen.findByText("Lote publicado. Os responsáveis serão avisados pelo WhatsApp.");
     expect(callOf(fn, `POST /api/admin/v1/document-batches/${B1}/publish`)!.headers["idempotency-key"]).toBeTruthy();
+    expect(fn.mock.calls.filter((c) => c[0] === `/api/admin/v1/document-batches/${B1}/publish`)).toHaveLength(1);
+  }, 10000);
+
+  it("keeps the publish key across a failed attempt", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fn = mockApi({
+      [`GET /api/admin/v1/document-batches/${B1}`]: { status: 200, body: detail("ready", counts({ rendered: 2 }), [doc(D1, "rendered"), doc(D2, "rendered")]) },
+      [`POST /api/admin/v1/document-batches/${B1}/publish`]: [
+        { status: 500, body: { error: { code: "internal_error", message: "x" } } },
+        { status: 200, body: summary("published", counts({ rendered: 2 })) },
+      ],
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Publicar e avisar os responsáveis" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Publicar e avisar os responsáveis" }));
+    await screen.findByText("Lote publicado. Os responsáveis serão avisados pelo WhatsApp.");
+    const keys = fn.mock.calls.filter((c) => c[0] === `/api/admin/v1/document-batches/${B1}/publish`).map((c) => (c[1]!.headers as Record<string, string>)["idempotency-key"]);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it("explains a refused discard and keeps the generic message for other screens", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockApi({
+      [`GET /api/admin/v1/document-batches/${B1}`]: { status: 200, body: detail("ready", counts({ rendered: 1, failed: 1 }), [doc(D1, "rendered"), doc(D2, "failed")]) },
+      [`POST /api/admin/v1/documents/${D2}/discard`]: { status: 400, body: { error: { code: "request_rejected", message: "x" } } },
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    fireEvent.click(await screen.findByRole("button", { name: "Descartar documento de Bia" }));
+    await screen.findByText("Só documentos com falha podem ser descartados.");
+    expect(staffErrorMessage("request_rejected")).not.toMatch(/descart/i);
+  });
+
+  it("warns about documents that reach no guardian", async () => {
+    mockApi({
+      [`GET /api/admin/v1/document-batches/${B1}`]: { status: 200, body: detail("ready", counts({ rendered: 2 }), [doc(D1, "rendered"), doc(D2, "rendered")], { unreachable: 1 }) },
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    await screen.findByText("1 documento(s) sem responsável vinculado não serão enviados");
+  });
+
+  it("says there is nothing to publish when every document was discarded", async () => {
+    mockApi({
+      [`GET /api/admin/v1/document-batches/${B1}`]: {
+        status: 200,
+        body: detail("ready", counts({ discarded: 2 }), [doc(D1, "failed", { discarded: true }), doc(D2, "failed", { discarded: true })]),
+      },
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    await screen.findByText("Nenhum documento para publicar.");
+    expect(screen.queryByRole("button", { name: "Publicar e avisar os responsáveis" })).toBeNull();
   });
 
   it("downloads a PDF for printing and discards a failed document", async () => {
@@ -181,4 +327,60 @@ describe("batch page", () => {
     await waitFor(() => expect((publish as HTMLButtonElement).disabled).toBe(false), { timeout: 5000 });
     expect(fn.mock.calls.filter((c) => c[0] === `/api/admin/v1/document-batches/${B1}/render`)).toHaveLength(2);
   }, 10000);
+});
+
+describe("render loop", () => {
+  const RENDER = `POST /api/admin/v1/document-batches/${B1}/render`;
+  const renders = (fn: ReturnType<typeof stubFetch>) => fn.mock.calls.filter((c) => `${c[1]?.method ?? "GET"} ${c[0]}` === RENDER).length;
+  const rendering = detail("rendering", counts({ total: 3, pending: 3 }), [doc(D1, "pending"), doc(D2, "pending")]);
+
+  it("waits about 500 ms between calls while the batch renders", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let rendered = 0;
+    const fn = stubFetch((key) => {
+      if (key === RENDER) {
+        rendered += 1;
+        return { status: 200, body: { status: "rendering", counts: counts({ total: 3, pending: 3 - rendered, rendered }) } };
+      }
+      return { status: 200, body: rendering };
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    await tick(0);
+    expect(renders(fn)).toBe(1);
+    await tick(499);
+    expect(renders(fn)).toBe(1);
+    await tick(1);
+    expect(renders(fn)).toBe(2);
+  });
+
+  it("stops after 5 calls without progress and says so", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fn = stubFetch((key) =>
+      key === RENDER ? { status: 200, body: { status: "rendering", counts: counts({ total: 3, pending: 1, rendering: 2 }) } } : { status: 200, body: rendering },
+    );
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    await tick(0);
+    for (let i = 0; i < 10; i += 1) await tick(2000);
+    expect(renders(fn)).toBe(5);
+    expect(screen.getByRole("alert").textContent).toBe("A geração parou de avançar. Tente de novo.");
+    expect(screen.queryByText("Gerando PDFs… Mantenha esta página aberta.")).toBeNull();
+  });
+
+  it("does not call render again after the page is closed", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let rendered = 0;
+    const fn = stubFetch((key) => {
+      if (key === RENDER) {
+        rendered += 1;
+        return { status: 200, body: { status: "rendering", counts: counts({ total: 3, pending: 3 - rendered, rendered }) } };
+      }
+      return { status: 200, body: rendering };
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    await tick(0);
+    expect(renders(fn)).toBe(1);
+    cleanup();
+    await tick(5000);
+    expect(renders(fn)).toBe(1);
+  });
 });
