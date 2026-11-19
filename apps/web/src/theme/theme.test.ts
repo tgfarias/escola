@@ -36,6 +36,12 @@ describe("theme stylesheets", () => {
     }
   });
 
+  it("puts the open mobile drawer above its overlay", () => {
+    const overlay = Number(/z-index:\s*(\d+)/.exec(bodiesOf(theme, ".sidebar-mobile-overlay"))![1]);
+    const drawer = Number(/z-index:\s*(\d+)/.exec(rule(theme, ".sidebar-mobile-open .app-sidebar"))![1]);
+    expect(drawer).toBeGreaterThan(overlay);
+  });
+
   it("keeps the theme layout out of the guardian base", () => {
     for (const marker of [".app-sidebar", ".app-header", ".metismenu", ".kds-", "pe-7s-"]) expect(base).not.toContain(marker);
     expect(base).toContain(".btn-primary");

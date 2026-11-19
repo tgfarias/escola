@@ -230,3 +230,9 @@ body {
   outline: 2px solid $primary;
   outline-offset: 2px;
 }
+
+// Mobile drawer: the sidebar sits above its own overlay (the theme's overlay is z-index 12).
+.sidebar-mobile-open .app-sidebar {
+  z-index: 13;
+  background: $white;
+}
