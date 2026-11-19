@@ -50,6 +50,19 @@ describe("guardian documents", () => {
     expect(forbidden.statusCode).toBe(404);
   });
 
+  it("hides a per-guardian document once its guardian is unlinked from the student", async () => {
+    const s = await published("# Autorização\n\n{{responsavel.nome_completo}} autoriza {{aluno.primeiro_nome}}.", { secondGuardian: true });
+    await s.post(`/api/admin/v1/document-batches/${s.batchId}/publish`);
+    const cookies = await guardianCookie(s.schoolId, s.second!, "documents");
+    const ruiDoc = await adminDb().selectFrom("documents").select("id").where("batchId", "=", s.batchId).where("guardianId", "=", s.second).executeTakeFirstOrThrow();
+    expect((await s.app.inject({ method: "GET", url: "/api/v1/documents", cookies })).json().documents).toHaveLength(1);
+    await adminDb().deleteFrom("guardianStudents").where("guardianId", "=", s.second!).where("studentId", "=", s.leo).execute();
+    expect((await s.app.inject({ method: "GET", url: "/api/v1/documents", cookies })).json()).toEqual({ documents: [] });
+    const download = await s.app.inject({ method: "POST", url: `/api/v1/documents/${ruiDoc.id}/download`, cookies });
+    expect(download.statusCode).toBe(404);
+    expect(await adminDb().selectFrom("documentViews").select("id").where("documentId", "=", ruiDoc.id).execute()).toEqual([]);
+  });
+
   it("downloads by a signed URL, records the first opening once and audits every download", async () => {
     const s = await published("# Declaração\n\n{{aluno.nome_completo}}");
     await s.post(`/api/admin/v1/document-batches/${s.batchId}/publish`);

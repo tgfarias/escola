@@ -117,7 +117,10 @@ export type SummaryRow = {
   viewers: number;
 };
 
-/** Um lote (batchId) ou todos, mais recentes primeiro. Destinatário = responsável do par, ou todo responsável do aluno. */
+/**
+ * Um lote (batchId) ou todos, mais recentes primeiro. Destinatário = responsável do par, ou todo responsável do aluno;
+ * nos dois casos só enquanto o vínculo responsável–aluno existir.
+ */
 export async function batchSummaries(trx: Trx, batchId?: string): Promise<SummaryRow[]> {
   const id = batchId ?? null;
   const { rows } = await sql<SummaryRow>`
@@ -128,9 +131,9 @@ export async function batchSummaries(trx: Trx, batchId?: string): Promise<Summar
       (count(d.id) FILTER (WHERE d.status = 'rendered'))::int AS rendered,
       (count(d.id) FILTER (WHERE d.status = 'failed' AND d.discarded_at IS NULL))::int AS failed,
       (count(d.id) FILTER (WHERE d.discarded_at IS NOT NULL))::int AS discarded,
-      (SELECT count(DISTINCT coalesce(r.guardian_id, gs.guardian_id))
+      (SELECT count(DISTINCT gs.guardian_id)
          FROM documents r
-         LEFT JOIN guardian_students gs ON r.guardian_id IS NULL AND gs.student_id = r.student_id
+         JOIN guardian_students gs ON gs.student_id = r.student_id AND (r.guardian_id IS NULL OR gs.guardian_id = r.guardian_id)
          WHERE r.batch_id = b.id AND r.discarded_at IS NULL)::int AS recipients,
       (SELECT count(DISTINCT v.guardian_id)
          FROM document_views v JOIN documents vd ON vd.id = v.document_id
@@ -278,14 +281,14 @@ export async function discardFailed(trx: Trx, id: string): Promise<boolean> {
   return res.numUpdatedRows > 0n;
 }
 
-/** Um par (responsável, aluno) por documento pronto e não descartado; documento por aluno vai a todo responsável dele. */
+/** Um par (responsável, aluno) por documento pronto e não descartado; documento por aluno vai a todo responsável dele. Exige o vínculo atual. */
 export async function batchRecipients(trx: Trx, batchId: string) {
   const { rows } = await sql<{ guardianId: string; phone: string; firstName: string; studentFirstName: string }>`
     SELECT g.id AS guardian_id, g.phone_e164 AS phone, g.first_name, s.first_name AS student_first_name
     FROM documents d
     JOIN students s ON s.id = d.student_id
-    LEFT JOIN guardian_students gs ON d.guardian_id IS NULL AND gs.student_id = d.student_id
-    JOIN guardians g ON g.id = coalesce(d.guardian_id, gs.guardian_id)
+    JOIN guardian_students gs ON gs.student_id = d.student_id AND (d.guardian_id IS NULL OR gs.guardian_id = d.guardian_id)
+    JOIN guardians g ON g.id = gs.guardian_id
     WHERE d.batch_id = ${batchId} AND d.status = 'rendered' AND d.discarded_at IS NULL
     ORDER BY g.id, s.first_name`.execute(trx);
   return rows;
@@ -301,7 +304,7 @@ export async function markPublished(trx: Trx, batchId: string): Promise<boolean>
   return res.numUpdatedRows > 0n;
 }
 
-/** Documentos publicados visíveis ao responsável; com `documentId`, só aquele. */
+/** Documentos publicados visíveis ao responsável vinculado hoje ao aluno; com `documentId`, só aquele. */
 export async function guardianDocuments(trx: Trx, guardianId: string, documentId: string | null = null) {
   const { rows } = await sql<{
     id: string;
@@ -320,9 +323,8 @@ export async function guardianDocuments(trx: Trx, guardianId: string, documentId
     JOIN document_templates t ON t.id = b.template_id
     JOIN students s ON s.id = d.student_id
     WHERE b.status = 'published' AND d.status = 'rendered' AND d.discarded_at IS NULL
-      AND (d.guardian_id = ${guardianId}
-           OR (d.guardian_id IS NULL AND EXISTS (
-                SELECT 1 FROM guardian_students gs WHERE gs.guardian_id = ${guardianId} AND gs.student_id = d.student_id)))
+      AND (d.guardian_id IS NULL OR d.guardian_id = ${guardianId})
+      AND EXISTS (SELECT 1 FROM guardian_students gs WHERE gs.guardian_id = ${guardianId} AND gs.student_id = d.student_id)
       AND (${documentId}::uuid IS NULL OR d.id = ${documentId}::uuid)
     ORDER BY b.published_at DESC, s.first_name, d.id`.execute(trx);
   return rows;

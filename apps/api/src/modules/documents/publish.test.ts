@@ -53,6 +53,18 @@ describe("publishing", () => {
     expect(audit).toHaveLength(1);
   });
 
+  it("neither counts nor notifies a guardian unlinked from the student before publishing", async () => {
+    const b = await renderedBatch(GUARDIAN_BODY, { secondGuardian: true });
+    await b.post(`/api/admin/v1/document-batches/${b.batchId}/render`, undefined, null);
+    expect((await b.get(`/api/admin/v1/document-batches/${b.batchId}`)).json()).toMatchObject({ status: "ready", recipients: 2 });
+    await adminDb().deleteFrom("guardianStudents").where("guardianId", "=", b.second!).where("studentId", "=", b.leo).execute();
+    expect((await b.get(`/api/admin/v1/document-batches/${b.batchId}`)).json()).toMatchObject({ recipients: 1 });
+    const res = await b.publish();
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: "published", recipients: 1 });
+    expect((await b.events()).map((e) => e.guardian_id)).toEqual([b.guardianId]);
+  });
+
   it("publishes after discarding the failed documents and never puts CPF or full names in events", async () => {
     const b = await renderedBatch(GUARDIAN_BODY, { secondGuardian: true });
     const { renderDocument } = await import("./pdf");
