@@ -5,8 +5,12 @@ import { DomainError } from "../../platform/errors";
 import { getSecret } from "../../platform/secrets";
 import * as catalog from "../catalog/service";
 import * as orders from "../orders/service";
+import * as topups from "../topups/service";
 import * as repo from "./repo";
+import type { PaymentRef } from "./repo";
 import { defaultProviderName, getProvider } from "./registry";
+
+export type { PaymentRef } from "./repo";
 
 export async function createPendingPayment(
   trx: Trx,
@@ -16,9 +20,9 @@ export async function createPendingPayment(
 }
 
 /** Cria a cobrança no gateway fora de transação (CLAUDE.md regra 20). Idempotente pelo id do pagamento. */
-export async function ensureCharge(schoolId: string, checkoutId: string, log: FastifyBaseLogger): Promise<void> {
+export async function ensureCharge(schoolId: string, ref: PaymentRef, log: FastifyBaseLogger): Promise<void> {
   const pending = await withTenant(schoolId, async (trx) => {
-    const payment = await repo.unchargedPendingPayment(trx, checkoutId);
+    const payment = await repo.unchargedPendingPayment(trx, ref);
     return payment && { payment, school: await repo.schoolPaymentConfig(trx) };
   });
   if (!pending) return;
@@ -30,7 +34,7 @@ export async function ensureCharge(schoolId: string, checkoutId: string, log: Fa
       schoolId,
       amountCents: payment.amountCents,
       expiresAt: payment.expiresAt,
-      description: "Lanche escolar",
+      description: "checkoutId" in ref ? "Lanche escolar" : "Créditos do lanche escolar",
       accountRef: school.paymentAccountRef,
       platformFeeBps: school.platformFeeBps,
     });
@@ -62,29 +66,69 @@ export async function paymentViews(trx: Trx, checkoutIds: string[]): Promise<Map
   );
 }
 
-export type ConfirmOutcome = "confirmed" | "late_credited" | "already_processed";
+export async function createTopupPayment(trx: Trx, input: { schoolId: string; topupId: string; amountCents: number }): Promise<string> {
+  return repo.insertTopupPayment(trx, { ...input, provider: defaultProviderName() });
+}
 
-/** Única função que confirma pagamento (CLAUDE.md regra 10). Webhook e conciliação chamam esta. */
+export async function topupPaymentViews(trx: Trx, topupIds: string[]): Promise<Map<string, PaymentView>> {
+  const rows = await repo.paymentsForTopups(trx, topupIds);
+  return new Map(
+    rows.map((p) => [
+      p.topupId!, // paymentsForTopups filtra por topup_id
+      {
+        status: p.status as PaymentStatus,
+        amountCents: p.amountCents,
+        pixCopyPaste: p.pixCopyPaste,
+        pixQrPngBase64: p.pixQrPngBase64,
+        expiresAt: p.expiresAt.toISOString(),
+      },
+    ]),
+  );
+}
+
+export async function expireTopupPayment(trx: Trx, topupId: string): Promise<void> {
+  await repo.expireTopupPayment(trx, topupId);
+}
+
+export type ConfirmOutcome = "confirmed" | "late_credited" | "already_processed" | "topup_credited";
+
+/**
+ * Única função que confirma pagamento (CLAUDE.md regra 10). Webhook e conciliação chamam esta.
+ * Ordem de travas da fase: service_days → checkouts → topups → payments → guardian_students → counter_sales → wallets.
+ */
 export async function confirmPayment(
   trx: Trx,
   input: { schoolId: string; paymentId: string; paidAt: Date },
 ): Promise<ConfirmOutcome> {
-  const payment = await repo.paymentContext(trx, input.paymentId);
+  const payment = await repo.paymentTarget(trx, input.paymentId);
   if (!payment) throw new Error(`payment ${input.paymentId} not found`);
-  // Travas na ordem service_days → checkouts → payments → wallets, a mesma do cancelamento e do fechamento.
-  const day = await catalog.lockServiceDayById(trx, payment.serviceDayId, "share");
-  await orders.lockCheckout(trx, payment.checkoutId!);
+
+  if (payment.topupId !== null) {
+    // Recarga: travas topups → payments → wallets. Sem corte: paga depois de expirada ou cancelada também credita.
+    await topups.lockTopup(trx, payment.topupId);
+    if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
+    await topups.creditTopup(trx, {
+      schoolId: input.schoolId,
+      topupId: payment.topupId,
+      paymentId: payment.id,
+      amountCents: payment.amountCents,
+      paidAt: input.paidAt,
+    });
+    return "topup_credited";
+  }
+
+  // payments_one_target garante checkout_id quando não há topup_id; a FK composta garante o checkout.
+  const { checkoutId, serviceDayId } = payment;
+  if (checkoutId === null || serviceDayId === null) throw new Error(`payment ${payment.id} has no target`);
+  // Checkout: travas service_days → checkouts → payments → wallets, a mesma do cancelamento e do fechamento.
+  const day = await catalog.lockServiceDayById(trx, serviceDayId, "share");
+  await orders.lockCheckout(trx, checkoutId);
   if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
 
   const onTime = day.status === "open" && input.paidAt.getTime() <= day.cutoffAt.getTime();
-  if (onTime && (await orders.confirmCheckout(trx, input.schoolId, payment.checkoutId!))) return "confirmed";
+  if (onTime && (await orders.confirmCheckout(trx, input.schoolId, checkoutId))) return "confirmed";
 
-  await orders.creditLatePayment(trx, {
-    schoolId: input.schoolId,
-    checkoutId: payment.checkoutId!,
-    paymentId: payment.id,
-    amountCents: payment.amountCents,
-  });
+  await orders.creditLatePayment(trx, { schoolId: input.schoolId, checkoutId, paymentId: payment.id, amountCents: payment.amountCents });
   return "late_credited";
 }
 

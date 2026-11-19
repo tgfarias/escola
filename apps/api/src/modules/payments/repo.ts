@@ -12,16 +12,27 @@ export async function insertPayment(
   return id;
 }
 
-export async function unchargedPendingPayment(trx: Trx, checkoutId: string) {
-  return trx
+export type PaymentRef = { checkoutId: string } | { topupId: string };
+
+/** Pix de recarga: vale 60 min pelo relógio do banco. */
+export async function insertTopupPayment(
+  trx: Trx,
+  row: { schoolId: string; topupId: string; provider: string; amountCents: number },
+): Promise<string> {
+  const id = uuidv7();
+  await trx.insertInto("payments").values({ id, method: "pix", ...row, expiresAt: sql<Date>`now() + interval '60 minutes'` }).execute();
+  return id;
+}
+
+export async function unchargedPendingPayment(trx: Trx, ref: PaymentRef) {
+  const base = trx
     .selectFrom("payments")
     .select(["id", "provider", "amountCents", "expiresAt"])
-    .where("checkoutId", "=", checkoutId)
     .where("status", "=", "pending")
     .where("providerChargeId", "is", null)
-    // Depois do corte não se cria cobrança viva (CLAUDE.md regra 15: o tempo vem do banco).
-    .where("expiresAt", ">", sql<Date>`now()`)
-    .executeTakeFirst();
+    // Depois do vencimento não se cria cobrança viva (CLAUDE.md regra 15: o tempo vem do banco).
+    .where("expiresAt", ">", sql<Date>`now()`);
+  return ("checkoutId" in ref ? base.where("checkoutId", "=", ref.checkoutId) : base.where("topupId", "=", ref.topupId)).executeTakeFirst();
 }
 
 export async function schoolPaymentConfig(trx: Trx) {
@@ -57,13 +68,27 @@ export async function paymentsForCheckouts(trx: Trx, checkoutIds: string[]) {
     .execute();
 }
 
-export async function paymentContext(trx: Trx, paymentId: string) {
+/** Alvo do pagamento: checkout (com o dia de serviço) ou recarga. */
+export async function paymentTarget(trx: Trx, paymentId: string) {
   return trx
     .selectFrom("payments")
-    .innerJoin("checkouts", "checkouts.id", "payments.checkoutId")
-    .select(["payments.id", "payments.checkoutId", "payments.amountCents", "checkouts.serviceDayId"])
+    .leftJoin("checkouts", "checkouts.id", "payments.checkoutId")
+    .select(["payments.id", "payments.checkoutId", "payments.topupId", "payments.amountCents", "checkouts.serviceDayId"])
     .where("payments.id", "=", paymentId)
     .executeTakeFirst();
+}
+
+export async function paymentsForTopups(trx: Trx, topupIds: string[]) {
+  if (topupIds.length === 0) return [];
+  return trx
+    .selectFrom("payments")
+    .select(["topupId", "status", "amountCents", "pixCopyPaste", "pixQrPngBase64", "expiresAt"])
+    .where("topupId", "in", topupIds)
+    .execute();
+}
+
+export async function expireTopupPayment(trx: Trx, topupId: string): Promise<void> {
+  await trx.updateTable("payments").set({ status: "expired" }).where("topupId", "=", topupId).where("status", "=", "pending").execute();
 }
 
 /** pending → paid, ou expired → paid (pagamento depois do fechamento). */

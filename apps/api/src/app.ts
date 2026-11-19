@@ -5,6 +5,7 @@ import { DomainError } from "./platform/errors";
 import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { counterRoutes } from "./modules/counter/routes";
+import { topupRoutes } from "./modules/topups/routes";
 import { loadActiveKitchenDevice, loadActiveStaff } from "./modules/auth/service";
 import { kdsRoutes } from "./modules/kds/routes";
 import { documentRoutes } from "./modules/documents/routes";
@@ -182,6 +183,7 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(catalogRoutes);
   app.register(walletRoutes);
   app.register(counterRoutes);
+  app.register(topupRoutes);
   app.register(ordersRoutes);
   app.register(serviceDayRoutes);
   app.register(internalRoutes);

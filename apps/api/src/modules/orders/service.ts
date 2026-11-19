@@ -31,7 +31,7 @@ export async function createCheckout(
     if (isUniqueViolation(err, ONE_ACTIVE_ORDER)) throw new DomainError("order_already_exists");
     throw err;
   }
-  await payments.ensureCharge(schoolId, checkoutId, log);
+  await payments.ensureCharge(schoolId, { checkoutId }, log);
   return getCheckout(session, checkoutId);
 }
 
@@ -180,7 +180,7 @@ export async function retryCharge(session: SessionClaims, checkoutId: string, lo
     const [header] = await repo.checkoutHeaders(trx, [checkoutId]);
     if (!header || header.guardianId !== session.sub) throw new DomainError("not_found");
   });
-  await payments.ensureCharge(session.schoolId, checkoutId, log);
+  await payments.ensureCharge(session.schoolId, { checkoutId }, log);
   return getCheckout(session, checkoutId);
 }
 

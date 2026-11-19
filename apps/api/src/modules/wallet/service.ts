@@ -89,6 +89,15 @@ export async function enqueueDebtNotice(
   });
 }
 
+/** Recarga confirmada: valor creditado e saldo depois do crédito. Só primeiro nome (regra 29). */
+export async function enqueueTopupConfirmed(trx: Trx, schoolId: string, guardianId: string, amountCents: number, balanceCents: number): Promise<void> {
+  const guardian = await repo.guardianContact(trx, guardianId);
+  await enqueueEvent(trx, schoolId, {
+    type: "wallet.topup_confirmed",
+    data: { guardian_id: guardianId, phone: guardian.phoneE164, first_name: guardian.firstName, amount_cents: amountCents, wallet_balance_cents: balanceCents },
+  });
+}
+
 /** Saldo passou de >= 0 para < 0: marca o aviso (a agenda repete a cada 3 dias) e grava wallet.debt_notice. */
 export async function noticeDebtStart(
   trx: Trx,
