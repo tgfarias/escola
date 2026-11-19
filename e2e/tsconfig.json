@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "noEmit": true, "lib": ["ES2022", "DOM"], "types": ["node"] },
-  "include": ["./**/*.ts", "../db/migrate.ts", "../db/seed-dev.ts"]
+  "include": ["./**/*.ts", "../db/migrate.ts", "../db/seed-dev.ts", "../db/dev-pay.ts"]
 }

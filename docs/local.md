@@ -37,6 +37,19 @@ O link abre a PWA em http://localhost:8088 (`APP_BASE_URL`). Se ela pedir o cód
 `+5511900000002` (Caio), Carla `+5511900000003` (Duda) e Diego `+5511900000004` (segundo responsável de Léo, sem ser
 o financeiro).
 
+### Simular o pagamento de um Pix
+
+O provedor de pagamento local é o `fake`: nenhum Pix é cobrado de verdade. Depois de gerar o QR (pelo pai em
+"Carteira", pela secretaria em "Contas" ou num pedido), `pnpm app:pay` envia à API o mesmo webhook que o banco
+mandaria, e a confirmação passa pelo fluxo real (`confirmPayment`):
+
+```
+pnpm app:pay              # paga a cobrança pendente mais recente
+pnpm app:pay <id>         # paga a cobrança de uma recarga ou checkout específico
+```
+
+O segredo do webhook local é `DEMO_WEBHOOK_SECRET` (no `docker-compose.yml`); o seed liga a escola de demonstração a ele.
+
 ### Ver um documento publicado como responsável
 
 1. Na área admin, em Documentos, copie um exemplo, gere o lote para os alunos de demonstração, aguarde a geração e publique.

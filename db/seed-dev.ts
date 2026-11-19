@@ -41,6 +41,11 @@ await db.connect();
 try {
   await db.query("BEGIN");
   await db.query("INSERT INTO schools (id, name) VALUES ($1, 'Escola Demonstração') ON CONFLICT DO NOTHING", [SCHOOL]);
+  // Pix simulado (`pnpm app:pay`): o webhook do provedor fake confere o segredo da variável DEMO_WEBHOOK_SECRET da API.
+  await db.query(
+    "UPDATE schools SET payment_webhook_secret_ref = 'DEMO_WEBHOOK_SECRET' WHERE id = $1 AND payment_webhook_secret_ref IS NULL",
+    [SCHOOL],
+  );
   await db.query(
     "INSERT INTO staff_users (id, school_id, email, role) VALUES ($1, $2, $3, 'admin') ON CONFLICT DO NOTHING",
     [id(0xf1), SCHOOL, adminEmail],
