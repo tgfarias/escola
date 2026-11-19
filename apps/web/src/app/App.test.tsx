@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { act } from "react";
+import { MemoryRouter, useNavigate, type NavigateFunction } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const paired = vi.hoisted(() => ({ value: false as boolean | "throws" }));
@@ -57,5 +58,30 @@ describe("admin area", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByLabelText("E-mail")).toBeTruthy();
+  });
+});
+
+describe("theme scope", () => {
+  afterEach(cleanup);
+
+  it("marks the document as themed only while the admin area is mounted", async () => {
+    paired.value = false;
+    let navigate: NavigateFunction = () => {};
+    function Grab() {
+      navigate = useNavigate();
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={["/admin/login"]}>
+        <App />
+        <Grab />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByLabelText("E-mail")).toBeTruthy();
+    expect(document.documentElement.classList.contains("app-themed")).toBe(true);
+    await act(async () => navigate("/"));
+    const home = await screen.findByRole("heading", { name: "App Lanche" });
+    expect(home.closest(".app-themed")).toBeNull();
+    expect(document.documentElement.classList.contains("app-themed")).toBe(false);
   });
 });

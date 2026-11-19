@@ -4,6 +4,7 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { guardianCssGuard } from "./build/guardianCss.ts";
 import { SASS_SILENCED } from "./build/sass.ts";
+import { themeScopePlugin } from "./build/themeScope.ts";
 
 export default defineConfig({
   plugins: [
@@ -32,7 +33,11 @@ export default defineConfig({
     }),
     guardianCssGuard(),
   ],
-  css: { preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: SASS_SILENCED } } },
+  css: {
+    preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: SASS_SILENCED } },
+    // Todo seletor de theme.scss fica sob html.app-themed (build/themeScope.ts).
+    postcss: { plugins: [themeScopePlugin()] },
+  },
   server: { proxy: { "/api": "http://localhost:8080" } },
   test: { environment: "jsdom" },
 });

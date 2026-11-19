@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 import "../../theme/styles";
+import { useThemedDocument } from "../../theme/useThemedDocument";
 import { KdsBoard } from "./KdsBoard";
 import { KdsPair } from "./KdsPair";
 import { localDate } from "./state";
 import * as sync from "./sync";
 
 export default function KdsApp() {
+  useThemedDocument();
   const [params] = useSearchParams();
   const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : localDate(new Date());
   const [paired, setPaired] = useState<boolean | null>(null);

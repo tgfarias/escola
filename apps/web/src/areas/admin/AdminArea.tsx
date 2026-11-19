@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router";
 import "../../theme/styles";
+import { useThemedDocument } from "../../theme/useThemedDocument";
 import { AdminHome } from "./AdminHome";
 import { AdminLayout } from "./AdminLayout";
 import { AdminLogin } from "./AdminLogin";
@@ -11,6 +12,7 @@ import { TemplateEditor } from "./TemplateEditor";
 
 /** Área admin inteira num chunk carregado sob demanda: o tema (CSS e layout) fica fora do pacote dos responsáveis. */
 export default function AdminArea() {
+  useThemedDocument();
   return (
     <Routes>
       <Route path="login" element={<AdminLogin />} />
