@@ -12,5 +12,43 @@ services:
       retries: 30
     volumes:
       - dbdata:/var/lib/postgresql/data
+
+  # The full app, local only: `pnpm app:up` (profile "app"). `pnpm db:up` still starts only the database.
+  migrate:
+    profiles: ["app"]
+    build: { context: ., dockerfile: docker/tools.Dockerfile, network: host }
+    environment:
+      DATABASE_ADMIN_URL: postgres://postgres:postgres@db:5432/app_lanche
+      APP_DB_PASSWORD: app_user
+      DEV_ADMIN_EMAIL: ${DEV_ADMIN_EMAIL:-admin@escola.local}
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    profiles: ["app"]
+    build: { context: ., dockerfile: apps/api/Dockerfile, network: host }
+    environment:
+      DATABASE_URL: postgres://app_user:app_user@db:5432/app_lanche
+      INTERNAL_SERVICE_TOKEN: local-service-token-with-at-least-32-chars
+      INTERNAL_HMAC_SECRET: local-hmac-secret-with-at-least-32-chars!!
+      SESSION_SECRET: local-session-secret-with-at-least-32-chars
+      JOBS_TOKEN: local-jobs-token-with-at-least-32-chars!!!
+      APP_BASE_URL: http://localhost:8088
+      PAYMENT_PROVIDER: fake
+      ENABLE_FAKE_PAYMENTS: "true"
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  web:
+    profiles: ["app"]
+    build: { context: ., dockerfile: docker/web.Dockerfile, network: host }
+    ports:
+      - "8088:80"
+    depends_on:
+      - api
+
 volumes:
   dbdata:

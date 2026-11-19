@@ -14,7 +14,11 @@
     "typecheck": "pnpm -r typecheck && tsc -p e2e/tsconfig.json",
     "lint": "eslint .",
     "db:up": "docker compose up -d db",
+    "app:up": "docker compose --profile app up -d --build --wait",
+    "app:down": "docker compose --profile app down",
+    "app:otp": "docker compose exec -T db psql -U postgres app_lanche -tAc \"SELECT data->>'code' FROM outbox_events WHERE type = 'auth.otp_requested' ORDER BY occurred_at DESC LIMIT 1\"",
     "db:migrate": "tsx db/migrate.ts",
+    "db:seed": "tsx db/seed-dev.ts",
     "db:types": "pnpm --filter @app-lanche/api db:types",
     "n8n:build": "node n8n/build.mjs"
   },
