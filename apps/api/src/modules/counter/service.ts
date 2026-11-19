@@ -50,6 +50,9 @@ export async function applySales(trx: Trx, schoolId: string, actor: SaleActor, s
   const financial = await repo.lockFinancialGuardians(trx, [...new Set(valid.map((s) => s.studentId))]);
   await wallet.lockBalances(trx, schoolId, [...financial.values()]);
   const limit = await repo.debtLimit(trx);
+  // Saldo de cada carteira no início e no fim do lote: no máximo um aviso de débito por responsável, com o saldo final.
+  const startBalance = new Map<string, number>();
+  const endBalance = new Map<string, number>();
 
   for (const s of fresh) {
     const guardianId = financial.get(s.studentId);
@@ -91,8 +94,12 @@ export async function applySales(trx: Trx, schoolId: string, actor: SaleActor, s
       trx,
       s.items.map((i) => ({ schoolId, saleId: s.id, menuItemId: i.menuItemId, qty: i.qty, unitPriceCents: prices.get(i.menuItemId)! })),
     );
-    await wallet.noticeDebtStart(trx, schoolId, guardianId, posted.previousBalanceCents, posted.balanceCents);
+    if (!startBalance.has(guardianId)) startBalance.set(guardianId, posted.previousBalanceCents);
+    endBalance.set(guardianId, posted.balanceCents);
     out.set(s.id, { status: "applied", totalCents, balanceCents: posted.balanceCents, overLimit });
+  }
+  for (const [guardianId, balanceCents] of [...endBalance].sort(([a], [b]) => a.localeCompare(b))) {
+    await wallet.noticeDebtStart(trx, schoolId, guardianId, startBalance.get(guardianId)!, balanceCents);
   }
   return out;
 }
@@ -135,7 +142,12 @@ export async function voidSales(
       sourceType: "counter_sale",
       sourceId: v.saleId,
     });
-    if (posted.posted) await repo.markVoided(trx, v.saleId, entryId);
+    if (!posted.posted) {
+      // O ledger já tinha o estorno: nada mudou, sem auditoria.
+      out.set(v.saleId, { status: "already", balanceCents: posted.balanceCents });
+      continue;
+    }
+    await repo.markVoided(trx, v.saleId, entryId);
     await audit(trx, {
       schoolId,
       actorKind: actor.source === "kitchen" ? "kitchen" : "staff",

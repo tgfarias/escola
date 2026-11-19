@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, kitchenCookie, seedFamily, staffCookie } from "../../../test/helpers";
@@ -75,7 +76,22 @@ describe("accounts", () => {
     expect((await put(admin.cookies, { debtLimitCents: -1 })).statusCode).toBe(400);
     expect((await put(admin.cookies, { debtLimitCents: 8000 })).json()).toEqual({ debtLimitCents: 8000 });
     expect((await get(office.cookies, "/api/admin/v1/school/settings")).json()).toEqual({ debtLimitCents: 8000 });
-    const audit = await adminDb().selectFrom("auditLog").select("action").where("schoolId", "=", s.schoolId).where("action", "=", "school.debt_limit_changed").execute();
-    expect(audit).toHaveLength(1);
+    const audit = await adminDb()
+      .selectFrom("auditLog")
+      .select(["action", sql<string>`detail::text`.as("detail")])
+      .where("schoolId", "=", s.schoolId)
+      .where("action", "=", "school.debt_limit_changed")
+      .execute();
+    expect(audit.map((a) => JSON.parse(a.detail))).toEqual([{ previous_debt_limit_cents: 1000, debt_limit_cents: 8000 }]);
+  });
+
+  it("does not show another school's guardian in the list or the statement", async () => {
+    const s = await setup();
+    const otherSchool = await createSchool();
+    const stranger = await seedFamily(otherSchool, ["Zeca"]);
+    const office = await staffCookie(s.schoolId, "secretaria");
+    const list = await get(office.cookies, "/api/admin/v1/accounts");
+    expect(list.json().accounts.map((a: { guardianId: string }) => a.guardianId)).not.toContain(stranger.guardianId);
+    expect((await get(office.cookies, `/api/admin/v1/guardians/${stranger.guardianId}/statement`)).statusCode).toBe(404);
   });
 });

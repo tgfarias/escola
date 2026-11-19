@@ -226,9 +226,16 @@ export async function getSettings(session: SessionClaims): Promise<SchoolSetting
 
 export async function updateSettings(session: SessionClaims, body: SchoolSettings): Promise<SchoolSettings> {
   return withTenant(session.schoolId, async (trx) => {
-    if ((await repo.debtLimit(trx)) !== body.debtLimitCents) {
+    const previous = await repo.lockDebtLimit(trx);
+    if (previous !== body.debtLimitCents) {
       await repo.setDebtLimit(trx, body.debtLimitCents);
-      await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "school.debt_limit_changed", detail: { debt_limit_cents: body.debtLimitCents } });
+      await audit(trx, {
+        schoolId: session.schoolId,
+        actorKind: "staff",
+        actorId: session.sub,
+        action: "school.debt_limit_changed",
+        detail: { previous_debt_limit_cents: previous, debt_limit_cents: body.debtLimitCents },
+      });
     }
     return { debtLimitCents: body.debtLimitCents };
   });

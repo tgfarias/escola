@@ -1,11 +1,21 @@
 import { sql } from "kysely";
 import type { Trx } from "../../db/index";
 
+/**
+ * Grava a recarga pendente. Devolve false se outra transação gravou uma pendente para o mesmo responsável no meio
+ * tempo (índice topups_one_pending): quem chama cancela de novo e repete.
+ */
 export async function insertTopup(
   trx: Trx,
   row: { id: string; schoolId: string; guardianId: string; amountCents: number; requestedBy: "guardian" | "staff" },
-): Promise<void> {
-  await trx.insertInto("topups").values(row).execute();
+): Promise<boolean> {
+  const inserted = await trx
+    .insertInto("topups")
+    .values(row)
+    .onConflict((oc) => oc.columns(["schoolId", "guardianId"]).where(sql<boolean>`status = 'pending_payment'`).doNothing())
+    .returning("id")
+    .executeTakeFirst();
+  return inserted !== undefined;
 }
 
 /** Uma recarga pendente por responsável: as anteriores viram `cancelled`. */

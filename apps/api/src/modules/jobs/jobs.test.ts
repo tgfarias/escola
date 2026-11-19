@@ -43,4 +43,11 @@ describe("Cloud Scheduler job routes", () => {
     }
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("rejects the top-up reconciliation without the job token", async () => {
+    const spy = vi.spyOn(topups, "reconcileDue");
+    const res = await buildApp().inject({ method: "POST", url: "/jobs/v1/topups/reconcile" });
+    expect(res.statusCode).toBe(401);
+    expect(spy).not.toHaveBeenCalled();
+  });
 });

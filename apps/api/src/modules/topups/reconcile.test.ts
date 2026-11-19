@@ -38,6 +38,37 @@ describe("top-up reconciliation job", () => {
     const wallet = await adminDb().selectFrom("wallets").select("balanceCents").where("guardianId", "=", ana.guardianId).executeTakeFirstOrThrow();
     expect(wallet.balanceCents).toBe(2000);
     expect(await walletLedgerMatches(schoolId, ana.guardianId)).toBe(true);
+    // A expirada há pouco segue conferida por 24 h (o Pix pode ter sido pago e o webhook perdido), sem efeito.
+    expect(await reconcileDue({ log, schoolIds: [schoolId] })).toEqual({ schools: 1, confirmed: 0, expired: 0, failed: 0 });
+    await adminDb().updateTable("topups").set({ createdAt: new Date(Date.now() - 25 * 3600_000) }).where("id", "=", stale.topupId).execute();
     expect(await reconcileDue({ log, schoolIds: [schoolId] })).toEqual({ schools: 0, confirmed: 0, expired: 0, failed: 0 });
+  });
+
+  it("also confirms cancelled and expired top-ups paid in the last 24 hours, but not older ones", async () => {
+    const schoolId = await createSchool();
+    const ana = await seedFamily(schoolId, ["Léo"]);
+    const bruno = await seedFamily(schoolId, ["Caio"]);
+    const carla = await seedFamily(schoolId, ["Duda"]);
+    const cancelled = await topup(schoolId, ana.guardianId, 2000);
+    const second = await topup(schoolId, ana.guardianId, 3000); // cancela a primeira
+    const expired = await topup(schoolId, bruno.guardianId, 1500);
+    await adminDb().updateTable("payments").set({ expiresAt: new Date(Date.now() - 60_000) }).where("id", "=", expired.paymentId).execute();
+    const old = await topup(schoolId, carla.guardianId, 1000);
+    await adminDb().updateTable("payments").set({ expiresAt: new Date(Date.now() - 60_000) }).where("id", "=", old.paymentId).execute();
+    await adminDb().updateTable("payments").set({ expiresAt: new Date(Date.now() - 60_000) }).where("id", "=", second.paymentId).execute();
+    expect(await reconcileDue({ log, schoolIds: [schoolId] })).toMatchObject({ confirmed: 0, expired: 3 });
+    // Nenhuma recarga pendente: a escola continua na agenda pelas canceladas/expiradas recentes.
+    await adminDb().updateTable("topups").set({ createdAt: new Date(Date.now() - 25 * 3600_000) }).where("id", "=", old.topupId).execute();
+
+    for (const t of [cancelled, expired, old]) fakeMarkPaid(t.chargeId, new Date(Date.now() - 30_000));
+    expect(await reconcileDue({ log, schoolIds: [schoolId] })).toMatchObject({ confirmed: 2, failed: 0 });
+    const statuses = await adminDb().selectFrom("topups").select(["id", "status"]).where("id", "in", [cancelled.topupId, expired.topupId, old.topupId]).execute();
+    expect(new Map(statuses.map((t) => [t.id, t.status]))).toEqual(
+      new Map([[cancelled.topupId, "paid"], [expired.topupId, "paid"], [old.topupId, "expired"]]),
+    );
+    const balance = async (guardianId: string) =>
+      (await adminDb().selectFrom("wallets").select("balanceCents").where("guardianId", "=", guardianId).executeTakeFirst())?.balanceCents ?? 0;
+    expect([await balance(ana.guardianId), await balance(bruno.guardianId), await balance(carla.guardianId)]).toEqual([2000, 1500, 0]);
+    expect(await walletLedgerMatches(schoolId, ana.guardianId)).toBe(true);
   });
 });

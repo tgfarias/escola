@@ -329,6 +329,12 @@ describe("F5B schema", () => {
     await expect(withTenant(schoolId, (trx) => sql`DELETE FROM counter_sales`.execute(trx))).rejects.toThrow(/permission denied/);
   });
 
+  it("lets the application update only the status and paid_at of a top-up", async () => {
+    await expect(withTenant(schoolId, (trx) => sql`UPDATE topups SET amount_cents = amount_cents`.execute(trx))).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => sql`UPDATE topups SET guardian_id = guardian_id`.execute(trx))).rejects.toThrow(/permission denied/);
+    await withTenant(schoolId, (trx) => sql`UPDATE topups SET status = status, paid_at = paid_at`.execute(trx));
+  });
+
   it("counter_sale_items is append-only for the application role", async () => {
     await expect(
       withTenant(schoolId, (trx) => sql`UPDATE counter_sale_items SET qty = qty`.execute(trx)),

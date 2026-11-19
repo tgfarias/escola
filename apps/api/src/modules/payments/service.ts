@@ -107,14 +107,14 @@ export async function confirmPayment(
     // Recarga: travas topups → payments → wallets. Sem corte: paga depois de expirada ou cancelada também credita.
     await topups.lockTopup(trx, payment.topupId);
     if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
-    await topups.creditTopup(trx, {
+    const credited = await topups.creditTopup(trx, {
       schoolId: input.schoolId,
       topupId: payment.topupId,
       paymentId: payment.id,
       amountCents: payment.amountCents,
       paidAt: input.paidAt,
     });
-    return "topup_credited";
+    return credited ? "topup_credited" : "already_processed";
   }
 
   // payments_one_target garante checkout_id quando não há topup_id; a FK composta garante o checkout.
@@ -158,33 +158,35 @@ export async function handleWebhook(input: {
     accountRef: school.paymentAccountRef,
   });
 
-  return withTenant(schoolId, async (trx) => {
-    const outcomes: WebhookOutcome[] = [];
-    for (const event of events) {
-      const payment = event.chargeId ? await repo.paymentByCharge(trx, provider.name, event.chargeId) : undefined;
-      const recorded = await repo.recordEvent(trx, {
-        provider: provider.name,
-        providerEventId: event.eventId,
-        schoolId,
-        paymentId: payment?.id ?? null,
-        raw: input.rawBody,
-      });
-      if (!recorded) {
-        outcomes.push("duplicate");
-      } else if (event.kind !== "charge_paid") {
-        outcomes.push("ignored");
-      } else if (!payment) {
-        input.log.warn({ event: "payment_webhook_unknown_charge", school_id: schoolId }, "webhook for unknown charge");
-        outcomes.push("unknown_charge");
-      } else if (payment.amountCents !== event.amountCents) {
-        input.log.error({ event: "payment_amount_mismatch", school_id: schoolId, payment_id: payment.id }, "payment amount mismatch");
-        outcomes.push("amount_mismatch");
-      } else {
-        outcomes.push(await confirmPayment(trx, { schoolId, paymentId: payment.id, paidAt: event.paidAt }));
-      }
-    }
-    return outcomes;
-  });
+  // Cada evento na sua transação (gravar o bruto e processar juntos, regra 14): um lote com recarga e checkout
+  // nunca mistura as ordens de trava das duas.
+  const outcomes: WebhookOutcome[] = [];
+  for (const event of events) {
+    outcomes.push(
+      await withTenant(schoolId, async (trx): Promise<WebhookOutcome> => {
+        const payment = event.chargeId ? await repo.paymentByCharge(trx, provider.name, event.chargeId) : undefined;
+        const recorded = await repo.recordEvent(trx, {
+          provider: provider.name,
+          providerEventId: event.eventId,
+          schoolId,
+          paymentId: payment?.id ?? null,
+          raw: input.rawBody,
+        });
+        if (!recorded) return "duplicate";
+        if (event.kind !== "charge_paid") return "ignored";
+        if (!payment) {
+          input.log.warn({ event: "payment_webhook_unknown_charge", school_id: schoolId }, "webhook for unknown charge");
+          return "unknown_charge";
+        }
+        if (payment.amountCents !== event.amountCents) {
+          input.log.error({ event: "payment_amount_mismatch", school_id: schoolId, payment_id: payment.id }, "payment amount mismatch");
+          return "amount_mismatch";
+        }
+        return confirmPayment(trx, { schoolId, paymentId: payment.id, paidAt: event.paidAt });
+      }),
+    );
+  }
+  return outcomes;
 }
 
 export async function expirePendingPayment(trx: Trx, checkoutId: string): Promise<void> {

@@ -13,13 +13,20 @@ import * as repo from "./repo";
 
 const MAX_TOPUP_CENTS = 1_000_000;
 
+const PLACE_ATTEMPTS = 3;
+
 async function placeTopup(trx: Trx, schoolId: string, guardianId: string, amountCents: number, requestedBy: "guardian" | "staff"): Promise<string> {
-  // Travas topups → payments: cancela as pendentes e expira as cobranças delas.
-  for (const id of await repo.cancelPendingTopups(trx, guardianId)) await payments.expireTopupPayment(trx, id);
   const id = uuidv7();
-  await repo.insertTopup(trx, { id, schoolId, guardianId, amountCents, requestedBy });
-  await payments.createTopupPayment(trx, { schoolId, topupId: id, amountCents });
-  return id;
+  for (let attempt = 0; attempt < PLACE_ATTEMPTS; attempt += 1) {
+    // Travas topups → payments: cancela as pendentes e expira as cobranças delas.
+    for (const old of await repo.cancelPendingTopups(trx, guardianId)) await payments.expireTopupPayment(trx, old);
+    // Uma criação simultânea gravou a sua pendente depois do cancelamento: o próximo cancelamento a enxerga.
+    if (await repo.insertTopup(trx, { id, schoolId, guardianId, amountCents, requestedBy })) {
+      await payments.createTopupPayment(trx, { schoolId, topupId: id, amountCents });
+      return id;
+    }
+  }
+  throw new Error("could not place a pending top-up");
 }
 
 async function view(schoolId: string, topupId: string, allowed: (guardianId: string) => boolean): Promise<TopupView> {
@@ -101,13 +108,14 @@ export async function lockTopup(trx: Trx, topupId: string): Promise<void> {
 }
 
 /** Chamado só pela confirmPayment, depois de o pagamento passar a `paid`. */
+/** Devolve true só quando o crédito entrou agora no ledger (só então há aviso de recarga confirmada). */
 export async function creditTopup(
   trx: Trx,
   input: { schoolId: string; topupId: string; paymentId: string; amountCents: number; paidAt: Date },
-): Promise<void> {
+): Promise<boolean> {
   const paid = await repo.markTopupPaid(trx, input.topupId, input.paidAt);
-  if (!paid) return;
-  const { balanceCents } = await wallet.postEntry(trx, {
+  if (!paid) return false;
+  const { posted, balanceCents } = await wallet.postEntry(trx, {
     schoolId: input.schoolId,
     guardianId: paid.guardianId,
     kind: "topup_credit",
@@ -117,7 +125,9 @@ export async function creditTopup(
     // Crédito nunca é recusado pelo piso; não cruza para negativo, então não há aviso de débito.
     minBalanceCents: null,
   });
+  if (!posted) return false;
   await wallet.enqueueTopupConfirmed(trx, input.schoolId, paid.guardianId, input.amountCents, balanceCents);
+  return true;
 }
 
 /** Expira a recarga cujo Pix venceu (travas topups → payments). */
@@ -128,14 +138,16 @@ export async function expireTopup(trx: Trx, topupId: string): Promise<boolean> {
   return true;
 }
 
-/** Confirma recargas pagas (gateway) e expira as que venceram. */
+/**
+ * Confirma recargas pagas (gateway), inclusive canceladas ou expiradas nas últimas 24 h, e expira as que venceram,
+ * cada uma na sua transação.
+ */
 export async function reconcileTopups(schoolId: string, log: FastifyBaseLogger): Promise<{ confirmed: number; expired: number }> {
   const confirmed = await payments.reconcileTopupCharges(schoolId, log);
-  const expired = await withTenant(schoolId, async (trx) => {
-    let n = 0;
-    for (const id of await repo.overdueTopupIds(trx)) if (await expireTopup(trx, id)) n += 1;
-    return n;
-  });
+  let expired = 0;
+  for (const id of await withTenant(schoolId, (trx) => repo.overdueTopupIds(trx))) {
+    if (await withTenant(schoolId, (trx) => expireTopup(trx, id))) expired += 1;
+  }
   return { confirmed, expired };
 }
 

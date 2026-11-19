@@ -66,7 +66,11 @@ export async function upsertGuardian(
   return saved.id;
 }
 
-/** Novo vínculo é o financeiro se o aluno ainda não tem um. O alvo explícito do ON CONFLICT não engole o índice parcial. */
+/**
+ * Novo vínculo é o financeiro se o aluno ainda não tem um. Se a troca do financeiro (PUT) marcar outro responsável
+ * ao mesmo tempo, o índice parcial guardian_students_one_financial recusaria a linha com 23505: o primeiro INSERT
+ * ignora qualquer conflito e o segundo grava o vínculo como não financeiro (alvo explícito: só o vínculo repetido).
+ */
 export async function linkGuardianStudent(
   trx: Trx,
   row: { schoolId: string; guardianId: string; studentId: string },
@@ -77,6 +81,11 @@ export async function linkGuardianStudent(
       ...row,
       financial: sql<boolean>`NOT EXISTS (SELECT 1 FROM guardian_students f WHERE f.student_id = ${row.studentId} AND f.financial)`,
     })
+    .onConflict((oc) => oc.doNothing())
+    .execute();
+  await trx
+    .insertInto("guardianStudents")
+    .values({ ...row, financial: false })
     .onConflict((oc) => oc.columns(["schoolId", "guardianId", "studentId"]).doNothing())
     .execute();
 }

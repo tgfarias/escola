@@ -129,14 +129,27 @@ export async function expirePending(trx: Trx, checkoutId: string): Promise<void>
   await trx.updateTable("payments").set({ status: "expired" }).where("checkoutId", "=", checkoutId).where("status", "=", "pending").execute();
 }
 
+/**
+ * Cobranças de recarga a conferir no gateway: as pendentes e as de recargas canceladas ou expiradas nas últimas
+ * 24 h (o Pix delas continua pagável; se o webhook se perder, a conciliação credita pela confirmPayment).
+ */
 export async function pendingTopupCharges(trx: Trx) {
   return trx
     .selectFrom("payments")
     .innerJoin("topups", "topups.id", "payments.topupId")
     .select(["payments.id", "payments.provider", "payments.providerChargeId", "payments.amountCents"])
-    .where("topups.status", "=", "pending_payment")
-    .where("payments.status", "=", "pending")
+    .where((eb) =>
+      eb.or([
+        eb.and([eb("topups.status", "=", "pending_payment"), eb("payments.status", "=", "pending")]),
+        eb.and([
+          eb("topups.status", "in", ["cancelled", "expired"]),
+          eb("payments.status", "in", ["pending", "expired"]),
+          eb("topups.createdAt", ">", sql<Date>`now() - interval '24 hours'`),
+        ]),
+      ]),
+    )
     .where("payments.providerChargeId", "is not", null)
+    .orderBy("payments.id")
     .execute();
 }
 

@@ -48,27 +48,21 @@ export const fakeProvider: PaymentProvider = {
     return view(c);
   },
 
+  /** Um evento por entrega, ou um array deles (como o `pix: [...]` da Efí). */
   async parseWebhook({ headers, rawBody, secret }: WebhookInput): Promise<WebhookEvent[]> {
     if (!safeEqual(header(headers, "x-fake-token"), secret)) throw new DomainError("invalid_signature");
-    let parsed: z.infer<typeof FakeWebhook>;
+    let parsed: z.infer<typeof FakeWebhook>[];
     try {
-      parsed = FakeWebhook.parse(JSON.parse(rawBody));
+      const body: unknown = JSON.parse(rawBody);
+      parsed = Array.isArray(body) ? z.array(FakeWebhook).min(1).max(20).parse(body) : [FakeWebhook.parse(body)];
     } catch {
       throw new DomainError("validation_failed");
     }
-    if (parsed.event !== "charge.paid") return [{ eventId: parsed.id, kind: "ignored", chargeId: parsed.charge_id }];
-    if (!parsed.charge_id || parsed.amount_cents === undefined || parsed.paid_at === undefined) {
-      throw new DomainError("validation_failed");
-    }
-    return [
-      {
-        eventId: parsed.id,
-        kind: "charge_paid",
-        chargeId: parsed.charge_id,
-        amountCents: parsed.amount_cents,
-        paidAt: new Date(parsed.paid_at),
-      },
-    ];
+    return parsed.map((p): WebhookEvent => {
+      if (p.event !== "charge.paid") return { eventId: p.id, kind: "ignored", chargeId: p.charge_id };
+      if (!p.charge_id || p.amount_cents === undefined || p.paid_at === undefined) throw new DomainError("validation_failed");
+      return { eventId: p.id, kind: "charge_paid", chargeId: p.charge_id, amountCents: p.amount_cents, paidAt: new Date(p.paid_at) };
+    });
   },
 };
 

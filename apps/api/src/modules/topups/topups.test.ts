@@ -1,10 +1,11 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, staffCookie, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, staffCookie, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeFailNextCreate, fakeReset } from "../payments/fakeProvider";
+import { confirmPayment } from "../payments/service";
 import { postEntry } from "../wallet/service";
 
 const SECRET = process.env.PAYMENT_WEBHOOK_SECRET_TEST!;
@@ -117,6 +118,92 @@ describe("guardian top-ups", () => {
     expect(await get(await guardianCookie(s.schoolId, other.guardianId))).toBe(404);
     expect(await get(await guardianCookie(s.schoolId, s.guardianId, "documents"))).toBe(403);
     expect(await get(await guardianCookie(s.schoolId, s.guardianId, "order"))).toBe(200);
+  });
+
+  it("keeps one pending top-up per guardian when several are created at once", async () => {
+    const s = await setup();
+    const results = await Promise.all([2000, 3000, 4000, 5000].map((amountCents) => create(s, { purpose: "credit", amountCents })));
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200, 200]);
+    const rows = await adminDb().selectFrom("topups").select("status").where("guardianId", "=", s.guardianId).execute();
+    expect(rows.map((r) => r.status).sort()).toEqual(["cancelled", "cancelled", "cancelled", "pending_payment"]);
+    const payments = await adminDb()
+      .selectFrom("payments")
+      .innerJoin("topups", "topups.id", "payments.topupId")
+      .select(["topups.status as topup", "payments.status as payment"])
+      .where("topups.guardianId", "=", s.guardianId)
+      .execute();
+    expect(payments.map((p) => `${p.topup}:${p.payment}`).sort()).toEqual(["cancelled:expired", "cancelled:expired", "cancelled:expired", "pending_payment:pending"]);
+  });
+
+  it("refuses a second pending top-up for the same guardian in the database", async () => {
+    const s = await setup();
+    const t = (await create(s, { purpose: "credit", amountCents: 2000 })).json();
+    await expect(
+      adminDb().insertInto("topups").values({ id: uuidv7(), schoolId: s.schoolId, guardianId: s.guardianId, amountCents: 100, requestedBy: "staff" }).execute(),
+    ).rejects.toThrow(/topups_one_pending/);
+    expect(t.status).toBe("pending_payment");
+  });
+
+  it("neither reports nor announces a credit the ledger already had", async () => {
+    const s = await setup();
+    const t = (await create(s, { purpose: "credit", amountCents: 2000 })).json();
+    const p = await paymentOf(t.id);
+    await withTenant(s.schoolId, (trx) =>
+      postEntry(trx, { schoolId: s.schoolId, guardianId: s.guardianId, kind: "topup_credit", amountCents: 2000, sourceType: "topup", sourceId: t.id }),
+    );
+    const outcome = await withTenant(s.schoolId, (trx) => confirmPayment(trx, { schoolId: s.schoolId, paymentId: p.id, paidAt: new Date() }));
+    expect(outcome).toBe("already_processed");
+    const events = await adminDb().selectFrom("outboxEvents").select("type").where("schoolId", "=", s.schoolId).where("type", "=", "wallet.topup_confirmed").execute();
+    expect(events).toEqual([]);
+    expect(await walletLedgerMatches(s.schoolId, s.guardianId)).toBe(true);
+  });
+
+  it("processes each event of a mixed webhook delivery in its own transaction", async () => {
+    const s = await setup();
+    const day = await seedServiceDay(s.schoolId);
+    const checkout = await buildApp().inject({
+      method: "POST",
+      url: "/api/v1/checkouts",
+      cookies: await guardianCookie(s.schoolId, s.guardianId),
+      headers: { "idempotency-key": uuidv7() },
+      payload: { serviceDate: day.serviceDate, orders: [{ studentId: (await adminDb().selectFrom("guardianStudents").select("studentId").where("guardianId", "=", s.guardianId).executeTakeFirstOrThrow()).studentId, items: [{ menuItemId: day.items[0]!.id, qty: 1 }] }] },
+    });
+    const cp = await adminDb().selectFrom("payments").select(["id", "providerChargeId", "amountCents"]).where("checkoutId", "=", checkout.json().id).executeTakeFirstOrThrow();
+    const t = (await create(s, { purpose: "credit", amountCents: 2000 })).json();
+    const tp = await paymentOf(t.id);
+    const paidAt = new Date(Date.now() - 1000).toISOString();
+    const event = (chargeId: string, amountCents: number) => ({ id: uuidv7(), event: "charge.paid", charge_id: chargeId, amount_cents: amountCents, paid_at: paidAt });
+    const res = await buildApp().inject({
+      method: "POST",
+      url: `/webhooks/payments/fake/${s.schoolId}`,
+      headers: { "content-type": "application/json", "x-fake-token": SECRET },
+      payload: JSON.stringify([event(tp.providerChargeId!, 2000), event(cp.providerChargeId!, cp.amountCents)]),
+    });
+    expect(res.statusCode).toBe(200);
+    expect((await adminDb().selectFrom("topups").select("status").where("id", "=", t.id).executeTakeFirstOrThrow()).status).toBe("paid");
+    expect((await adminDb().selectFrom("checkouts").select("status").where("id", "=", checkout.json().id).executeTakeFirstOrThrow()).status).toBe("paid");
+    const { rows } = await sql<{ tx: string }>`
+      SELECT xmin::text AS tx FROM payment_events WHERE school_id = ${s.schoolId}`.execute(adminDb());
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.tx)).size).toBe(2);
+  });
+
+  it("refuses top-up amounts out of bounds", async () => {
+    const s = await setup();
+    expect((await create(s, { purpose: "credit", amountCents: 100_001 })).statusCode).toBe(400);
+    expect((await create(s, { purpose: "credit", amountCents: 1500.5 })).statusCode).toBe(400);
+    const { cookies } = await staffCookie(s.schoolId, "secretaria");
+    for (const amountCents of [0, 1_000_001]) {
+      const res = await buildApp().inject({
+        method: "POST",
+        url: `/api/admin/v1/guardians/${s.guardianId}/topups`,
+        cookies,
+        headers: { "idempotency-key": uuidv7() },
+        payload: { amountCents },
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    expect(await adminDb().selectFrom("topups").select("id").where("guardianId", "=", s.guardianId).execute()).toEqual([]);
   });
 });
 

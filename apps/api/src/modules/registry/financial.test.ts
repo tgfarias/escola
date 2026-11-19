@@ -73,4 +73,37 @@ describe("financial guardian", () => {
     const kitchen = await staffCookie(schoolId, "cozinha");
     expect((await put(kitchen.cookies, leo, anaId)).statusCode).toBe(403);
   });
+
+  it("does not find a student of another school", async () => {
+    const schoolId = await createSchool();
+    const office = await staffCookie(schoolId, "secretaria");
+    await importCsv(office.cookies, CSV);
+    const other = await createSchool();
+    const otherOffice = await staffCookie(other, "secretaria");
+    const { leo, rui } = await ids(schoolId);
+    const res = await buildApp().inject({ method: "PUT", url: `/api/admin/v1/students/${leo}/financial-guardian`, cookies: otherOffice.cookies, payload: { guardianId: rui } });
+    expect(res.statusCode).toBe(404);
+    expect(await financialMap(schoolId)).toEqual({ Bia: ["Rui"], "Léo": ["Ana"] });
+  });
+
+  it("imports a new link without failing when a financial guardian is being set at the same time", async () => {
+    const schoolId = await createSchool();
+    const { cookies } = await staffCookie(schoolId, "secretaria");
+    await importCsv(cookies, [HEADER, "F1,Léo,Infantil 3A,Ana,(11) 97777-0001"].join("\n"));
+    const leo = (await adminDb().selectFrom("students").select("id").where("schoolId", "=", schoolId).executeTakeFirstOrThrow()).id;
+    const ana = (await adminDb().selectFrom("guardians").select("id").where("schoolId", "=", schoolId).executeTakeFirstOrThrow()).id;
+    await adminDb().updateTable("guardianStudents").set({ financial: false }).where("studentId", "=", leo).execute();
+    let pending: ReturnType<typeof importCsv> | undefined;
+    // A troca (PUT) marca Ana numa transação ainda aberta enquanto a importação vincula Rui a Léo.
+    await adminDb().transaction().execute(async (trx) => {
+      await trx.updateTable("guardianStudents").set({ financial: true }).where("studentId", "=", leo).where("guardianId", "=", ana).execute();
+      pending = importCsv(cookies, [HEADER, "F1,Léo,Infantil 3A,Rui,(11) 97777-0002"].join("\n"));
+      await new Promise((r) => setTimeout(r, 500)); // a importação espera no índice do financeiro
+    });
+    const res = await pending!;
+    expect(res.statusCode).toBe(200);
+    expect(await financialMap(schoolId)).toEqual({ "Léo": ["Ana"] });
+    const links = await adminDb().selectFrom("guardianStudents").select("guardianId").where("studentId", "=", leo).execute();
+    expect(links).toHaveLength(2);
+  });
 });

@@ -1,8 +1,11 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedFamily, staffCookie, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, kitchenCookie, seedFamily, staffCookie, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
+import { withTenant } from "../../db/index";
+import { postEntry } from "../wallet/service";
+import { applySales, voidSales } from "./service";
 
 async function setup(limitCents?: number) {
   const schoolId = await createSchool();
@@ -127,5 +130,70 @@ describe("staff counter sales", () => {
       payload: { studentId: s.leo, items: [{ menuItemId: s.misto, qty: 1 }] },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("keeps the kitchen role and guardian sessions out of the roster, sales and voids", async () => {
+    const s = await setup();
+    const saleId = (await sell(s, { studentId: s.leo, items: [{ menuItemId: s.misto, qty: 1 }] })).json().saleId as string;
+    const kitchen = await staffCookie(s.schoolId, "cozinha");
+    const guardian = await guardianCookie(s.schoolId, s.guardianId);
+    for (const cookies of [kitchen.cookies, guardian]) {
+      expect((await buildApp().inject({ method: "GET", url: "/api/admin/v1/counter/roster", cookies })).statusCode).toBe(403);
+      expect((await buildApp().inject({ method: "POST", url: `/api/admin/v1/counter-sales/${saleId}/void`, cookies })).statusCode).toBe(403);
+      const sale = await buildApp().inject({
+        method: "POST",
+        url: "/api/admin/v1/counter-sales",
+        cookies,
+        headers: { "idempotency-key": uuidv7() },
+        payload: { studentId: s.leo, items: [{ menuItemId: s.misto, qty: 1 }] },
+      });
+      expect(sale.statusCode).toBe(403);
+    }
+    expect(await balance(s.guardianId)).toBe(-900);
+  });
+
+  it("serves a roster without phone, CPF or full names", async () => {
+    const s = await setup();
+    await adminDb().updateTable("guardians").set({ fullName: "Ana Maria Souza", cpf: "52998224725" }).where("id", "=", s.guardianId).execute();
+    await adminDb().updateTable("students").set({ fullName: "Leonardo Souza" }).where("id", "=", s.leo).execute();
+    const phone = (await adminDb().selectFrom("guardians").select("phoneE164").where("id", "=", s.guardianId).executeTakeFirstOrThrow()).phoneE164;
+    const text = (await buildApp().inject({ method: "GET", url: "/api/admin/v1/counter/roster", cookies: s.office.cookies })).body;
+    for (const secret of [phone, phone.slice(3), "52998224725", "Ana Maria Souza", "Leonardo Souza", "Souza"]) expect(text).not.toContain(secret);
+    expect(text).toContain("Ana");
+  });
+
+  it("returns already without an audit row when the void entry is already in the ledger", async () => {
+    const s = await setup();
+    const saleId = (await sell(s, { studentId: s.leo, items: [{ menuItemId: s.misto, qty: 1 }] })).json().saleId as string;
+    await withTenant(s.schoolId, (trx) =>
+      postEntry(trx, { schoolId: s.schoolId, guardianId: s.guardianId, kind: "counter_void", amountCents: 900, sourceType: "counter_sale", sourceId: saleId }),
+    );
+    const outcome = await withTenant(s.schoolId, async (trx) =>
+      (await voidSales(trx, s.schoolId, { source: "staff", staffUserId: s.office.staffUserId }, [{ saleId }])).get(saleId),
+    );
+    expect(outcome).toEqual({ status: "already", balanceCents: 0 });
+    const audit = await adminDb().selectFrom("auditLog").select("action").where("schoolId", "=", s.schoolId).where("action", "=", "counter.void").execute();
+    expect(audit).toEqual([]);
+  });
+});
+
+describe("kitchen counter batches", () => {
+  it("sends one debt notice per guardian per batch, with the final balance, only when the batch crossed into debt", async () => {
+    const s = await setup();
+    const other = await seedFamily(s.schoolId, ["Caio"]);
+    await adminDb().updateTable("guardians").set({ firstName: "Bruno" }).where("id", "=", other.guardianId).execute();
+    await withTenant(s.schoolId, (trx) =>
+      postEntry(trx, { schoolId: s.schoolId, guardianId: s.guardianId, kind: "manual_adjustment", amountCents: 500, sourceType: "adjustment", sourceId: uuidv7() }),
+    );
+    await withTenant(s.schoolId, (trx) =>
+      postEntry(trx, { schoolId: s.schoolId, guardianId: other.guardianId, kind: "counter_charge", amountCents: -100, sourceType: "counter_sale", sourceId: uuidv7(), minBalanceCents: null }),
+    );
+    const { deviceId } = await kitchenCookie(s.schoolId);
+    const line = (studentId: string, qty = 1) => ({ id: uuidv7(), studentId, items: [{ menuItemId: s.misto, qty }], occurredAt: null });
+    // Ana: 500 → -400 → -1300 → -2200. Bruno já devia: sem aviso novo.
+    await withTenant(s.schoolId, (trx) =>
+      applySales(trx, s.schoolId, { source: "kitchen", deviceId }, [line(s.leo), line(other.studentIds[0]!), line(s.bia), line(s.leo)], "record"),
+    );
+    expect(await debtNotices(s.schoolId)).toEqual([expect.objectContaining({ amount_due_cents: 2200, first_name: "Ana" })]);
   });
 });

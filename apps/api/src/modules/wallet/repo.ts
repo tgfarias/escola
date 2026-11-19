@@ -69,7 +69,7 @@ export async function salesChargedToOthers(trx: Trx, guardianId: string) {
     SELECT cs.id, st.first_name AS student_first_name, cs.occurred_at, cs.total_cents, (cs.voided_at IS NOT NULL) AS voided
     FROM counter_sales cs
     JOIN guardian_students gs ON gs.student_id = cs.student_id AND gs.guardian_id = ${guardianId}
-    JOIN students st ON st.id = cs.student_id
+    JOIN students st ON st.id = cs.student_id AND st.active
     WHERE cs.guardian_id <> ${guardianId} AND cs.occurred_at > now() - interval '30 days'
     ORDER BY cs.occurred_at DESC, cs.id DESC
     LIMIT 50`.execute(trx);
@@ -106,6 +106,11 @@ export async function guardianContact(trx: Trx, guardianId: string) {
 
 export async function debtLimit(trx: Trx): Promise<number> {
   return (await trx.selectFrom("schools").select("debtLimitCents").executeTakeFirstOrThrow()).debtLimitCents;
+}
+
+/** Limite atual com a linha da escola travada FOR UPDATE (duas alterações não se cruzam na auditoria). */
+export async function lockDebtLimit(trx: Trx): Promise<number> {
+  return (await trx.selectFrom("schools").select("debtLimitCents").forUpdate().executeTakeFirstOrThrow()).debtLimitCents;
 }
 
 export async function setDebtLimit(trx: Trx, debtLimitCents: number): Promise<void> {
