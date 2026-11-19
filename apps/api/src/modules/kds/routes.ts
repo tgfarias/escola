@@ -1,9 +1,10 @@
-import { IsoDate, KdsEventsRequest, KdsPairRequest, Uuid } from "@app-lanche/contracts";
+import { IsoDate, KdsCounterSalesRequest, KdsCounterVoidsRequest, KdsEventsRequest, KdsPairRequest, Uuid } from "@app-lanche/contracts";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { RouteAuth } from "../../app";
 import { idempotencyKeyFrom } from "../../platform/idempotency";
 import { issueSession, KITCHEN_GRACE_SECONDS, KITCHEN_SESSION_TTL } from "../../platform/session";
+import * as counter from "../counter/service";
 import * as serviceDays from "../serviceDays/service";
 import * as service from "./service";
 
@@ -54,6 +55,28 @@ export async function kdsRoutes(app: FastifyInstance): Promise<void> {
     const { schoolId, deviceId } = await service.pair(KdsPairRequest.parse(req.body).code);
     await renewKitchen(reply, schoolId, deviceId);
     return { deviceId };
+  });
+
+  // Lançamentos no balcão (spec F5B): idempotentes pelo id do cliente, sem Idempotency-Key.
+  app.get("/api/kds/v1/roster", { config: { auth: KITCHEN } }, async (req, reply) => {
+    const s = req.session!;
+    const res = await counter.roster(s.schoolId);
+    await renewKitchen(reply, s.schoolId, s.sub);
+    return res;
+  });
+
+  app.post("/api/kds/v1/counter-sales", { config: { auth: KITCHEN } }, async (req, reply) => {
+    const s = req.session!;
+    const res = await counter.recordKitchenSales(s.schoolId, s.sub, KdsCounterSalesRequest.parse(req.body));
+    await renewKitchen(reply, s.schoolId, s.sub);
+    return res;
+  });
+
+  app.post("/api/kds/v1/counter-voids", { config: { auth: KITCHEN } }, async (req, reply) => {
+    const s = req.session!;
+    const res = await counter.recordKitchenVoids(s.schoolId, s.sub, KdsCounterVoidsRequest.parse(req.body));
+    await renewKitchen(reply, s.schoolId, s.sub);
+    return res;
   });
 
   app.get("/api/kds/v1/manifest/:date", { config: { auth: KITCHEN } }, async (req, reply) => {
