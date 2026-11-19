@@ -46,14 +46,6 @@ describe("F2 schema", () => {
     await insertOrder("cancelled");
   });
 
-  it("rejects a negative wallet balance", async () => {
-    await expect(
-      withTenant(schoolId, (trx) =>
-        trx.updateTable("wallets").set({ balanceCents: -1 }).where("id", "=", ids.walletId).execute(),
-      ),
-    ).rejects.toThrow(/check constraint/);
-  });
-
   it("enforces the sign of each wallet entry kind", async () => {
     const entry = (kind: string, amountCents: number) =>
       withTenant(schoolId, (trx) =>
@@ -288,5 +280,85 @@ describe("F5 schema", () => {
     await expect(
       adminDb().insertInto("documents").values({ id: uuidv7(), schoolId: a, batchId: seedA.documentBatchId, studentId: seedB.studentId }).execute(),
     ).rejects.toThrow(/foreign key/i);
+  });
+});
+
+describe("F5B schema", () => {
+  let schoolId: string;
+  let ids: SeedIds;
+
+  beforeAll(async () => {
+    schoolId = await createSchool();
+    ids = await seedTenant(schoolId);
+  });
+
+  it("allows a negative wallet balance", async () => {
+    await withTenant(schoolId, (trx) => trx.updateTable("wallets").set({ balanceCents: -1 }).where("id", "=", ids.walletId).execute());
+    await withTenant(schoolId, (trx) => trx.updateTable("wallets").set({ balanceCents: 50 }).where("id", "=", ids.walletId).execute());
+  });
+
+  it("enforces the sign of the counter and top-up entry kinds", async () => {
+    const entry = (kind: string, amountCents: number, sourceType: string) =>
+      withTenant(schoolId, (trx) =>
+        trx.insertInto("walletEntries").values({ id: uuidv7(), schoolId, walletId: ids.walletId, kind, amountCents, sourceType, sourceId: uuidv7() }).execute(),
+      );
+    await expect(entry("counter_charge", 100, "counter_sale")).rejects.toThrow(/wallet_entries_sign_check/);
+    await expect(entry("counter_void", -100, "counter_sale")).rejects.toThrow(/wallet_entries_sign_check/);
+    await expect(entry("topup_credit", -100, "topup")).rejects.toThrow(/wallet_entries_sign_check/);
+    await expect(entry("topup_credit", 100, "nope")).rejects.toThrow(/check constraint/);
+  });
+
+  it("keeps at most one financial guardian per student", async () => {
+    const other = uuidv7();
+    await adminDb().insertInto("guardians").values({ id: other, schoolId, phoneE164: "+5511999990777", firstName: "Rui" }).execute();
+    await expect(
+      withTenant(schoolId, (trx) =>
+        trx.insertInto("guardianStudents").values({ schoolId, guardianId: other, studentId: ids.studentId, financial: true }).execute(),
+      ),
+    ).rejects.toThrow(/guardian_students_one_financial/);
+    await withTenant(schoolId, (trx) =>
+      trx.insertInto("guardianStudents").values({ schoolId, guardianId: other, studentId: ids.studentId, financial: false }).execute(),
+    );
+  });
+
+  it("lets the application update only the void columns of a counter sale, and never delete", async () => {
+    await expect(
+      withTenant(schoolId, (trx) => sql`UPDATE counter_sales SET total_cents = 1`.execute(trx)),
+    ).rejects.toThrow(/permission denied/);
+    await withTenant(schoolId, (trx) => sql`UPDATE counter_sales SET voided_at = voided_at`.execute(trx));
+    await expect(withTenant(schoolId, (trx) => sql`DELETE FROM counter_sales`.execute(trx))).rejects.toThrow(/permission denied/);
+  });
+
+  it("counter_sale_items is append-only for the application role", async () => {
+    await expect(
+      withTenant(schoolId, (trx) => sql`UPDATE counter_sale_items SET qty = qty`.execute(trx)),
+    ).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => sql`DELETE FROM counter_sale_items`.execute(trx))).rejects.toThrow(/permission denied/);
+  });
+
+  it("ties a payment to exactly one checkout or top-up", async () => {
+    const payment = (checkoutId: string | null, topupId: string | null) =>
+      withTenant(schoolId, (trx) =>
+        trx
+          .insertInto("payments")
+          .values({ id: uuidv7(), schoolId, checkoutId, topupId, provider: "fake", method: "pix", amountCents: 100, expiresAt: new Date() })
+          .execute(),
+      );
+    await expect(payment(null, null)).rejects.toThrow(/payments_one_target/);
+    await expect(payment(ids.checkoutId, ids.topupId)).rejects.toThrow(/payments_one_target/);
+    await payment(null, ids.topupId);
+    await expect(payment(null, ids.topupId)).rejects.toThrow(/payments_one_per_topup/);
+  });
+
+  it("accepts the wallet magic-link scope and lets staff change only the debt limit of the school", async () => {
+    await withTenant(schoolId, (trx) =>
+      trx
+        .insertInto("magicLinks")
+        .values({ id: uuidv7(), schoolId, guardianId: ids.guardianId, tokenHash: `w-${uuidv7()}`, scope: "wallet", expiresAt: new Date(Date.now() + 60_000) })
+        .execute(),
+    );
+    await withTenant(schoolId, (trx) => trx.updateTable("schools").set({ debtLimitCents: 7000 }).execute());
+    await expect(withTenant(schoolId, (trx) => trx.updateTable("schools").set({ name: "x" }).execute())).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => trx.updateTable("schools").set({ debtLimitCents: -1 }).execute())).rejects.toThrow(/check constraint/);
   });
 });

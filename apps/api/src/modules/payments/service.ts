@@ -50,7 +50,7 @@ export async function paymentViews(trx: Trx, checkoutIds: string[]): Promise<Map
   const rows = await repo.paymentsForCheckouts(trx, checkoutIds);
   return new Map(
     rows.map((p) => [
-      p.checkoutId,
+      p.checkoutId!, // paymentsForCheckouts filtra por checkout_id
       {
         status: p.status as PaymentStatus,
         amountCents: p.amountCents,
@@ -73,15 +73,15 @@ export async function confirmPayment(
   if (!payment) throw new Error(`payment ${input.paymentId} not found`);
   // Travas na ordem service_days → checkouts → payments → wallets, a mesma do cancelamento e do fechamento.
   const day = await catalog.lockServiceDayById(trx, payment.serviceDayId, "share");
-  await orders.lockCheckout(trx, payment.checkoutId);
+  await orders.lockCheckout(trx, payment.checkoutId!);
   if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
 
   const onTime = day.status === "open" && input.paidAt.getTime() <= day.cutoffAt.getTime();
-  if (onTime && (await orders.confirmCheckout(trx, input.schoolId, payment.checkoutId))) return "confirmed";
+  if (onTime && (await orders.confirmCheckout(trx, input.schoolId, payment.checkoutId!))) return "confirmed";
 
   await orders.creditLatePayment(trx, {
     schoolId: input.schoolId,
-    checkoutId: payment.checkoutId,
+    checkoutId: payment.checkoutId!,
     paymentId: payment.id,
     amountCents: payment.amountCents,
   });

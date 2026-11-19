@@ -51,6 +51,31 @@ export interface Classes {
   schoolId: string;
 }
 
+export interface CounterSaleItems {
+  menuItemId: string;
+  qty: number;
+  saleId: string;
+  schoolId: string;
+  unitPriceCents: number;
+}
+
+export interface CounterSales {
+  deviceId: string | null;
+  guardianId: string;
+  id: string;
+  occurredAt: Timestamp;
+  overLimit: boolean;
+  receivedAt: Generated<Timestamp>;
+  schoolId: string;
+  source: string;
+  staffUserId: string | null;
+  studentId: string;
+  totalCents: number;
+  voidedAt: Timestamp | null;
+  voidEntryId: string | null;
+  walletEntryId: string;
+}
+
 export interface DeliveryEvents {
   deviceId: string;
   eventId: string;
@@ -136,6 +161,7 @@ export interface Guardians {
 }
 
 export interface GuardianStudents {
+  financial: Generated<boolean>;
   guardianId: string;
   restrictionConsentAt: Timestamp | null;
   schoolId: string;
@@ -245,7 +271,7 @@ export interface PaymentEvents {
 
 export interface Payments {
   amountCents: number;
-  checkoutId: string;
+  checkoutId: string | null;
   createdAt: Generated<Timestamp>;
   expiresAt: Timestamp;
   id: string;
@@ -257,6 +283,7 @@ export interface Payments {
   providerChargeId: string | null;
   schoolId: string;
   status: Generated<string>;
+  topupId: string | null;
 }
 
 export interface ReminderBatches {
@@ -274,6 +301,7 @@ export interface SchemaMigrations {
 
 export interface Schools {
   createdAt: Generated<Timestamp>;
+  debtLimitCents: Generated<number>;
   defaultCutoffTime: Generated<string>;
   id: string;
   kitchenPhone: string | null;
@@ -325,6 +353,17 @@ export interface Students {
   schoolId: string;
 }
 
+export interface Topups {
+  amountCents: number;
+  createdAt: Generated<Timestamp>;
+  guardianId: string;
+  id: string;
+  paidAt: Timestamp | null;
+  requestedBy: string;
+  schoolId: string;
+  status: Generated<string>;
+}
+
 export interface WalletEntries {
   amountCents: number;
   createdAt: Generated<Timestamp>;
@@ -340,6 +379,7 @@ export interface WalletEntries {
 export interface Wallets {
   balanceCents: Generated<number>;
   createdAt: Generated<Timestamp>;
+  debtNoticeAt: Timestamp | null;
   guardianId: string;
   id: string;
   schoolId: string;
@@ -349,6 +389,8 @@ export interface DB {
   auditLog: AuditLog;
   checkouts: Checkouts;
   classes: Classes;
+  counterSaleItems: CounterSaleItems;
+  counterSales: CounterSales;
   deliveryEvents: DeliveryEvents;
   devices: Devices;
   documentBatches: DocumentBatches;
@@ -375,6 +417,7 @@ export interface DB {
   serviceDays: ServiceDays;
   staffUsers: StaffUsers;
   students: Students;
+  topups: Topups;
   walletEntries: WalletEntries;
   wallets: Wallets;
 }

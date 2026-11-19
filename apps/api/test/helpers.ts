@@ -50,6 +50,8 @@ export type SeedIds = {
   documentTemplateId: string;
   documentBatchId: string;
   documentId: string;
+  counterSaleId: string;
+  topupId: string;
 };
 
 /** Insere uma linha em cada tabela de tenant. Estenda quando criar tabela nova. */
@@ -75,6 +77,8 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     documentTemplateId: uuidv7(),
     documentBatchId: uuidv7(),
     documentId: uuidv7(),
+    counterSaleId: uuidv7(),
+    topupId: uuidv7(),
   };
   await db.insertInto("classes").values({ id: ids.classId, schoolId, name: "Infantil 3A" }).execute();
   await db
@@ -87,7 +91,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .execute();
   await db
     .insertInto("guardianStudents")
-    .values({ schoolId, guardianId: ids.guardianId, studentId: ids.studentId })
+    .values({ schoolId, guardianId: ids.guardianId, studentId: ids.studentId, financial: true })
     .execute();
   await db
     .insertInto("staffUsers")
@@ -144,7 +148,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .insertInto("serviceDayItems")
     .values({ schoolId, serviceDayId: ids.serviceDayId, menuItemId: ids.menuItemId, priceCents: 900 })
     .execute();
-  await db.insertInto("wallets").values({ id: ids.walletId, schoolId, guardianId: ids.guardianId, balanceCents: 100 }).execute();
+  await db.insertInto("wallets").values({ id: ids.walletId, schoolId, guardianId: ids.guardianId, balanceCents: 50 }).execute();
   await db
     .insertInto("walletEntries")
     .values({
@@ -156,6 +160,35 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
       sourceType: "adjustment",
       sourceId: uuidv7(),
     })
+    .execute();
+  // F5B: lançamento de balcão (com a entrada do ledger que ele aponta) e uma recarga terminal.
+  const counterEntryId = uuidv7();
+  await db
+    .insertInto("walletEntries")
+    .values({ id: counterEntryId, schoolId, walletId: ids.walletId, kind: "counter_charge", amountCents: -50, sourceType: "counter_sale", sourceId: ids.counterSaleId })
+    .execute();
+  await db
+    .insertInto("counterSales")
+    .values({
+      id: ids.counterSaleId,
+      schoolId,
+      studentId: ids.studentId,
+      guardianId: ids.guardianId,
+      source: "kitchen",
+      deviceId: ids.kitchenDeviceId,
+      occurredAt: new Date(),
+      totalCents: 50,
+      overLimit: false,
+      walletEntryId: counterEntryId,
+    })
+    .execute();
+  await db
+    .insertInto("counterSaleItems")
+    .values({ schoolId, saleId: ids.counterSaleId, menuItemId: ids.menuItemId, qty: 1, unitPriceCents: 50 })
+    .execute();
+  await db
+    .insertInto("topups")
+    .values({ id: ids.topupId, schoolId, guardianId: ids.guardianId, amountCents: 2000, status: "expired", requestedBy: "guardian" })
     .execute();
   await db
     .insertInto("checkouts")
@@ -318,7 +351,7 @@ export async function seedFamily(
       .insertInto("students")
       .values({ id, schoolId, classId: cls.id, externalCode: `S-${id}`, firstName })
       .execute();
-    await db.insertInto("guardianStudents").values({ schoolId, guardianId, studentId: id }).execute();
+    await db.insertInto("guardianStudents").values({ schoolId, guardianId, studentId: id, financial: true }).execute();
     studentIds.push(id);
   }
   return { guardianId, studentIds };
@@ -396,4 +429,15 @@ export async function seedClosedDayWithOrders(
     orderIds.push(orderId);
   }
   return { serviceDayId: day.serviceDayId, orderIds };
+}
+
+/**
+ * Fuso `Etc/GMT±N` em que agora são `hour` horas (janela 09:00–19:00 dos avisos de débito). Nos nomes Etc/GMT o sinal
+ * é invertido: Etc/GMT-3 é UTC+3.
+ */
+export function zoneAtLocalHour(hour: number): string {
+  const diff = (((hour - new Date().getUTCHours()) % 24) + 24) % 24;
+  const offset = diff >= 12 ? diff - 24 : diff; // -12..11
+  if (offset === 0) return "Etc/GMT";
+  return offset > 0 ? `Etc/GMT-${offset}` : `Etc/GMT+${-offset}`;
 }

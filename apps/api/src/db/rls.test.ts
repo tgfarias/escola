@@ -11,6 +11,8 @@ const TENANT_TABLES = [
   "audit_log",
   "checkouts",
   "classes",
+  "counter_sale_items",
+  "counter_sales",
   "delivery_events",
   "devices",
   "document_batches",
@@ -35,6 +37,7 @@ const TENANT_TABLES = [
   "service_days",
   "staff_users",
   "students",
+  "topups",
   "wallet_entries",
   "wallets",
 ];
