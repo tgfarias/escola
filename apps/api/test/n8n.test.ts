@@ -44,9 +44,10 @@ const FAIL_PHONE = "5511900000999";
 const THROW_PHONE = "5511900000998";
 
 /** Executa um Code node como o n8n: `this.helpers`, `$env`, `$input`, `$getWorkflowStaticData`, `require`. */
-function harness(onlySchool: string) {
+function harness(onlySchool: string, extraDue: Record<string, unknown>[] = []) {
   const app = buildApp();
   const whatsapp: Sent[] = [];
+  const calls: string[] = [];
   const helpers = {
     async httpRequest(o: { method: string; url: string; headers: Record<string, string>; body?: string }) {
       if (o.url.startsWith("https://graph.facebook.com/")) {
@@ -62,11 +63,12 @@ function harness(onlySchool: string) {
         return { statusCode: 200, body: JSON.stringify({ messages: [{ id: `wamid.${whatsapp.length}` }] }), headers: {} };
       }
       const path = o.url.slice(ENV.APP_LANCHE_API_URL.length);
+      calls.push(`${o.method} ${path}`);
       const res = await app.inject({ method: o.method as "GET" | "POST", url: path, headers: o.headers, ...(o.body ? { payload: o.body } : {}) });
       let body = res.body;
       // Agenda compartilhada entre arquivos de teste: o fluxo só enxerga a escola deste teste.
       if (path === "/internal/v1/schedule/due" && res.statusCode === 200) {
-        body = JSON.stringify({ due: res.json().due.filter((d: { school_id: string }) => d.school_id === onlySchool) });
+        body = JSON.stringify({ due: [...res.json().due.filter((d: { school_id: string }) => d.school_id === onlySchool), ...extraDue] });
       }
       return { statusCode: res.statusCode, body, headers: res.headers };
     },
@@ -80,7 +82,7 @@ function harness(onlySchool: string) {
     const fn = new AsyncFunction("$env", "$input", "$getWorkflowStaticData", "require", jsCode);
     return (await fn.call(ctx, opts.env ?? ENV, { first: () => opts.input, all: () => [opts.input] }, () => staticData, require_)) as { json: Record<string, unknown> }[];
   }
-  return { run, whatsapp };
+  return { run, whatsapp, calls };
 }
 
 describe("n8n workflows", () => {
@@ -141,6 +143,18 @@ describe("n8n workflows", () => {
     expect(out).toEqual([{ json: expect.objectContaining({ action: "send_debt_notices", school_id: schoolId, ok: true, enqueued: 1 }) }]);
     expect(h.whatsapp).toEqual([]); // a mensagem sai do evento, pelo fluxo de eventos
     expect(await h.run(code("schedule.json", "Run due actions"))).toEqual([{ json: { idle: true } }]);
+  });
+
+  it("refuses an unknown action instead of sending reminders", async () => {
+    const schoolId = await createSchool();
+    await seedFamily(schoolId, ["Léo"]);
+    const h = harness(schoolId, [{ action: "reconcile_topups", school_id: schoolId, service_date: "2031-09-03", overdue: false }]);
+    const out = await h.run(code("schedule.json", "Run due actions"));
+    expect(out).toEqual([
+      { json: { action: "reconcile_topups", school_id: schoolId, service_date: "2031-09-03", ok: false, error: "unknown_action" } },
+    ]);
+    expect(h.calls).toEqual(["GET /internal/v1/schedule/due"]);
+    expect(h.whatsapp).toEqual([]);
   });
 
   it("records a failed delivery when WhatsApp rejects the number", async () => {

@@ -181,6 +181,23 @@ mas esse envio roda depois da resposta. Com a limitação de CPU padrão do Clou
 parado até a próxima requisição à instância; o job de 1 min garante a entrega. Com
 `--no-cpu-throttling` no `gcloud run deploy` o envio é imediato, a um custo maior.
 
+## Implantação da F5B (balcão e carteira)
+
+A ordem importa: um fluxo antigo do n8n trata qualquer ação desconhecida da agenda como lembrete, e a API da F5B
+lista `send_debt_notices` a partir das 09:00. Implante nesta ordem:
+
+1. **Reimporte os fluxos do n8n** (`n8n/workflows/schedule.json` e `events.json`, gerados por `pnpm n8n:build`),
+   aprove os três modelos novos do WhatsApp e configure no n8n as variáveis:
+   - `WA_TEMPLATE_DEBT_NOTICE` (aviso de débito, `wallet.debt_notice`);
+   - `WA_TEMPLATE_PAYMENT_REQUEST` (link de pagamento pedido pela secretaria, `wallet.payment_requested`);
+   - `WA_TEMPLATE_TOPUP_CONFIRMED` (recarga confirmada, `wallet.topup_confirmed`).
+
+   O fluxo novo só executa as ações que conhece e devolve `unknown_action` para qualquer outra.
+2. **Implante a API**: `pnpm db:migrate` (aplica `0010_counter_wallet.sql` e `0011_counter_wallet_hardening.sql`)
+   e depois o deploy do Cloud Run, como em "API".
+3. **Crie o job `topup-reconcile`** no Cloud Scheduler (comando em "Jobs e n8n"). Sem ele, recargas cujo webhook
+   se perdeu não são creditadas e os Pix vencidos não expiram.
+
 ## Web
 
 ```bash

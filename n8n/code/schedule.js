@@ -47,15 +47,16 @@ async function sendReminders(ctx, a) {
   return { sent, failed };
 }
 
+// Cada ação conhecida tem o seu ramo; uma ação nova (de uma API mais recente que este fluxo) nunca cai em outro ramo.
+const ACTIONS = { send_reminders: sendReminders, close_service_day: closeDay, send_debt_notices: debtNotices };
+
 const due = ensureOk(await api(this, "GET", "/internal/v1/schedule/due"), "schedule").due;
 const out = [];
 for (const a of due) {
   const base = { action: a.action, school_id: a.school_id, service_date: a.service_date };
   try {
-    const result =
-      a.action === "close_service_day" ? await closeDay(this, a)
-      : a.action === "send_debt_notices" ? await debtNotices(this, a)
-      : await sendReminders(this, a);
+    if (!Object.prototype.hasOwnProperty.call(ACTIONS, a.action)) throw new Error("unknown_action");
+    const result = await ACTIONS[a.action](this, a);
     out.push({ json: { ...base, ok: true, ...result } });
   } catch (err) {
     out.push({ json: { ...base, ok: false, error: String((err && err.message) || err).slice(0, 200) } });
