@@ -288,16 +288,18 @@ export async function renderBatch(session: SessionClaims, batchId: string, deps:
 
   const outcomes: Outcome[] = [];
   for (const claim of work.claims) {
-    const row = work.contexts.find((c) => c.id === claim.id)!;
-    const ctx: VariableContext = {
-      schoolName: work.schoolName,
-      student: { firstName: row.studentFirstName, fullName: row.studentFullName, birthDate: row.birthDate, className: row.className },
-      guardian: row.guardianFirstName === null ? null : { firstName: row.guardianFirstName, fullName: row.guardianFullName, cpf: row.cpf },
-      issuedOn: work.batch.issuedOn,
-      fields: work.batch.fields,
-      fieldValues: work.batch.fieldValues,
-    };
     try {
+      // Sem contexto (linha sumiu entre a reserva e a leitura) é falha deste documento, não da rodada.
+      const row = work.contexts.find((c) => c.id === claim.id);
+      if (!row) throw new Error("render context not found");
+      const ctx: VariableContext = {
+        schoolName: work.schoolName,
+        student: { firstName: row.studentFirstName, fullName: row.studentFullName, birthDate: row.birthDate, className: row.className },
+        guardian: row.guardianFirstName === null ? null : { firstName: row.guardianFirstName, fullName: row.guardianFullName, cpf: row.cpf },
+        issuedOn: work.batch.issuedOn,
+        fields: work.batch.fields,
+        fieldValues: work.batch.fieldValues,
+      };
       if (missingVariables(work.batch.bodyMd, ctx).length > 0) throw new Error("data removed after the batch was created");
       const path = documentPath(schoolId, batchId, claim.id);
       let bytes = await render(work.batch.templateName, work.batch.bodyMd, ctx);
@@ -319,6 +321,8 @@ export async function renderBatch(session: SessionClaims, batchId: string, deps:
       if (o.ok) await repo.markRendered(trx, { id: o.id, attempts: o.attempts, storagePath: o.path, sha256: o.sha256 });
       else await repo.markAttemptFailed(trx, o.id, o.attempts);
     }
+    // Dois registros simultâneos: o segundo espera o primeiro confirmar e então enxerga os documentos dele.
+    await repo.batchInfo(trx, batchId, "update");
     await repo.finishIfDone(trx, batchId);
     const [summary] = await repo.batchSummaries(trx, batchId);
     return { status: summary!.status as BatchStatus, counts: countsOf(summary!) };

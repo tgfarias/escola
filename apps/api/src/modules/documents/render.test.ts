@@ -77,6 +77,31 @@ describe("rendering", () => {
     expect(after.find((d) => d.id === d2!.id)).toMatchObject({ status: "failed", attempts: 3 });
   });
 
+  it("ignores a stale worker's result once the document was reclaimed with a higher attempt", async () => {
+    const b = await batchWith([]);
+    // Enquanto o primeiro worker desenha, o arrendamento vence e outro worker reserva de novo (attempts 2).
+    const reclaim = (id: string) =>
+      adminDb().updateTable("documents").set({ status: "rendering", attempts: 2, leaseUntil: sql`now() + interval '2 minutes'` }).where("id", "=", id).execute();
+    const stale = async (title: string, body: string, ctx: Parameters<typeof renderDocument>[2]) => {
+      const doc = (await b.docs()).find((d) => d.studentId === (ctx.student.firstName === "Léo" ? b.leo : b.bia))!;
+      await reclaim(doc.id);
+      return renderDocument(title, body, ctx);
+    };
+    const progress = await service.renderBatch(b.session, b.batchId, { render: stale });
+    expect(progress).toEqual({ status: "rendering", counts: { total: 2, pending: 0, rendering: 2, rendered: 0, failed: 0, discarded: 0 } });
+    for (const d of await b.docs()) expect(d).toMatchObject({ status: "rendering", attempts: 2, storagePath: null, sha256: null, renderedAt: null });
+
+    const other = await batchWith([]);
+    const failing = async (_t: string, _b: string, ctx: Parameters<typeof renderDocument>[2]) => {
+      const doc = (await other.docs()).find((d) => d.studentId === (ctx.student.firstName === "Léo" ? other.leo : other.bia))!;
+      await reclaim(doc.id);
+      throw new Error("x");
+    };
+    await service.renderBatch(other.session, other.batchId, { render: failing });
+    for (const d of await other.docs()) expect(d).toMatchObject({ status: "rendering", attempts: 2 });
+    expect((await other.docs()).every((d) => d.leaseUntil !== null)).toBe(true);
+  });
+
   it("keeps the stored object when one already exists and records the hash of its bytes", async () => {
     const b = await batchWith([]);
     const [d1] = await b.docs();
