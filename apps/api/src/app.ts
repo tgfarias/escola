@@ -7,6 +7,7 @@ import { authRoutes } from "./modules/auth/routes";
 import { catalogRoutes } from "./modules/catalog/routes";
 import { loadActiveKitchenDevice, loadActiveStaff } from "./modules/auth/service";
 import { kdsRoutes } from "./modules/kds/routes";
+import { documentRoutes } from "./modules/documents/routes";
 import { internalRoutes } from "./modules/internal/routes";
 import { ordersRoutes } from "./modules/orders/routes";
 import { serviceDayRoutes } from "./modules/serviceDays/routes";
@@ -202,5 +203,6 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(webhookRoutes);
   app.register(jobRoutes);
   app.register(kdsRoutes);
+  app.register(documentRoutes);
   return app;
 }
