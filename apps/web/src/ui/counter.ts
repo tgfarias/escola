@@ -1,4 +1,4 @@
-import type { CounterRosterResponse } from "@app-lanche/contracts";
+import { CounterSaleItems, Uuid, type CounterRosterResponse } from "@app-lanche/contracts";
 
 /** Regras do lançamento no balcão (tablet e admin). Só para a tela: preço e total valem os do servidor (regra 7). */
 export type RosterItem = CounterRosterResponse["items"][number];
@@ -67,4 +67,21 @@ export function rosterRows(res: CounterRosterResponse, pending: { kind: string; 
     guardianFirstName: s.guardian?.firstName ?? null,
     balanceCents: s.guardian ? s.guardian.balanceCents + pendingDelta(pending, s.guardian.id) : 0,
   }));
+}
+
+/**
+ * Lançamento dentro dos limites do contrato (1–10 itens distintos, quantidade 1–10, ids UUID) e com preços inteiros
+ * positivos. Um lançamento inválido nunca entra na outbox: o servidor o recusaria com 400 e a sincronização pararia.
+ */
+export function isValidSale(studentId: string, lines: SaleLine[]): boolean {
+  return (
+    Uuid.safeParse(studentId).success &&
+    CounterSaleItems.safeParse(lines.map(({ menuItemId, qty }) => ({ menuItemId, qty }))).success &&
+    lines.every((l) => Number.isSafeInteger(l.unitPriceCents) && l.unitPriceCents > 0)
+  );
+}
+
+/** Estornos que já podem ir ao servidor: o lançamento deles não está mais na outbox (foi aceito ou recusado). */
+export function voidsReadyToSend<T extends { saleId: string }>(voids: T[], pendingSaleIds: Set<string>): T[] {
+  return voids.filter((v) => !pendingSaleIds.has(v.saleId));
 }

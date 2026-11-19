@@ -4,13 +4,15 @@ import "../../theme/styles";
 import { useThemedDocument } from "../../theme/useThemedDocument";
 import { KdsBoard } from "./KdsBoard";
 import { KdsPair } from "./KdsPair";
-import { localDate } from "./state";
 import * as sync from "./sync";
+import { useToday } from "./useToday";
 
 export default function KdsApp() {
   useThemedDocument();
   const [params] = useSearchParams();
-  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : localDate(new Date());
+  // Sem ?date=, o quadro e o balcão seguem o dia local: um tablet ligado à noite passa para o novo dia sozinho.
+  const today = useToday();
+  const serviceDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get("date") ?? "") ? params.get("date")! : today;
   const [paired, setPaired] = useState<boolean | null>(null);
   const [authLost, setAuthLost] = useState(false);
   useEffect(() => {

@@ -5,6 +5,7 @@ import { formatCents } from "../../ui/money";
 import { CounterView } from "./CounterView";
 import { CounterSaleRefused, kdsDb, recordCounterSale, ROSTER_ITEMS, ROSTER_LIMIT, voidCounterSale } from "./db";
 import { useLive } from "./useLive";
+import { useToday } from "./useToday";
 
 /** Aba "Lançar": lê e escreve só no IndexedDB (regra 32); o módulo `sync` envia a outbox. */
 export function CounterPanel({ serviceDate }: { serviceDate: string }) {
@@ -12,6 +13,7 @@ export function CounterPanel({ serviceDate }: { serviceDate: string }) {
   const limit = useLive(async () => Number((await kdsDb.meta.get(ROSTER_LIMIT))?.value ?? "0"), []);
   const items = useLive(async () => JSON.parse((await kdsDb.meta.get(ROSTER_ITEMS))?.value ?? "[]") as RosterItem[], []);
   const sales = useLive(async () => (await kdsDb.counterSales.where("serviceDate").equals(serviceDate).sortBy("occurredAt")).reverse(), [serviceDate]);
+  const today = useToday();
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,6 +43,7 @@ export function CounterPanel({ serviceDate }: { serviceDate: string }) {
         items={items}
         limitCents={limit}
         sales={sales}
+        today={today}
         onSell={async (studentId, lines) => {
           try {
             await recordCounterSale({ serviceDate, studentId, lines });

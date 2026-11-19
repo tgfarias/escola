@@ -26,7 +26,7 @@ const SALES: CounterSaleRow[] = [
 function setup(overrides: Partial<Parameters<typeof CounterView>[0]> = {}) {
   const onSell = vi.fn(async () => undefined);
   const onUndo = vi.fn(async () => undefined);
-  render(<CounterView roster={ROSTER} items={ITEMS} limitCents={5000} sales={SALES} onSell={onSell} onUndo={onUndo} {...overrides} />);
+  render(<CounterView roster={ROSTER} items={ITEMS} limitCents={5000} sales={SALES} today="2031-11-05" onSell={onSell} onUndo={onUndo} {...overrides} />);
   return { onSell, onUndo };
 }
 
@@ -71,5 +71,11 @@ describe("CounterView", () => {
     const rejected = screen.getByTestId("kds-counter-sale-v2");
     expect(within(rejected).getByText("recusado")).toBeTruthy();
     expect(within(rejected).queryByTestId("kds-counter-undo-v2")).toBeNull();
+  });
+
+  it("hides the undo of a sale from an earlier day", () => {
+    setup({ today: "2031-11-06" });
+    expect(screen.getByTestId("kds-counter-sale-v1")).toBeTruthy();
+    expect(screen.queryByTestId("kds-counter-undo-v1")).toBeNull();
   });
 });

@@ -16,11 +16,13 @@ export type CounterViewProps = {
   items: RosterItem[];
   limitCents: number;
   sales: CounterSaleRow[];
+  /** Dia local de hoje: o servidor recusa estornar lançamento de outro dia, então o "Desfazer" some. */
+  today: string;
   onSell: (studentId: string, lines: SaleLine[]) => Promise<void>;
   onUndo: (saleId: string) => Promise<void>;
 };
 
-export function CounterView({ roster, items, limitCents, sales, onSell, onUndo }: CounterViewProps) {
+export function CounterView({ roster, items, limitCents, sales, today, onSell, onUndo }: CounterViewProps) {
   const [query, setQuery] = useState("");
   const [className, setClassName] = useState<string | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -190,7 +192,7 @@ export function CounterView({ roster, items, limitCents, sales, onSell, onUndo }
                       <StatusBadge tone={s.voided ? "secondary" : STATUS[s.status].tone}>{s.voided ? "estornado" : STATUS[s.status].label}</StatusBadge>
                     </td>
                     <td className="text-end">
-                      {!s.voided && s.status !== "rejected" && (
+                      {!s.voided && s.status !== "rejected" && s.serviceDate === today && (
                         <Button
                           size="sm"
                           outline

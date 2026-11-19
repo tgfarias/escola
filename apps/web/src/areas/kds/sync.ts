@@ -12,6 +12,7 @@ import {
   type CounterVoidOutboxRow,
   type DeliveryOutboxRow,
 } from "./db";
+import { voidsReadyToSend } from "../../ui/counter";
 import { chunk, localDate, shiftDate } from "./state";
 
 const INTERVAL_MS = 15_000;
@@ -112,9 +113,17 @@ async function pushCounterSales(): Promise<void> {
   }
 }
 
-/** Estornos depois dos lançamentos. O servidor responde pelo id do lançamento. */
+/**
+ * Estornos depois dos lançamentos. O servidor responde pelo id do lançamento. Um estorno cujo lançamento ainda está
+ * na outbox (gravado durante esta rodada) espera a próxima: enviado antes do lançamento, seria recusado e o "Desfazer"
+ * se perderia.
+ */
 async function pushCounterVoids(): Promise<void> {
-  const pending = (await kdsDb.outbox.where("kind").equals("counter_void").sortBy("occurredAt")) as CounterVoidOutboxRow[];
+  const pending = await kdsDb.transaction("r", kdsDb.outbox, async () => {
+    const voids = (await kdsDb.outbox.where("kind").equals("counter_void").sortBy("occurredAt")) as CounterVoidOutboxRow[];
+    const sales = new Set((await kdsDb.outbox.where("kind").equals("counter_sale").toArray()).map((s) => s.eventId));
+    return voidsReadyToSend(voids, sales);
+  });
   for (const batch of chunk(pending, 100)) {
     const res = await apiFetch("/api/kds/v1/counter-voids", KdsEventsResponse, {
       method: "POST",

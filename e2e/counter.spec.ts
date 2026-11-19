@@ -171,3 +171,66 @@ test("undoes a counter sale offline and the void leaves the outbox once synced",
   expect(await voids(sale!.id)).toBe(1);
   await context.close();
 });
+
+test("keeps an undo made during a sync round behind its sale", async ({ browser }) => {
+  test.setTimeout(120_000); // até três rodadas de 15 s
+  const code = "KDSE2E45";
+  await query(`UPDATE schools SET debt_limit_cents = 100000 WHERE id = $1`, [SCHOOL_ID]);
+  await query(
+    `INSERT INTO devices (id, school_id, kind, pairing_code_hash, pairing_expires_at) VALUES (gen_random_uuid(), $1, 'kitchen', $2, now() + interval '30 minutes')`,
+    [SCHOOL_ID, createHash("sha256").update(code).digest("hex")],
+  );
+  const [day] = await query<{ date: string }>(`SELECT service_date::text AS date FROM service_days WHERE school_id = $1`, [SCHOOL_ID]);
+  const [bia] = await query<{ id: string }>(`SELECT id FROM students WHERE school_id = $1 AND first_name = 'Bia'`, [SCHOOL_ID]);
+  const [item] = await query<{ id: string }>(`SELECT id FROM menu_items WHERE school_id = $1 AND name = 'Misto quente'`, [SCHOOL_ID]);
+  const sales = () =>
+    query<{ id: string; voided: boolean }>(
+      `SELECT id, voided_at IS NOT NULL AS voided FROM counter_sales WHERE school_id = $1 AND student_id = $2 ORDER BY occurred_at`,
+      [SCHOOL_ID, bia!.id],
+    );
+
+  const context = await browser.newContext({ timezoneId: "America/Sao_Paulo" });
+  const page = await context.newPage();
+  await page.goto(`/kds?date=${day!.date}`);
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+  });
+  await page.getByTestId("kds-pair-code").fill(code);
+  await page.getByTestId("kds-pair-submit").click();
+  await page.getByTestId("kds-tab-counter").click();
+  await expect(page.getByTestId(`kds-counter-student-${bia!.id}`)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("kds-badge")).toHaveText(SYNCED, { timeout: 20_000 });
+
+  // 1. O envio do primeiro lançamento fica preso na rede lenta (a rodada está em andamento).
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let intercepted!: () => void;
+  const sent = new Promise<void>((r) => (intercepted = r));
+  await page.route("**/api/kds/v1/counter-sales", async (route) => {
+    intercepted();
+    await held;
+    await route.continue();
+  });
+  const sell = async () => {
+    await page.getByTestId(`kds-counter-student-${bia!.id}`).click();
+    await page.getByTestId(`kds-counter-item-${item!.id}-plus`).click();
+    await page.getByTestId("kds-counter-submit").click();
+  };
+  await sell();
+  await sent;
+
+  // 2. Durante a rodada, outro lançamento e o "Desfazer" dele (correção de aluno errado).
+  await sell();
+  page.once("dialog", (d) => void d.accept());
+  await page.locator('[data-testid^="kds-counter-undo-"]').first().click();
+  await expect(page.getByTestId("kds-badge")).toContainText("3 pendentes");
+
+  // 3. A rede volta: o estorno espera o lançamento e o desfazer não se perde.
+  release(); // as rodadas seguintes passam direto pelo handler
+  await expect(page.getByTestId("kds-badge")).toHaveText(SYNCED, { timeout: 45_000 });
+  const stored = await sales();
+  expect(stored.map((s) => s.voided)).toEqual([false, true]);
+  const [second] = stored.slice(1);
+  await expect(page.getByTestId(`kds-counter-sale-${second!.id}`)).toContainText("estornado");
+  await context.close();
+});

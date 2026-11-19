@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from "dexie";
 import type { CounterRosterResponse, KdsManifestResponse } from "@app-lanche/contracts";
-import { canSell, rosterRows, type RosterRow, type SaleLine } from "../../ui/counter";
+import { canSell, isValidSale, rosterRows, type RosterRow, type SaleLine } from "../../ui/counter";
 import { mergeEvent, nextOccurredAt, type DeliveryEvent, type OrderState } from "./state";
 
 export type ManifestRow = KdsManifestResponse & { fetchedAt: string };
@@ -122,7 +122,7 @@ export async function applyRemoteEvents(serviceDate: string, events: DeliveryEve
 }
 
 export class CounterSaleRefused extends Error {
-  constructor(public readonly reason: "over_limit" | "no_guardian" | "unknown_student" | "empty") {
+  constructor(public readonly reason: "over_limit" | "no_guardian" | "unknown_student" | "empty" | "invalid") {
     super(reason);
   }
 }
@@ -147,6 +147,7 @@ export async function recordCounterSale(input: { serviceDate: string; studentId:
     if (!student) throw new CounterSaleRefused("unknown_student");
     if (!student.guardianId) throw new CounterSaleRefused("no_guardian");
     if (input.lines.length === 0) throw new CounterSaleRefused("empty");
+    if (!isValidSale(student.studentId, input.lines)) throw new CounterSaleRefused("invalid");
     const totalCents = input.lines.reduce((sum, l) => sum + l.qty * l.unitPriceCents, 0);
     const limit = Number((await kdsDb.meta.get(ROSTER_LIMIT))?.value ?? "0");
     if (!canSell(student.balanceCents, totalCents, limit)) throw new CounterSaleRefused("over_limit");
