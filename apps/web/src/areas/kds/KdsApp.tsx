@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
+import "../../theme/styles";
 import { KdsBoard } from "./KdsBoard";
 import { KdsPair } from "./KdsPair";
 import { localDate } from "./state";

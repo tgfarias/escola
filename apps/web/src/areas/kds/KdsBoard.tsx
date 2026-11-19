@@ -1,8 +1,27 @@
-import { useEffect, useState } from "react";
-import { badgeText } from "./badge";
+import { useEffect, useState, type ReactNode } from "react";
+import { Alert, Button, Nav, NavItem, NavLink } from "reactstrap";
+import { KdsShell } from "../../theme/layout/KdsShell";
 import { kdsDb, markOrder } from "./db";
+import { visibleGroups, type StateFilter } from "./filters";
+import { SyncBadge } from "./SyncBadge";
 import * as sync from "./sync";
 import { useLive } from "./useLive";
+
+const STATE_FILTERS: { value: StateFilter; label: string }[] = [
+  { value: "all", label: "Todos" },
+  { value: "pending", label: "Pendentes" },
+  { value: "delivered", label: "Entregues" },
+];
+
+function FilterPill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <NavItem>
+      <NavLink tag="button" type="button" active={active} aria-pressed={active} onClick={onClick}>
+        {children}
+      </NavLink>
+    </NavItem>
+  );
+}
 
 export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onUnpaired: () => void }) {
   const manifest = useLive(() => kdsDb.manifest.get(serviceDate), [serviceDate]);
@@ -13,6 +32,8 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   const [now, setNow] = useState(() => new Date());
   const [message, setMessage] = useState<string | null>(null);
   const [tapFailed, setTapFailed] = useState(false);
+  const [classFilter, setClassFilter] = useState<string | null>(null);
+  const [stateFilter, setStateFilter] = useState<StateFilter>("all");
 
   useEffect(() => sync.start(serviceDate), [serviceDate]);
   useEffect(() => {
@@ -63,8 +84,9 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   }, [pending]);
 
   const delivered = new Set((states ?? []).filter((s) => s.state === "delivered").map((s) => s.orderId));
-  const badge = badgeText(pending ?? 0, lastSyncAt ?? null, now);
   const closed = manifest?.status === "closed";
+  const classes = manifest?.content.by_class.map((c) => c.class) ?? [];
+  const groups = manifest ? visibleGroups(manifest.content.by_class, delivered, { className: classFilter, state: stateFilter }) : [];
 
   async function tap(orderId: string, delivered: boolean) {
     try {
@@ -85,52 +107,96 @@ export function KdsBoard({ serviceDate, onUnpaired }: { serviceDate: string; onU
   }
 
   return (
-    <main>
-      <header>
-        <h1>Cozinha — {serviceDate.split("-").reverse().join("/")}</h1>
-        <p data-testid="kds-badge" style={{ color: badge.stale ? "#b91c1c" : undefined }}>{badge.stale ? `${badge.text} — sem sincronizar` : badge.text}</p>
-      </header>
-      {!manifest && noService && <p data-testid="kds-no-service">Não há serviço de lanche nesta data.</p>}
-      {!manifest && !noService && <p>Carregando o romaneio… Conecte o tablet à internet na primeira vez.</p>}
-      {tapFailed && <p role="alert">Não foi possível registrar a entrega neste tablet. Tente de novo.</p>}
+    <KdsShell
+      title={`Cozinha — ${serviceDate.split("-").reverse().join("/")}`}
+      status={<SyncBadge pending={pending ?? 0} lastSyncAt={lastSyncAt ?? null} now={now} />}
+      actions={
+        <Button data-testid="kds-unpair" color="light" type="button" onClick={() => void unpair()}>
+          Desparear este tablet
+        </Button>
+      }
+    >
+      {message && (
+        <Alert color="danger" fade={false}>
+          {message}
+        </Alert>
+      )}
+      {tapFailed && (
+        <Alert color="danger" fade={false}>
+          Não foi possível registrar a entrega neste tablet. Tente de novo.
+        </Alert>
+      )}
+      {!manifest && noService && (
+        <div className="alert alert-secondary" data-testid="kds-no-service">
+          Não há serviço de lanche nesta data.
+        </div>
+      )}
+      {!manifest && !noService && <div className="alert alert-secondary">Carregando o romaneio… Conecte o tablet à internet na primeira vez.</div>}
       {manifest && !closed && (
-        <p data-testid="kds-waiting">Prévia parcial — aguardando fechamento. As entregas podem ser marcadas depois do fechamento.</p>
+        <div className="alert alert-warning" data-testid="kds-waiting">
+          Prévia parcial — aguardando fechamento. As entregas podem ser marcadas depois do fechamento.
+        </div>
       )}
       {manifest && (
-        <p>
-          {manifest.content.totals.orders} pedidos ·{" "}
-          {manifest.content.totals.by_item.map((i) => `${i.qty}x ${i.item}`).join(" · ")}
-        </p>
+        <>
+          <p className="fs-5 fw-semibold mb-3">
+            {manifest.content.totals.orders} pedidos ·{" "}
+            {manifest.content.totals.by_item.map((i) => `${i.qty}x ${i.item}`).join(" · ")}
+          </p>
+          <div className="kds-filters">
+            <div role="group" aria-label="Filtrar por turma">
+              <Nav pills>
+                <FilterPill active={classFilter === null} onClick={() => setClassFilter(null)}>
+                  Todas as turmas
+                </FilterPill>
+                {classes.map((c) => (
+                  <FilterPill key={c} active={classFilter === c} onClick={() => setClassFilter(c)}>
+                    {c}
+                  </FilterPill>
+                ))}
+              </Nav>
+            </div>
+            <div role="group" aria-label="Filtrar por entrega">
+              <Nav pills>
+                {STATE_FILTERS.map((f) => (
+                  <FilterPill key={f.value} active={stateFilter === f.value} onClick={() => setStateFilter(f.value)}>
+                    {f.label}
+                  </FilterPill>
+                ))}
+              </Nav>
+            </div>
+          </div>
+          {groups.length === 0 && <p>Nenhum pedido neste filtro.</p>}
+          {groups.map((c) => (
+            <section key={c.class}>
+              <h2 className="kds-class-title">{c.class}</h2>
+              <ul className="kds-grid">
+                {c.orders.map((o) => {
+                  const isDelivered = delivered.has(o.order_id);
+                  return (
+                    <li key={o.order_id}>
+                      <button
+                        type="button"
+                        className={isDelivered ? "kds-card is-delivered" : "kds-card"}
+                        data-testid={`kds-order-${o.order_id}`}
+                        aria-pressed={isDelivered}
+                        disabled={!closed}
+                        onClick={() => void tap(o.order_id, !isDelivered)}
+                      >
+                        <span className="kds-card__name">{o.student}</span>
+                        <span className="kds-card__class">{c.class}</span>
+                        <span>{o.items.join(", ")}</span>
+                        {o.restrictions && <span className="badge text-bg-warning">Restrição: {o.restrictions}</span>}
+                        <span className="kds-card__state">{isDelivered ? "✓ Entregue" : "Pendente"}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+        </>
       )}
-      {manifest?.content.by_class.map((c) => (
-        <section key={c.class}>
-          <h2>{c.class}</h2>
-          <ul>
-            {c.orders.map((o) => {
-              const isDelivered = delivered.has(o.order_id);
-              return (
-                <li key={o.order_id}>
-                  <button
-                    type="button"
-                    data-testid={`kds-order-${o.order_id}`}
-                    aria-pressed={isDelivered}
-                    disabled={!closed}
-                    onClick={() => void tap(o.order_id, !isDelivered)}
-                  >
-                    {isDelivered ? "✓ " : ""}
-                    {o.student} — {o.items.join(", ")}
-                    {o.restrictions ? ` (restrição: ${o.restrictions})` : ""}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-      <footer>
-        <button data-testid="kds-unpair" type="button" onClick={() => void unpair()}>Desparear este tablet</button>
-        {message && <p role="alert">{message}</p>}
-      </footer>
-    </main>
+    </KdsShell>
   );
 }
