@@ -11,6 +11,7 @@ const staff: SessionClaims = { kind: "staff", sub: uuidv7(), schoolId: uuidv7(),
 function app() {
   const a = buildApp();
   a.get("/api/v1/g", { config: { auth: { kind: "guardian", scope: "order" } } }, async (req) => req.session);
+  a.get("/api/v1/any", { config: { auth: { kind: "guardian", scope: ["order", "documents"] } } }, async (req) => req.session);
   a.get("/api/admin/v1/s", { config: { auth: { kind: "staff", roles: ["admin"] } } }, async (req) => req.session);
   a.post("/api/v1/login", { config: { auth: "public" } }, async (_req, reply) => {
     await issueSession(reply, guardian, 7200);
@@ -34,6 +35,13 @@ describe("session guard", () => {
     const res = await app().inject({ method: "GET", url: "/api/v1/g", cookies: await cookieFor(guardian) });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject(guardian);
+  });
+
+  it("accepts any scope of a route that lists several", async () => {
+    for (const scope of ["order", "documents"] as const) {
+      const res = await app().inject({ method: "GET", url: "/api/v1/any", cookies: await cookieFor({ ...guardian, scope }) });
+      expect(res.statusCode).toBe(200);
+    }
   });
 
   it("rejects an expired token", async () => {

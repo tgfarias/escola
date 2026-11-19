@@ -43,6 +43,10 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   app.get(B, { config: { auth: OFFICE } }, async (req) => service.listBatches(req.session!));
   app.get(`${B}/:id`, { config: { auth: OFFICE } }, async (req) => service.getBatch(req.session!, IdParams.parse(req.params).id));
 
+  app.post(`${B}/:id/publish`, { config: { auth: OFFICE } }, async (req) =>
+    service.publishBatch(req.session!, idempotencyKeyFrom(req), IdParams.parse(req.params).id),
+  );
+
   // Naturalmente idempotente: repetir só continua de onde parou (spec 8.3).
   app.post(`${B}/:id/render`, { config: { auth: OFFICE } }, async (req) =>
     service.renderBatch(req.session!, IdParams.parse(req.params).id, { log: req.log }),
@@ -53,6 +57,13 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   });
   app.post("/api/admin/v1/documents/:id/download", { config: { auth: OFFICE } }, async (req) =>
     service.staffDownload(req.session!, IdParams.parse(req.params).id),
+  );
+
+  const GUARDIAN: RouteAuth = { kind: "guardian", scope: ["order", "documents"] };
+  app.get("/api/v1/documents", { config: { auth: GUARDIAN } }, async (req) => service.listGuardianDocuments(req.session!));
+  // Sem Idempotency-Key: registrar a abertura é idempotente por constraint (spec 8.4).
+  app.post("/api/v1/documents/:id/download", { config: { auth: GUARDIAN } }, async (req) =>
+    service.guardianDownload(req.session!, IdParams.parse(req.params).id),
   );
 
   // Disco local: o token vai na query string, que o log de requisição descarta.

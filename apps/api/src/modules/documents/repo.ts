@@ -277,3 +277,57 @@ export async function discardFailed(trx: Trx, id: string): Promise<boolean> {
     .executeTakeFirst();
   return res.numUpdatedRows > 0n;
 }
+
+/** Um par (responsável, aluno) por documento pronto e não descartado; documento por aluno vai a todo responsável dele. */
+export async function batchRecipients(trx: Trx, batchId: string) {
+  const { rows } = await sql<{ guardianId: string; phone: string; firstName: string; studentFirstName: string }>`
+    SELECT g.id AS guardian_id, g.phone_e164 AS phone, g.first_name, s.first_name AS student_first_name
+    FROM documents d
+    JOIN students s ON s.id = d.student_id
+    LEFT JOIN guardian_students gs ON d.guardian_id IS NULL AND gs.student_id = d.student_id
+    JOIN guardians g ON g.id = coalesce(d.guardian_id, gs.guardian_id)
+    WHERE d.batch_id = ${batchId} AND d.status = 'rendered' AND d.discarded_at IS NULL
+    ORDER BY g.id, s.first_name`.execute(trx);
+  return rows;
+}
+
+export async function markPublished(trx: Trx, batchId: string): Promise<boolean> {
+  const res = await trx
+    .updateTable("documentBatches")
+    .set({ status: "published", publishedAt: sql`now()` })
+    .where("id", "=", batchId)
+    .where("status", "=", "ready")
+    .executeTakeFirst();
+  return res.numUpdatedRows > 0n;
+}
+
+/** Documentos publicados visíveis ao responsável; com `documentId`, só aquele. */
+export async function guardianDocuments(trx: Trx, guardianId: string, documentId: string | null = null) {
+  const { rows } = await sql<{
+    id: string;
+    title: string;
+    category: string;
+    studentFirstName: string;
+    publishedAt: Date;
+    viewed: boolean;
+    storagePath: string;
+    batchId: string;
+  }>`
+    SELECT d.id, t.name AS title, t.category, s.first_name AS student_first_name, b.published_at, d.storage_path, d.batch_id,
+      EXISTS (SELECT 1 FROM document_views v WHERE v.document_id = d.id AND v.guardian_id = ${guardianId}) AS viewed
+    FROM documents d
+    JOIN document_batches b ON b.id = d.batch_id
+    JOIN document_templates t ON t.id = b.template_id
+    JOIN students s ON s.id = d.student_id
+    WHERE b.status = 'published' AND d.status = 'rendered' AND d.discarded_at IS NULL
+      AND (d.guardian_id = ${guardianId}
+           OR (d.guardian_id IS NULL AND EXISTS (
+                SELECT 1 FROM guardian_students gs WHERE gs.guardian_id = ${guardianId} AND gs.student_id = d.student_id)))
+      AND (${documentId}::uuid IS NULL OR d.id = ${documentId}::uuid)
+    ORDER BY b.published_at DESC, s.first_name, d.id`.execute(trx);
+  return rows;
+}
+
+export async function recordView(trx: Trx, row: { id: string; schoolId: string; documentId: string; guardianId: string }): Promise<void> {
+  await trx.insertInto("documentViews").values(row).onConflict((oc) => oc.constraint("document_views_once").doNothing()).execute();
+}

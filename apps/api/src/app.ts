@@ -26,7 +26,7 @@ export type RouteAuth =
   | "internal"
   | "webhook"
   | "job"
-  | { kind: "guardian" | "staff" | "kitchen"; scope?: GuardianScope; roles?: StaffRole[] };
+  | { kind: "guardian" | "staff" | "kitchen"; scope?: GuardianScope | GuardianScope[]; roles?: StaffRole[] };
 
 declare module "fastify" {
   interface FastifyContextConfig {

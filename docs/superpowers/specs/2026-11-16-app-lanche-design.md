@@ -296,6 +296,15 @@ O dispatcher usa a função `list_schools_with_pending_events()` (quinta consult
             "amount_cents": 1800, "wallet_balance_cents": 1800 } }
 ```
 
+Exemplo de `document.published` (um por responsável; só primeiros nomes, nunca CPF ou nome completo):
+
+```json
+{ "id": "0193…", "type": "document.published", "school_id": "0193…",
+  "occurred_at": "2026-11-18T10:15:00-03:00",
+  "data": { "guardian_id": "0193…", "phone": "+5511999990000", "first_name": "Ana",
+            "batch_id": "0193…", "template_name": "Autorização de passeio", "students": ["Bia", "Léo"] } }
+```
+
 | Tipo | Uso no n8n |
 |---|---|
 | `payment.confirmed` | Confirmação do pedido ao responsável |

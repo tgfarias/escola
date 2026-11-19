@@ -110,8 +110,9 @@ export async function authenticate(
   if (!parsed.success) throw new DomainError("unauthenticated");
   const claims = parsed.data;
   if (claims.kind !== auth.kind) throw new DomainError("insufficient_scope");
-  if (claims.kind === "guardian" && auth.scope && claims.scope !== auth.scope) {
-    throw new DomainError("insufficient_scope");
+  if (claims.kind === "guardian" && auth.scope !== undefined) {
+    const allowed: GuardianScope[] = Array.isArray(auth.scope) ? auth.scope : [auth.scope];
+    if (!allowed.includes(claims.scope)) throw new DomainError("insufficient_scope");
   }
   // Staff roles are checked by the caller against the role re-read from the database.
   return claims;

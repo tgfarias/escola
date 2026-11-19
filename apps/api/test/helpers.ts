@@ -264,8 +264,8 @@ export async function dropSeedChallenges(schoolId: string): Promise<void> {
   await adminDb().deleteFrom("otpChallenges").where("schoolId", "=", schoolId).where("codeHash", "=", "seed").execute();
 }
 
-export async function guardianCookie(schoolId: string, guardianId: string): Promise<Record<string, string>> {
-  const token = await signToken("session", { kind: "guardian", sub: guardianId, schoolId, scope: "order" }, 3600);
+export async function guardianCookie(schoolId: string, guardianId: string, scope: "order" | "documents" = "order"): Promise<Record<string, string>> {
+  const token = await signToken("session", { kind: "guardian", sub: guardianId, schoolId, scope }, 3600);
   return { [SESSION_COOKIE]: token };
 }
 

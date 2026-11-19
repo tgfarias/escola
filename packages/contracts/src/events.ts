@@ -44,8 +44,20 @@ export const ServiceDayClosedEvent = z.object({
   }),
 });
 
+export const DocumentPublishedEvent = z.object({
+  type: z.literal("document.published"),
+  data: z.object({
+    guardian_id: z.string().uuid(),
+    phone: z.string(),
+    first_name: z.string(),
+    batch_id: z.string().uuid(),
+    template_name: z.string().min(1),
+    students: z.array(z.string()).min(1),
+  }),
+});
+
 /** Novos tipos de evento entram nesta união. */
-export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent, PaymentConfirmedEvent, PaymentLateCreditedEvent, ServiceDayClosedEvent]);
+export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent, PaymentConfirmedEvent, PaymentLateCreditedEvent, ServiceDayClosedEvent, DocumentPublishedEvent]);
 export type OutboxEvent = z.infer<typeof OutboxEvent>;
 
 export const OutboxEnvelope = z.object({

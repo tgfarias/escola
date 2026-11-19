@@ -9,6 +9,7 @@ import {
   type DocumentCategory,
   type DocumentDownloadResponse,
   type DocumentStatus,
+  type GuardianDocumentListResponse,
   type MissingDataDetails,
   type RenderProgress,
   type Template,
@@ -23,6 +24,7 @@ import { config } from "../../platform/config";
 import { audit } from "../../platform/audit";
 import { DomainError, isUniqueViolation } from "../../platform/errors";
 import { idempotent, requestHash } from "../../platform/idempotency";
+import { enqueueEvent } from "../../platform/outbox";
 import type { SessionClaims } from "../../platform/session";
 import { documentPath, storage, verifyLocalToken, type ObjectStorage } from "../../platform/storage";
 import { TEMPLATE_EXAMPLES, sampleContext } from "./examples";
@@ -362,4 +364,70 @@ export async function readSignedFile(token: string): Promise<Buffer> {
   } catch {
     throw new DomainError("not_found");
   }
+}
+
+export async function publishBatch(session: SessionClaims, key: string, batchId: string): Promise<BatchSummary> {
+  const schoolId = session.schoolId;
+  const hash = requestHash({ route: `POST /api/admin/v1/document-batches/${batchId}/publish`, actorId: session.sub, body: {} });
+  return withTenant(schoolId, async (trx) => {
+    const { response } = await idempotent(trx, { schoolId, key, requestHash: hash }, async () => {
+      const batch = await repo.batchInfo(trx, batchId, "update");
+      if (!batch) throw new DomainError("not_found");
+      const summaryOf = async () => toSummary((await repo.batchSummaries(trx, batchId))[0]!);
+      if (batch.status === "published") return summaryOf();
+      const counts = countsOf((await repo.batchSummaries(trx, batchId))[0]!);
+      const notReady = batch.status !== "ready" || counts.pending + counts.rendering + counts.failed > 0 || counts.rendered === 0;
+      if (notReady) throw new DomainError("document_batch_not_ready");
+      if (!(await repo.markPublished(trx, batchId))) return summaryOf();
+
+      const byGuardian = new Map<string, { phone: string; firstName: string; students: Set<string> }>();
+      for (const r of await repo.batchRecipients(trx, batchId)) {
+        const entry = byGuardian.get(r.guardianId) ?? { phone: r.phone, firstName: r.firstName, students: new Set<string>() };
+        entry.students.add(r.studentFirstName);
+        byGuardian.set(r.guardianId, entry);
+      }
+      for (const [guardianId, g] of byGuardian) {
+        await enqueueEvent(trx, schoolId, {
+          type: "document.published",
+          data: {
+            guardian_id: guardianId,
+            phone: g.phone,
+            first_name: g.firstName,
+            batch_id: batchId,
+            template_name: batch.templateName,
+            students: [...g.students].sort((a, b) => a.localeCompare(b, "pt-BR")),
+          },
+        });
+      }
+      await audit(trx, { schoolId, actorKind: "staff", actorId: session.sub, action: "document_batch.published", detail: { batch_id: batchId, recipients: byGuardian.size } });
+      return summaryOf();
+    });
+    return response;
+  });
+}
+
+export async function listGuardianDocuments(session: SessionClaims): Promise<GuardianDocumentListResponse> {
+  const rows = await withTenant(session.schoolId, (trx) => repo.guardianDocuments(trx, session.sub));
+  return {
+    documents: rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      category: r.category as DocumentCategory,
+      studentFirstName: r.studentFirstName,
+      publishedAt: r.publishedAt.toISOString(),
+      viewed: r.viewed,
+    })),
+  };
+}
+
+/** POST porque registra a primeira abertura (regra 24); repetir não duplica a abertura. */
+export async function guardianDownload(session: SessionClaims, documentId: string, deps: { storage?: ObjectStorage } = {}): Promise<DocumentDownloadResponse> {
+  const path = await withTenant(session.schoolId, async (trx) => {
+    const [doc] = await repo.guardianDocuments(trx, session.sub, documentId);
+    if (!doc) throw new DomainError("not_found");
+    await repo.recordView(trx, { id: uuidv7(), schoolId: session.schoolId, documentId, guardianId: session.sub });
+    await audit(trx, { schoolId: session.schoolId, actorKind: "guardian", actorId: session.sub, action: "document.downloaded", detail: { document_id: documentId, batch_id: doc.batchId } });
+    return doc.storagePath;
+  });
+  return signedDownload(path, deps);
 }
