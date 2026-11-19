@@ -45,8 +45,10 @@ async function state(schoolId: string, checkoutId: string) {
     .selectFrom("walletEntries")
     .select(["kind", "amountCents"])
     .where("schoolId", "=", schoolId)
+    // Entries of one transaction share created_at (now() is the transaction start) and UUIDv7 ids are not
+    // ordered within a millisecond: break ties by kind so the expected order is stable.
     .orderBy("createdAt")
-    .orderBy("id")
+    .orderBy("kind")
     .execute();
   const events = await db
     .selectFrom("outboxEvents")
@@ -98,8 +100,8 @@ describe("confirmPayment", () => {
     expect(s.entries.map((e) => [e.kind, e.amountCents])).toEqual([
       ["cancel_credit", 500],
       ["checkout_hold", -500],
-      ["late_payment_credit", 850],
       ["hold_release", 500],
+      ["late_payment_credit", 850],
     ]);
     expect(s.events).toEqual([
       {
