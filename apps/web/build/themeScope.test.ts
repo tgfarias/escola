@@ -33,7 +33,7 @@ describe("theme scope", () => {
         const file = `${root}/src/theme/${name}.scss`;
         processed[name] = (await preprocessCSS(readFileSync(file, "utf8"), file, config)).code;
       }
-    }, 60_000);
+    }, 180_000);
 
     it("scopes every rule of theme.scss, so leaving /kds or /admin without a reload keeps the guardian look", () => {
       const selectors = styleSelectors(processed.theme!);

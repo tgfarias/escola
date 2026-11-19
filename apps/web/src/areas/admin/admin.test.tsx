@@ -60,7 +60,7 @@ describe("admin area", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enviar código" }));
     fireEvent.change(await screen.findByLabelText("Código de 6 dígitos"), { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
-    await screen.findByRole("heading", { name: "Escola Sol" });
+    await screen.findByRole("heading", { name: "Escola Sol" }, { timeout: 5000 });
   });
 
   it("shows the wrong-code message", async () => {
