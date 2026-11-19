@@ -1,4 +1,4 @@
-import type { AccountListResponse, AccountStatementResponse, SchoolSettings, StatementEntry, WalletAdjustmentRequest, WalletAdjustmentResponse, WalletEntryKind as Kind, WalletResponse } from "@app-lanche/contracts";
+import type { AccountListResponse, AccountStatementResponse, DebtNoticesResponse, PaymentRequestResponse, SchoolSettings, StatementEntry, WalletAdjustmentRequest, WalletAdjustmentResponse, WalletEntryKind as Kind, WalletResponse } from "@app-lanche/contracts";
 import { uuidv7 } from "uuidv7";
 import { withTenant, type Trx } from "../../db/index";
 import { audit } from "../../platform/audit";
@@ -109,6 +109,34 @@ export async function noticeDebtStart(
   if (!(previousBalanceCents >= 0 && balanceCents < 0)) return;
   await repo.markDebtNotice(trx, guardianId);
   await enqueueDebtNotice(trx, schoolId, guardianId, -balanceCents);
+}
+
+const MAX_DUE_CENTS = 1_000_000;
+
+export async function sendDueDebtNotices(schoolId: string): Promise<DebtNoticesResponse> {
+  return withTenant(schoolId, async (trx) => {
+    const due = await repo.claimDueDebtNotices(trx);
+    for (const w of due) await enqueueDebtNotice(trx, schoolId, w.guardianId, Math.min(-w.balanceCents, MAX_DUE_CENTS));
+    return { enqueued: due.length };
+  });
+}
+
+/** Link de pagamento por WhatsApp a pedido da equipe (o n8n pede o magic link de escopo `wallet`). */
+export async function requestPayment(session: SessionClaims, key: string, guardianId: string): Promise<PaymentRequestResponse> {
+  const schoolId = session.schoolId;
+  const hash = requestHash({ route: `POST /api/admin/v1/guardians/${guardianId}/payment-requests`, actorId: session.sub, body: {} });
+  return withTenant(schoolId, async (trx) => {
+    const { response } = await idempotent(trx, { schoolId, key, requestHash: hash }, async () => {
+      if (!(await repo.guardianExists(trx, guardianId))) throw new DomainError("not_found");
+      const balance = await repo.readBalance(trx, guardianId);
+      if (balance >= 0) throw new DomainError("wallet_no_debt");
+      const amountDueCents = Math.min(-balance, MAX_DUE_CENTS);
+      await enqueueDebtNotice(trx, schoolId, guardianId, amountDueCents, "wallet.payment_requested");
+      await audit(trx, { schoolId, actorKind: "staff", actorId: session.sub, action: "wallet.payment_requested", detail: { guardian_id: guardianId } });
+      return { amountDueCents };
+    });
+    return response;
+  });
 }
 
 export async function balanceOf(trx: Trx, guardianId: string): Promise<number> {

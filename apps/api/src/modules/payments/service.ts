@@ -191,16 +191,15 @@ export async function expirePendingPayment(trx: Trx, checkoutId: string): Promis
   await repo.expirePending(trx, checkoutId);
 }
 
-/** Consulta no gateway as cobranças pendentes do dia e confirma as pagas pela mesma confirmPayment. */
-export async function reconcileServiceDay(schoolId: string, serviceDate: string, log: FastifyBaseLogger): Promise<void> {
-  const { pending, school } = await withTenant(schoolId, async (trx) => ({
-    pending: await repo.pendingChargesForDay(trx, serviceDate),
-    school: await repo.schoolPaymentConfig(trx),
-  }));
+type PendingCharge = { id: string; provider: string; providerChargeId: string | null; amountCents: number };
+
+/** Consulta cada cobrança no gateway (fora de transação) e confirma as pagas pela confirmPayment. Devolve quantas confirmou. */
+async function confirmPaidCharges(schoolId: string, pending: PendingCharge[], accountRef: string | null, log: FastifyBaseLogger): Promise<number> {
+  let confirmed = 0;
   for (const p of pending) {
     let charge;
     try {
-      charge = await getProvider(p.provider).getCharge(p.providerChargeId!, school.paymentAccountRef);
+      charge = await getProvider(p.provider).getCharge(p.providerChargeId!, accountRef);
     } catch {
       log.warn({ event: "reconcile_charge_failed", payment_id: p.id }, "reconciliation lookup failed");
       continue;
@@ -211,6 +210,25 @@ export async function reconcileServiceDay(schoolId: string, serviceDate: string,
       continue;
     }
     const paidAt = charge.paidAt;
-    await withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.id, paidAt }));
+    const outcome = await withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: p.id, paidAt }));
+    if (outcome !== "already_processed") confirmed += 1;
   }
+  return confirmed;
+}
+
+/** Consulta no gateway as cobranças pendentes do dia e confirma as pagas pela mesma confirmPayment. */
+export async function reconcileServiceDay(schoolId: string, serviceDate: string, log: FastifyBaseLogger): Promise<void> {
+  const { pending, school } = await withTenant(schoolId, async (trx) => ({
+    pending: await repo.pendingChargesForDay(trx, serviceDate),
+    school: await repo.schoolPaymentConfig(trx),
+  }));
+  await confirmPaidCharges(schoolId, pending, school.paymentAccountRef, log);
+}
+
+export async function reconcileTopupCharges(schoolId: string, log: FastifyBaseLogger): Promise<number> {
+  const { pending, school } = await withTenant(schoolId, async (trx) => ({
+    pending: await repo.pendingTopupCharges(trx),
+    school: await repo.schoolPaymentConfig(trx),
+  }));
+  return confirmPaidCharges(schoolId, pending, school.paymentAccountRef, log);
 }

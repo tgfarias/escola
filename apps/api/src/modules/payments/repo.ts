@@ -129,6 +129,17 @@ export async function expirePending(trx: Trx, checkoutId: string): Promise<void>
   await trx.updateTable("payments").set({ status: "expired" }).where("checkoutId", "=", checkoutId).where("status", "=", "pending").execute();
 }
 
+export async function pendingTopupCharges(trx: Trx) {
+  return trx
+    .selectFrom("payments")
+    .innerJoin("topups", "topups.id", "payments.topupId")
+    .select(["payments.id", "payments.provider", "payments.providerChargeId", "payments.amountCents"])
+    .where("topups.status", "=", "pending_payment")
+    .where("payments.status", "=", "pending")
+    .where("payments.providerChargeId", "is not", null)
+    .execute();
+}
+
 export async function pendingChargesForDay(trx: Trx, serviceDate: string) {
   return trx
     .selectFrom("payments")

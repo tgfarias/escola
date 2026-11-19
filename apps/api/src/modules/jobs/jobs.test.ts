@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../app";
 import * as outbox from "../outbox/service";
 import * as serviceDays from "../serviceDays/service";
+import * as topups from "../topups/service";
 
 const TOKEN = "test-jobs-token-with-at-least-32-chars";
 
@@ -22,6 +23,13 @@ describe("Cloud Scheduler job routes", () => {
     const res = await buildApp().inject({ method: "POST", url: "/jobs/v1/service-days/safety-close", headers: { "x-job-token": TOKEN } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ closed: 1, failed: 0 });
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("reconciles top-ups with the job token", async () => {
+    const spy = vi.spyOn(topups, "reconcileDue").mockResolvedValue({ schools: 1, confirmed: 2, expired: 0, failed: 0 });
+    const res = await buildApp().inject({ method: "POST", url: "/jobs/v1/topups/reconcile", headers: { "x-job-token": TOKEN } });
+    expect(res.json()).toEqual({ schools: 1, confirmed: 2, expired: 0, failed: 0 });
     expect(spy).toHaveBeenCalledOnce();
   });
 

@@ -161,7 +161,8 @@ Variáveis novas (todas via `--set-secrets`, como as demais):
 Cloud Scheduler (região `southamerica-east1`, fuso `America/Sao_Paulo`), alvo HTTP na URL do Cloud Run (não a do Hosting), método `POST`, cabeçalho `X-Job-Token: <JOBS_TOKEN>`:
 
 - `outbox-dispatch`: `* * * * *` para `/jobs/v1/outbox/dispatch`;
-- `safety-close`: `*/5 * * * *` para `/jobs/v1/service-days/safety-close`.
+- `safety-close`: `*/5 * * * *` para `/jobs/v1/service-days/safety-close`;
+- `topup-reconcile`: `*/5 * * * *` para `/jobs/v1/topups/reconcile` (confirma recargas pagas e expira Pix vencidos; spec F5B).
 
 ```bash
 gcloud scheduler jobs create http outbox-dispatch --schedule="* * * * *" \
@@ -169,6 +170,9 @@ gcloud scheduler jobs create http outbox-dispatch --schedule="* * * * *" \
   --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
 gcloud scheduler jobs create http safety-close --schedule="*/5 * * * *" \
   --uri="$RUN_URL/jobs/v1/service-days/safety-close" --http-method=POST \
+  --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
+gcloud scheduler jobs create http topup-reconcile --schedule="*/5 * * * *" \
+  --uri="$RUN_URL/jobs/v1/topups/reconcile" --http-method=POST \
   --headers="X-Job-Token=$JOBS_TOKEN" --location=southamerica-east1 --time-zone=America/Sao_Paulo
 ```
 

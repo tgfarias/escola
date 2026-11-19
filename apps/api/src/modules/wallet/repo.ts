@@ -87,6 +87,15 @@ export async function lockWallets(trx: Trx, guardianIds: string[]): Promise<void
   await trx.selectFrom("wallets").select("id").where("guardianId", "in", guardianIds).orderBy("guardianId").forUpdate().execute();
 }
 
+/** Marca o aviso das carteiras negativas sem aviso há 3 dias (relógio do banco) e devolve quais eram. */
+export async function claimDueDebtNotices(trx: Trx) {
+  const { rows } = await sql<{ guardianId: string; balanceCents: number }>`
+    UPDATE wallets SET debt_notice_at = now()
+    WHERE balance_cents < 0 AND (debt_notice_at IS NULL OR debt_notice_at <= now() - interval '3 days')
+    RETURNING guardian_id, balance_cents`.execute(trx);
+  return rows;
+}
+
 export async function markDebtNotice(trx: Trx, guardianId: string): Promise<void> {
   await trx.updateTable("wallets").set({ debtNoticeAt: sql<Date>`now()` }).where("guardianId", "=", guardianId).execute();
 }

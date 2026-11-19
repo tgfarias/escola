@@ -53,7 +53,7 @@ export async function kitchenPhone(trx: Trx): Promise<string | null> {
 export async function listDueActions() {
   // getDb() só para a chamada da função SECURITY DEFINER; todo o resto usa withTenant.
   const { rows } = await sql<{
-    action: "send_reminders" | "close_service_day";
+    action: "send_reminders" | "close_service_day" | "send_debt_notices" | "reconcile_topups";
     schoolId: string;
     serviceDate: string;
     overdue: boolean;

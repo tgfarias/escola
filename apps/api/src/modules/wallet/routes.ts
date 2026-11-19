@@ -18,6 +18,10 @@ export async function walletRoutes(app: FastifyInstance): Promise<void> {
     service.adjustBalance(req.session!, idempotencyKeyFrom(req), GuardianParams.parse(req.params).guardianId, WalletAdjustmentRequest.parse(req.body)),
   );
 
+  app.post("/api/admin/v1/guardians/:guardianId/payment-requests", { config: { auth: ACCOUNTS } }, async (req) =>
+    service.requestPayment(req.session!, idempotencyKeyFrom(req), GuardianParams.parse(req.params).guardianId),
+  );
+
   app.get("/api/admin/v1/accounts", { config: { auth: ACCOUNTS } }, async (req) => service.listAccounts(req.session!));
 
   app.get("/api/admin/v1/guardians/:guardianId/statement", { config: { auth: ACCOUNTS } }, async (req) =>

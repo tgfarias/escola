@@ -95,7 +95,7 @@ export async function kdsManifest(schoolId: string, serviceDate: string): Promis
 }
 
 export type DueAction = {
-  action: "send_reminders" | "close_service_day";
+  action: "send_reminders" | "close_service_day" | "send_debt_notices" | "reconcile_topups";
   schoolId: string;
   serviceDate: string;
   overdue: boolean;

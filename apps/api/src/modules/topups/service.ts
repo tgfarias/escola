@@ -1,4 +1,4 @@
-import type { GuardianTopupRequest, StaffTopupRequest, TopupStatus, TopupView } from "@app-lanche/contracts";
+import type { GuardianTopupRequest, StaffTopupRequest, TopupReconcileResponse, TopupStatus, TopupView } from "@app-lanche/contracts";
 import type { FastifyBaseLogger } from "fastify";
 import { uuidv7 } from "uuidv7";
 import { withTenant, type Trx } from "../../db/index";
@@ -7,6 +7,7 @@ import { DomainError } from "../../platform/errors";
 import { idempotent, requestHash } from "../../platform/idempotency";
 import type { SessionClaims } from "../../platform/session";
 import * as payments from "../payments/service";
+import * as serviceDays from "../serviceDays/service";
 import * as wallet from "../wallet/service";
 import * as repo from "./repo";
 
@@ -125,4 +126,34 @@ export async function expireTopup(trx: Trx, topupId: string): Promise<boolean> {
   if (!(await repo.expireTopup(trx, topupId))) return false;
   await payments.expireTopupPayment(trx, topupId);
   return true;
+}
+
+/** Confirma recargas pagas (gateway) e expira as que venceram. */
+export async function reconcileTopups(schoolId: string, log: FastifyBaseLogger): Promise<{ confirmed: number; expired: number }> {
+  const confirmed = await payments.reconcileTopupCharges(schoolId, log);
+  const expired = await withTenant(schoolId, async (trx) => {
+    let n = 0;
+    for (const id of await repo.overdueTopupIds(trx)) if (await expireTopup(trx, id)) n += 1;
+    return n;
+  });
+  return { confirmed, expired };
+}
+
+/** Job do Cloud Scheduler: escolas com recarga pendente vêm da agenda (list_due_actions); `schoolIds` restringe (testes). */
+export async function reconcileDue(opts: { log: FastifyBaseLogger; schoolIds?: string[] }): Promise<TopupReconcileResponse> {
+  const due = (await serviceDays.listDueActions()).filter(
+    (d) => d.action === "reconcile_topups" && (!opts.schoolIds || opts.schoolIds.includes(d.schoolId)),
+  );
+  const result = { schools: due.length, confirmed: 0, expired: 0, failed: 0 };
+  for (const d of due) {
+    try {
+      const r = await reconcileTopups(d.schoolId, opts.log);
+      result.confirmed += r.confirmed;
+      result.expired += r.expired;
+    } catch (err) {
+      result.failed += 1;
+      opts.log.error({ school_id: d.schoolId, err_name: err instanceof Error ? err.name : "UnknownError" }, "top-up reconciliation failed");
+    }
+  }
+  return result;
 }
