@@ -12,12 +12,18 @@ export function entryStylesheets(html: string): string[] {
     .filter((href): href is string => href !== undefined);
 }
 
-/** Problemas: marcador do tema numa folha de entrada, ou tema ausente de todo o build. `cssFiles` usa caminhos relativos a dist. */
+/** Comentário legal ("/*!") do topo de theme.scss: o minificador o mantém, e o build confere. */
+export const THEME_LICENSE_NOTICE = "ArchitectUI (MIT)";
+
+/** Problemas: marcador do tema numa folha de entrada, tema sem o aviso de licença, ou tema ausente de todo o build. `cssFiles` usa caminhos relativos a dist. */
 export function guardianCssProblems(html: string, cssFiles: Record<string, string>): string[] {
   const problems: string[] = [];
   for (const href of entryStylesheets(html)) {
     const css = cssFiles[href.replace(/^\//, "")] ?? "";
     for (const marker of THEME_MARKERS) if (css.includes(marker)) problems.push(`${href} contém ${marker}`);
+  }
+  for (const [file, css] of Object.entries(cssFiles)) {
+    if (css.includes(".app-sidebar") && !css.includes(THEME_LICENSE_NOTICE)) problems.push(`${file} perdeu o aviso de licença do ArchitectUI`);
   }
   if (!Object.values(cssFiles).some((css) => css.includes(".app-sidebar"))) problems.push("o CSS do tema não foi gerado");
   return problems;

@@ -14,6 +14,8 @@ vi.mock("../areas/kds/sync", () => ({
 vi.mock("../areas/kds/KdsApp", () => ({ default: () => <p>tela da cozinha</p> }));
 
 const { App } = await import("./App");
+// O primeiro import() da área admin transforma o chunk inteiro: sob a suíte completa passa de 1 s.
+const LAZY_CHUNK_TIMEOUT = 10_000;
 
 function renderHome() {
   render(
@@ -57,7 +59,7 @@ describe("admin area", () => {
         <App />
       </MemoryRouter>,
     );
-    expect(await screen.findByLabelText("E-mail")).toBeTruthy();
+    expect(await screen.findByLabelText("E-mail", {}, { timeout: LAZY_CHUNK_TIMEOUT })).toBeTruthy();
   });
 });
 
@@ -77,7 +79,7 @@ describe("theme scope", () => {
         <Grab />
       </MemoryRouter>,
     );
-    expect(await screen.findByLabelText("E-mail")).toBeTruthy();
+    expect(await screen.findByLabelText("E-mail", {}, { timeout: LAZY_CHUNK_TIMEOUT })).toBeTruthy();
     expect(document.documentElement.classList.contains("app-themed")).toBe(true);
     await act(async () => navigate("/"));
     const home = await screen.findByRole("heading", { name: "App Lanche" });

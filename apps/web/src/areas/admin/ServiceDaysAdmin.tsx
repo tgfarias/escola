@@ -23,7 +23,8 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ServiceDaysAdmin() {
+/** `onLoaded`: chamado uma vez quando a primeira carga termina (a página inicial rola de novo até a âncora pedida). */
+export function ServiceDaysAdmin({ onLoaded }: { onLoaded?: () => void }) {
   const [days, setDays] = useState<ServiceDay[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [date, setDate] = useState("");
@@ -41,9 +42,11 @@ export function ServiceDaysAdmin() {
   );
 
   useEffect(() => {
-    void reload();
-    apiFetch("/api/admin/v1/menu-items", MenuItemListResponse).then((res) => setMenu(res.items), fail);
-  }, [reload]);
+    void Promise.allSettled([
+      reload(),
+      apiFetch("/api/admin/v1/menu-items", MenuItemListResponse).then((res) => setMenu(res.items), fail),
+    ]).then(() => onLoaded?.());
+  }, [reload, onLoaded]);
 
   function toggleItem(id: string) {
     setSelected((prev) => {

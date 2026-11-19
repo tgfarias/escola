@@ -123,6 +123,14 @@ describe("AppShell", () => {
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
 
+  it("puts the small logo badge before the school name for the phone header", () => {
+    renderShell("/admin");
+    const left = screen.getByText("Escola Sol").closest(".app-header-left")!;
+    const badge = left.querySelector(".app-header__mobile-badge img");
+    expect(badge?.getAttribute("alt")).toBe("");
+    expect(left.firstElementChild?.classList.contains("app-header__mobile-badge")).toBe(true);
+  });
+
   it("shows success as a toast and announces it once, with role=status", async () => {
     renderShell("/admin");
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));

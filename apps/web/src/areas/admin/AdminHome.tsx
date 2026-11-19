@@ -1,5 +1,5 @@
 import { ImportStudentsResponse, StaffMeResponse } from "@app-lanche/contracts";
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Alert, Button, Card, CardBody, CardHeader, Form, FormGroup, Input, Label } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
@@ -12,7 +12,7 @@ import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
 
 export function AdminHome() {
   const navigate = useNavigate();
-  const { hash } = useLocation();
+  const { hash, key } = useLocation();
   const [me, setMe] = useState<StaffMeResponse | null>(null);
   const [csv, setCsv] = useState("");
   const [result, setResult] = useState<ImportStudentsResponse | null>(null);
@@ -30,10 +30,17 @@ export function AdminHome() {
     });
   }, [navigate]);
 
-  // Cardápio, dias e tablets são seções desta página: o menu lateral aponta para elas por âncora.
+  // Cardápio, dias e tablets são seções desta página: o menu lateral aponta para elas por âncora. Rola a cada clique
+  // no menu (key muda mesmo com o hash igual) e de novo quando cada seção termina de carregar e muda de altura.
+  const [sectionsLoaded, setSectionsLoaded] = useState(0);
+  const sectionLoaded = useCallback(() => setSectionsLoaded((n) => n + 1), []);
   useEffect(() => {
     if (me && hash) document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
-  }, [me, hash]);
+  }, [me, hash, key, sectionsLoaded]);
+  // "Início" (sem hash) volta ao topo.
+  useEffect(() => {
+    if (me && !hash) window.scrollTo({ top: 0 });
+  }, [me, hash, key]);
 
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -129,9 +136,9 @@ export function AdminHome() {
       </Card>
       {(me.role === "admin" || me.role === "secretaria") && (
         <>
-          <MenuAdmin />
-          <ServiceDaysAdmin />
-          <KitchenDevicesAdmin />
+          <MenuAdmin onLoaded={sectionLoaded} />
+          <ServiceDaysAdmin onLoaded={sectionLoaded} />
+          <KitchenDevicesAdmin onLoaded={sectionLoaded} />
         </>
       )}
     </>

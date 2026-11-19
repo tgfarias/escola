@@ -62,6 +62,13 @@ body {
   font-weight: 600;
 }
 
+.app-header__mobile-badge {
+  display: none;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+
 .app-user-box {
   margin-right: 1rem;
   line-height: 1.25;
@@ -77,7 +84,15 @@ body {
   opacity: 1;
 }
 
+// Links do menu sem sublinhado; o hover e o foco do teclado sublinham (o anel de foco global continua).
 .vertical-nav-menu .metismenu-container .metismenu-link {
+  text-decoration: none;
+
+  &:hover,
+  &:focus-visible {
+    text-decoration: underline;
+  }
+
   &:hover,
   &.active {
     color: $brand-on-tint;
@@ -89,17 +104,77 @@ body {
   }
 }
 
+// O menu é fixo com 100vh; em páginas longas, a coluna branca segue até o fim da página atrás dele, e o menu rola
+// sozinho abaixo do cabeçalho quando não cabe na tela.
+.fixed-sidebar .app-sidebar .app-sidebar__inner {
+  max-height: calc(100vh - #{$app-header-height});
+  overflow-y: auto;
+}
+
+@include media-breakpoint-up(md) {
+  .fixed-sidebar .app-main::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: $app-sidebar-width;
+    background: $brand-sidebar-bg;
+  }
+
+  .fixed-sidebar.closed-sidebar .app-main::before {
+    width: $app-sidebar-width-collapsed;
+  }
+}
+
+// Seções da página inicial: a âncora do menu para abaixo do cabeçalho fixo.
+#importar,
+#cardapio,
+#dias,
+#tablets {
+  scroll-margin-top: $app-header-height + 16px;
+}
+
 @include media-breakpoint-down(md) {
+  // 390 px: selo, nome da escola cortado com reticências, "Sair" e o botão do menu sempre na tela.
   .app-header .app-header__content {
     visibility: visible;
     opacity: 1;
     position: static;
     width: auto;
-    padding: 0 $layout-spacer-x 0 0;
+    min-width: 0;
+    padding: 0 0 0 1rem;
     overflow: visible;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
+  }
+
+  .app-header .app-header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 0.5rem;
+  }
+
+  .app-header .app-header__school {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: $font-size-base;
+  }
+
+  .app-header .app-header-right {
+    flex: 0 0 auto;
+    margin-left: 0.5rem;
+  }
+
+  .app-header__mobile-badge {
+    display: inline-flex;
+  }
+
+  .app-header .app-header__mobile-menu {
+    padding: 0 1rem 0 0.5rem;
   }
 
   .app-user-box {

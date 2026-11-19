@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
 
@@ -52,6 +52,10 @@ const OPEN_DAY = {
 function renderAdmin(path = "/admin") {
   render(
     <MemoryRouter initialEntries={[path]}>
+      <nav>
+        <Link to="/admin">Início</Link>
+        <Link to="/admin#dias">Ir para dias</Link>
+      </nav>
       <Routes>
         <Route path="/admin" element={<AdminHome />} />
         <Route path="/admin/login" element={<p>login</p>} />
@@ -232,24 +236,55 @@ describe("service days admin", () => {
 });
 
 describe("home sections", () => {
-  it("puts menu, days and tablets at the sidebar anchors and scrolls to the requested one", async () => {
-    const scrolled: string[] = [];
+  function recordScrolls() {
+    const scrolled: { id: string; menuLoaded: boolean }[] = [];
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value(this: HTMLElement) {
-        scrolled.push(this.id);
+        scrolled.push({ id: this.id, menuLoaded: screen.queryByText("Pão — R$ 3,50") !== null });
       },
     });
-    try {
-      mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
-      renderAdmin("/admin#dias");
-      await screen.findByText("Pão — R$ 3,50");
-      expect(document.getElementById("cardapio")).not.toBeNull();
-      expect(document.getElementById("tablets")).not.toBeNull();
-      expect(scrolled).toEqual(["dias"]);
-    } finally {
-      delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
-    }
+    return scrolled;
+  }
+
+  afterEach(() => {
+    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+
+  it("puts menu, days and tablets at the sidebar anchors and scrolls to the requested one, again once the sections load", async () => {
+    const scrolled = recordScrolls();
+    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
+    renderAdmin("/admin#dias");
+    await screen.findByText("Pão — R$ 3,50");
+    expect(document.getElementById("cardapio")).not.toBeNull();
+    expect(document.getElementById("tablets")).not.toBeNull();
+    await waitFor(() => expect(scrolled.some((s) => s.menuLoaded)).toBe(true));
+    expect(new Set(scrolled.map((s) => s.id))).toEqual(new Set(["dias"]));
+  });
+
+  it("scrolls again when the same anchor is clicked twice", async () => {
+    const scrolled = recordScrolls();
+    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
+    renderAdmin("/admin#dias");
+    await screen.findByText("Pão — R$ 3,50");
+    await waitFor(() => expect(scrolled.some((s) => s.menuLoaded)).toBe(true));
+    await new Promise((r) => setTimeout(r, 0));
+    const before = scrolled.length;
+    fireEvent.click(screen.getByRole("link", { name: "Ir para dias" }));
+    await waitFor(() => expect(scrolled.length).toBeGreaterThan(before));
+    expect(scrolled.at(-1)!.id).toBe("dias");
+  });
+
+  it("scrolls back to the top on Início", async () => {
+    recordScrolls();
+    const scrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", scrollTo);
+    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
+    renderAdmin("/admin#dias");
+    await screen.findByText("Pão — R$ 3,50");
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole("link", { name: "Início" }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
   });
 
   it("shows each day's situation and each item's state as badges", async () => {

@@ -6,7 +6,8 @@ import { ApiError, apiFetch } from "../../app/api";
 import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 
-export function KitchenDevicesAdmin() {
+/** `onLoaded`: chamado uma vez quando a primeira carga termina (a página inicial rola de novo até a âncora pedida). */
+export function KitchenDevicesAdmin({ onLoaded }: { onLoaded?: () => void }) {
   const [devices, setDevices] = useState<KitchenDeviceListResponse["devices"]>([]);
   const [code, setCode] = useState<PairingCodeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +20,7 @@ export function KitchenDevicesAdmin() {
     }
   }, []);
 
-  useEffect(() => void load(), [load]);
+  useEffect(() => void load().finally(() => onLoaded?.()), [load, onLoaded]);
 
   async function generate() {
     setError(null);

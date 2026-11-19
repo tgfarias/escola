@@ -43,6 +43,10 @@ export function AppHeader({ schoolName, user, onLogout }: { schoolName?: string;
       </div>
       <div className="app-header__content">
         <div className="app-header-left">
+          {/* No celular o logo do menu some: o selo pequeno fica ao lado do nome da escola. */}
+          <span className="app-logo__badge app-header__mobile-badge">
+            <img src={LOGO_URL} alt="" />
+          </span>
           {schoolName && <span className="app-header__school text-truncate">{schoolName}</span>}
         </div>
         <div className="app-header-right">

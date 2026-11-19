@@ -34,10 +34,11 @@ export default defineConfig({
     guardianCssGuard(),
   ],
   css: {
-    preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: SASS_SILENCED } },
+    // charset: false: sem "@charset" na frente, o comentário legal "/*!" de theme.scss abre a folha e o Lightning CSS o mantém.
+    preprocessorOptions: { scss: { quietDeps: true, silenceDeprecations: SASS_SILENCED, charset: false } },
     // Todo seletor de theme.scss fica sob html.app-themed (build/themeScope.ts).
     postcss: { plugins: [themeScopePlugin()] },
   },
   server: { proxy: { "/api": "http://localhost:8080" } },
-  test: { environment: "jsdom" },
+  test: { environment: "jsdom", setupFiles: ["./src/testSetup.ts"] },
 });
