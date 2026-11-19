@@ -14,9 +14,27 @@ export const WalletEntryKind = z.enum([
 ]);
 export type WalletEntryKind = z.infer<typeof WalletEntryKind>;
 
+/** Linha de extrato: lançamento do balcão traz o aluno, o selo de ultrapassagem e se foi estornado. */
+export const StatementEntry = z.object({
+  id: Uuid,
+  kind: WalletEntryKind,
+  amountCents: z.number().int(),
+  createdAt: IsoDateTime,
+  saleId: Uuid.nullable(),
+  studentFirstName: z.string().nullable(),
+  overLimit: z.boolean(),
+  voided: z.boolean(),
+});
+export type StatementEntry = z.infer<typeof StatementEntry>;
+
+/** GET /api/v1/wallet — `financialFor`: alunos de quem ele é o responsável financeiro; `otherSales`: lanches de alunos
+ * dele lançados na carteira de outro responsável (só informação, sem a carteira do outro). */
 export const WalletResponse = z.object({
-  balanceCents: z.number().int().nonnegative(),
-  entries: z.array(z.object({ id: Uuid, kind: WalletEntryKind, amountCents: z.number().int(), createdAt: IsoDateTime })),
+  balanceCents: z.number().int(),
+  debtLimitCents: z.number().int().nonnegative(),
+  financialFor: z.array(z.string()),
+  entries: z.array(StatementEntry),
+  otherSales: z.array(z.object({ id: Uuid, studentFirstName: z.string(), occurredAt: IsoDateTime, totalCents: Cents, voided: z.boolean() })),
 });
 export type WalletResponse = z.infer<typeof WalletResponse>;
 
@@ -33,19 +51,6 @@ export type WalletAdjustmentRequest = z.infer<typeof WalletAdjustmentRequest>;
 
 export const WalletAdjustmentResponse = z.object({ balanceCents: z.number().int() });
 export type WalletAdjustmentResponse = z.infer<typeof WalletAdjustmentResponse>;
-
-/** Linha de extrato: lançamento do balcão traz o aluno, o selo de ultrapassagem e se foi estornado. */
-export const StatementEntry = z.object({
-  id: Uuid,
-  kind: WalletEntryKind,
-  amountCents: z.number().int(),
-  createdAt: IsoDateTime,
-  saleId: Uuid.nullable(),
-  studentFirstName: z.string().nullable(),
-  overLimit: z.boolean(),
-  voided: z.boolean(),
-});
-export type StatementEntry = z.infer<typeof StatementEntry>;
 
 /** GET /api/admin/v1/accounts — débitos primeiro; `students` = alunos de quem ele é o financeiro. */
 export const AccountListResponse = z.object({

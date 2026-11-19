@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const GuardianScope = z.enum(["order", "documents"]);
+export const GuardianScope = z.enum(["order", "documents", "wallet"]);
 export type GuardianScope = z.infer<typeof GuardianScope>;
 
 export const StaffRole = z.enum(["admin", "secretaria", "cozinha"]);

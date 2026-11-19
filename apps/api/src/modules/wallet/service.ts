@@ -109,12 +109,10 @@ export async function balanceOf(trx: Trx, guardianId: string): Promise<number> {
 export async function getWallet(session: SessionClaims): Promise<WalletResponse> {
   return withTenant(session.schoolId, async (trx) => ({
     balanceCents: await repo.readBalance(trx, session.sub),
-    entries: (await repo.listEntries(trx, session.sub, 50)).map((e) => ({
-      id: e.id,
-      kind: e.kind as WalletEntryKind,
-      amountCents: e.amountCents,
-      createdAt: e.createdAt.toISOString(),
-    })),
+    debtLimitCents: await repo.debtLimit(trx),
+    financialFor: await repo.financialStudentNames(trx, session.sub),
+    entries: toStatement(await repo.statementEntries(trx, session.sub, 50)),
+    otherSales: (await repo.salesChargedToOthers(trx, session.sub)).map((r) => ({ ...r, occurredAt: r.occurredAt.toISOString() })),
   }));
 }
 

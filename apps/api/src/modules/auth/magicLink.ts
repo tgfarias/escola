@@ -8,14 +8,14 @@ import { generateToken, hashToken } from "./tokens";
 
 /**
  * Cria um link reutilizável. A validade vem do banco: `order` até o corte do dia (aberto e antes do corte),
- * `documents` por 7 dias (spec 4.1).
+ * `documents` e `wallet` por 7 dias (spec 4.1).
  */
 export async function createMagicLink(
   trx: Trx,
   input: { schoolId: string; guardianId: string; scope: GuardianScope; serviceDate?: string },
 ): Promise<{ url: string; expiresAt: Date }> {
   if ((input.scope === "order") !== (input.serviceDate !== undefined)) {
-    throw new Error("order links need a service date and document links must not have one");
+    throw new Error("order links need a service date and other links must not have one");
   }
   const token = generateToken();
   const expiresAt = await repo.insertMagicLink(trx, {

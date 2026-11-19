@@ -311,12 +311,34 @@ describe("wallet page", () => {
     mockApi({
       "GET /api/v1/wallet": ok({
         balanceCents: 1350,
-        entries: [{ id: U(9), kind: "late_payment_credit", amountCents: 850, createdAt: "2030-05-10T12:00:00.000Z" }],
+        debtLimitCents: 5000,
+        financialFor: ["Léo"],
+        otherSales: [],
+        entries: [
+          {
+            id: U(9),
+            kind: "late_payment_credit",
+            amountCents: 850,
+            createdAt: "2030-05-10T12:00:00.000Z",
+            saleId: null,
+            studentFirstName: null,
+            overLimit: false,
+            voided: false,
+          },
+        ],
       }),
     });
     renderAt("/carteira");
     await screen.findByText("Saldo: R$ 13,50");
     expect(screen.getByText(/Pagamento após o horário/)).toBeTruthy();
     expect(screen.getByText(/\+R\$ 8,50/)).toBeTruthy();
+  });
+
+  it("shows a negative balance", async () => {
+    mockApi({
+      "GET /api/v1/wallet": ok({ balanceCents: -1800, debtLimitCents: 1000, financialFor: ["Léo"], otherSales: [], entries: [] }),
+    });
+    renderAt("/carteira");
+    await screen.findByText("Saldo: -R$ 18,00");
   });
 });

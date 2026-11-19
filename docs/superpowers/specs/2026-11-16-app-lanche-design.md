@@ -55,7 +55,7 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 2. O backend gera 32 bytes aleatórios (base64url) e grava em `magic_links` apenas o SHA-256, com `school_id`, `guardian_id`, `scope`, `service_date` e `expires_at`.
 3. A URL é `https://<app>/l#<token>`. O token fica no fragmento: não vai para logs de servidor, referrer nem para o crawler de preview do WhatsApp.
 4. O PWA lê o fragmento, apaga-o do histórico (`history.replaceState`) e chama `POST /api/v1/auth/exchange`. Nenhuma rota `GET` altera estado.
-5. O link vale até o corte do `service_date` (escopo `order`) ou 7 dias (escopo `documents`) e é reutilizável. A validade é calculada pelo banco (`cutoff_at` do dia ou `now() + 7 dias`).
+5. O link vale até o corte do `service_date` (escopo `order`) ou 7 dias (escopos `documents` e `wallet`) e é reutilizável. A validade é calculada pelo banco (`cutoff_at` do dia ou `now() + 7 dias`).
 
 ### 4.2 Vínculo ao aparelho e OTP
 
@@ -74,7 +74,7 @@ Gateway de pagamento ──► POST /webhooks/payments/:provider/:school_id (dir
 
 - JWT assinado (HS256, segredo no Secret Manager), validade de 2 h, em cookie `__session` com `HttpOnly; Secure; SameSite=Lax; Path=/`.
 - Claims: `sub` (guardian, staff ou device), `school_id`, `kind` (`guardian` | `staff` | `kitchen`), `scope`.
-- Escopos do responsável: `order` (pedir, pagar, ver saldo) e `documents` (listar e baixar). Pedido de reembolso de saldo e alteração de cadastro exigem OTP recente (10 min).
+- Escopos do responsável: `order` (pedir, pagar, ver saldo), `documents` (listar e baixar) e `wallet` (carteira e Pix de débito/créditos; links dos avisos `wallet.*`, fase F5B). Pedido de reembolso de saldo e alteração de cadastro exigem OTP recente (10 min).
 - Equipe (`staff_users`): login por e-mail + OTP; sessão de 8 h; papéis `admin`, `secretaria`, `cozinha`. A cada requisição de equipe, `active` e o papel são relidos do banco; desativar ou trocar o papel vale na hora.
 - Proteção contra CSRF: rotas com sessão que alteram estado (métodos diferentes de GET/HEAD/OPTIONS) recusam com 403 `origin_rejected` um `Origin` diferente de `APP_BASE_URL`, ou, sem `Origin`, um `Sec-Fetch-Site` diferente de `same-origin`.
 - KDS: pareamento por código de uso único gerado na área admin; o tablet recebe token de dispositivo de 30 dias, escopo `kitchen`, renovado a cada sincronização.
@@ -283,6 +283,8 @@ Idempotente: a repetição devolve o mesmo romaneio. O resumo para o WhatsApp da
 ```json
 { "link_url": "https://app.example/l#Zk3…", "expires_at": "2026-11-17T07:30:00-03:00" }
 ```
+
+`scope` é `order` (com `service_date`), `documents` ou `wallet` (sem `service_date`).
 
 A escola vem sempre do caminho, coberto pela assinatura HMAC; os corpos não aceitam `school_id`.
 

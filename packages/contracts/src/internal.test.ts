@@ -22,6 +22,8 @@ describe("internal contracts", () => {
     expect(() => InternalMagicLinkRequest.parse({ school_id: G, guardian_id: G, scope: "order", service_date: "2026-11-17" })).toThrow();
     expect(() => InternalMagicLinkRequest.parse({ guardian_id: G, scope: "documents", service_date: "2026-11-17" })).toThrow();
     expect(() => InternalMagicLinkRequest.parse({ guardian_id: G, scope: "order" })).toThrow();
+    expect(InternalMagicLinkRequest.parse({ guardian_id: G, scope: "wallet" })).toEqual({ guardian_id: G, scope: "wallet" });
+    expect(() => InternalMagicLinkRequest.parse({ guardian_id: G, scope: "wallet", service_date: "2026-11-17" })).toThrow();
   });
 
   it("accepts the schedule example from spec 6.2", () => {

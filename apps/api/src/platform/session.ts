@@ -11,7 +11,7 @@ export const STAFF_SESSION_TTL = 8 * 60 * 60;
 export const KITCHEN_SESSION_TTL = 30 * 24 * 60 * 60;
 export const KITCHEN_GRACE_SECONDS = 90 * 24 * 60 * 60;
 
-const GuardianScope = z.enum(["order", "documents"]);
+const GuardianScope = z.enum(["order", "documents", "wallet"]);
 const StaffRole = z.enum(["admin", "secretaria", "cozinha"]);
 export type GuardianScope = z.infer<typeof GuardianScope>;
 export type StaffRole = z.infer<typeof StaffRole>;

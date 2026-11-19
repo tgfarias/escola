@@ -5,12 +5,12 @@ import { IsoDate, IsoDateTime, Uuid } from "./common";
 export const InternalMagicLinkRequest = z
   .object({
     guardian_id: Uuid,
-    scope: z.enum(["order", "documents"]),
+    scope: z.enum(["order", "documents", "wallet"]),
     service_date: IsoDate.optional(),
   })
   .strict()
   .refine((b) => (b.scope === "order") === (b.service_date !== undefined), {
-    message: "service_date is required for order links and not allowed for document links",
+    message: "service_date is required for order links and not allowed for document or wallet links",
   });
 export type InternalMagicLinkRequest = z.infer<typeof InternalMagicLinkRequest>;
 

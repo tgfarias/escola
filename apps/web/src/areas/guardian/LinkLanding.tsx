@@ -10,7 +10,7 @@ type State =
   | { step: "otp"; otpToken: string; error?: string; busy: boolean }
   | { step: "error"; message: string };
 
-const DESTINATION: Record<GuardianScope, string> = { order: "/pedido", documents: "/documentos" };
+const DESTINATION: Record<GuardianScope, string> = { order: "/pedido", documents: "/documentos", wallet: "/carteira" };
 
 function codeOf(err: unknown): string {
   return err instanceof ApiError ? err.code : "internal_error";

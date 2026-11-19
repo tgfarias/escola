@@ -122,7 +122,11 @@ describe("wallet routes", () => {
     );
     const cookies = await guardianCookie(schoolId, guardianId);
     const wallet = await buildApp().inject({ method: "GET", url: "/api/v1/wallet", cookies });
-    expect(wallet.json()).toMatchObject({ balanceCents: 1200, entries: [{ kind: "cancel_credit", amountCents: 1200 }] });
+    expect(wallet.json()).toMatchObject({
+      balanceCents: 1200,
+      financialFor: ["Bia", "Léo"],
+      entries: [{ kind: "cancel_credit", amountCents: 1200, studentFirstName: null }],
+    });
     const me = await buildApp().inject({ method: "GET", url: "/api/v1/me", cookies });
     expect(me.json().walletBalanceCents).toBe(1200);
   });

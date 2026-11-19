@@ -50,16 +50,30 @@ export async function readBalance(trx: Trx, guardianId: string): Promise<number>
   return row?.balanceCents ?? 0;
 }
 
-export async function listEntries(trx: Trx, guardianId: string, limit: number) {
-  return trx
-    .selectFrom("walletEntries")
-    .innerJoin("wallets", "wallets.id", "walletEntries.walletId")
-    .select(["walletEntries.id", "walletEntries.kind", "walletEntries.amountCents", "walletEntries.createdAt"])
-    .where("wallets.guardianId", "=", guardianId)
-    .orderBy("walletEntries.createdAt", "desc")
-    .orderBy("walletEntries.id", "desc")
-    .limit(limit)
+export async function financialStudentNames(trx: Trx, guardianId: string): Promise<string[]> {
+  const rows = await trx
+    .selectFrom("guardianStudents")
+    .innerJoin("students", "students.id", "guardianStudents.studentId")
+    .select("students.firstName")
+    .where("guardianStudents.guardianId", "=", guardianId)
+    .where("guardianStudents.financial", "=", true)
+    .where("students.active", "=", true)
+    .orderBy("students.firstName")
     .execute();
+  return rows.map((r) => r.firstName);
+}
+
+/** Lanches dos alunos do responsável lançados na carteira de outro (30 dias). */
+export async function salesChargedToOthers(trx: Trx, guardianId: string) {
+  const { rows } = await sql<{ id: string; studentFirstName: string; occurredAt: Date; totalCents: number; voided: boolean }>`
+    SELECT cs.id, st.first_name AS student_first_name, cs.occurred_at, cs.total_cents, (cs.voided_at IS NOT NULL) AS voided
+    FROM counter_sales cs
+    JOIN guardian_students gs ON gs.student_id = cs.student_id AND gs.guardian_id = ${guardianId}
+    JOIN students st ON st.id = cs.student_id
+    WHERE cs.guardian_id <> ${guardianId} AND cs.occurred_at > now() - interval '30 days'
+    ORDER BY cs.occurred_at DESC, cs.id DESC
+    LIMIT 50`.execute(trx);
+  return rows;
 }
 
 export async function guardianExists(trx: Trx, guardianId: string): Promise<boolean> {

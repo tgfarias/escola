@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { getDb, type Trx } from "../../db/index";
+import type { GuardianScope } from "../../platform/session";
 
 export async function resolveMagicLink(
   tokenHash: string,
@@ -43,7 +44,7 @@ export async function insertMagicLink(
     schoolId: string;
     guardianId: string;
     tokenHash: string;
-    scope: "order" | "documents";
+    scope: GuardianScope;
     serviceDate: string | null;
   },
 ): Promise<Date | undefined> {
@@ -53,7 +54,7 @@ export async function insertMagicLink(
            ${row.serviceDate}::date, e.expires_at
     FROM (
       SELECT CASE
-        WHEN ${row.scope}::text = 'documents' THEN now() + interval '7 days'
+        WHEN ${row.scope}::text IN ('documents', 'wallet') THEN now() + interval '7 days'
         ELSE (SELECT d.cutoff_at FROM service_days d
               WHERE d.service_date = ${row.serviceDate}::date AND d.status = 'open' AND d.cutoff_at > now())
       END AS expires_at
