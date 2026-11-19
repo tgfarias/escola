@@ -31,7 +31,7 @@ export const PaymentLateCreditedEvent = z.object({
     phone: z.string(),
     first_name: z.string(),
     amount_cents: z.number().int().positive(),
-    wallet_balance_cents: z.number().int().nonnegative(),
+    wallet_balance_cents: z.number().int(),
   }),
 });
 
@@ -56,8 +56,27 @@ export const DocumentPublishedEvent = z.object({
   }),
 });
 
+const WalletContact = { guardian_id: z.string().uuid(), phone: z.string(), first_name: z.string() };
+
+/** Saldo passou a negativo (na hora) ou segue negativo (a cada 3 dias). O n8n pede o link de escopo `wallet`. */
+export const WalletDebtNoticeEvent = z.object({
+  type: z.literal("wallet.debt_notice"),
+  data: z.object({ ...WalletContact, amount_due_cents: z.number().int().positive() }),
+});
+
+/** Link de pagamento enviado a pedido da secretaria. */
+export const WalletPaymentRequestedEvent = z.object({
+  type: z.literal("wallet.payment_requested"),
+  data: z.object({ ...WalletContact, amount_due_cents: z.number().int().positive() }),
+});
+
+export const WalletTopupConfirmedEvent = z.object({
+  type: z.literal("wallet.topup_confirmed"),
+  data: z.object({ ...WalletContact, amount_cents: z.number().int().positive(), wallet_balance_cents: z.number().int() }),
+});
+
 /** Novos tipos de evento entram nesta união. */
-export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent, PaymentConfirmedEvent, PaymentLateCreditedEvent, ServiceDayClosedEvent, DocumentPublishedEvent]);
+export const OutboxEvent = z.discriminatedUnion("type", [OtpRequestedEvent, PaymentConfirmedEvent, PaymentLateCreditedEvent, ServiceDayClosedEvent, DocumentPublishedEvent, WalletDebtNoticeEvent, WalletPaymentRequestedEvent, WalletTopupConfirmedEvent]);
 export type OutboxEvent = z.infer<typeof OutboxEvent>;
 
 export const OutboxEnvelope = z.object({

@@ -28,6 +28,7 @@ const STATUS: Record<ErrorCode, number> = {
   document_missing_data: 422,
   document_batch_not_ready: 409,
   document_batch_published: 409,
+  wallet_no_debt: 409,
   internal_error: 500,
 };
 

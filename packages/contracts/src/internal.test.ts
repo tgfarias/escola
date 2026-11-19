@@ -29,9 +29,19 @@ describe("internal contracts", () => {
       due: [
         { action: "send_reminders", school_id: G, service_date: "2026-11-17" },
         { action: "close_service_day", school_id: G, service_date: "2026-11-17" },
+        { action: "send_debt_notices", school_id: G, service_date: "2026-11-17" },
       ],
     };
     expect(ScheduleDueResponse.parse(example)).toEqual(example);
+  });
+
+  it("does not expose the top-up reconciliation to n8n", () => {
+    expect(() => ScheduleDueResponse.parse({ due: [{ action: "reconcile_topups", school_id: G, service_date: "2026-11-17" }] })).toThrow();
+  });
+
+  it("accepts a negative wallet balance in reminders", () => {
+    const r = { guardian_id: G, phone: "+5511999990000", first_name: "Ana", students: ["Léo"], link_url: "https://app.example/l#Zk3", wallet_balance_cents: -1200, cutoff_at: "2026-11-17T07:30:00-03:00", cutoff_local_time: "07:30" };
+    expect(RemindersPrepareResponse.parse({ batch_id: G, next_cursor: null, recipients: [r] }).recipients[0]!.wallet_balance_cents).toBe(-1200);
   });
 
   it("accepts the reminder examples from spec 6.2", () => {

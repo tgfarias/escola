@@ -28,6 +28,7 @@ export const errorCodes = [
   "document_missing_data",
   "document_batch_not_ready",
   "document_batch_published",
+  "wallet_no_debt",
   "internal_error",
 ] as const;
 

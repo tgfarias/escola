@@ -12,6 +12,9 @@ const LABEL: Record<WalletResponse["entries"][number]["kind"], string> = {
   cancel_credit: "Pedido cancelado",
   refund: "Reembolso",
   manual_adjustment: "Ajuste da escola",
+  counter_charge: "Lanche no balcão",
+  counter_void: "Estorno de lanche no balcão",
+  topup_credit: "Recarga por Pix",
 };
 
 export function WalletPage() {

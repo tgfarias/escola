@@ -40,6 +40,24 @@ describe("outbox event contracts", () => {
     expect(OutboxEvent.safeParse({ type: example.type, data: { ...example.data, students: [] } }).success).toBe(false);
   });
 
+  it("accepts the wallet event examples from spec 6.3", () => {
+    const base = { school_id: "0193a3b0-0000-7000-8000-000000000002", occurred_at: "2026-11-19T10:05:00-03:00" };
+    const contact = { guardian_id: "0193a3b0-0000-7000-8000-000000000003", phone: "+5511999990000", first_name: "Ana" };
+    const examples = [
+      { ...base, id: "0193a3b0-0000-7000-8000-000000000021", type: "wallet.debt_notice", data: { ...contact, amount_due_cents: 1350 } },
+      { ...base, id: "0193a3b0-0000-7000-8000-000000000022", type: "wallet.payment_requested", data: { ...contact, amount_due_cents: 1350 } },
+      { ...base, id: "0193a3b0-0000-7000-8000-000000000023", type: "wallet.topup_confirmed", data: { ...contact, amount_cents: 5000, wallet_balance_cents: 3650 } },
+    ];
+    for (const e of examples) {
+      expect(OutboxEnvelope.parse(e)).toEqual(e);
+      expect(OutboxEvent.parse({ type: e.type, data: e.data })).toEqual({ type: e.type, data: e.data });
+    }
+    expect(OutboxEvent.safeParse({ type: "wallet.debt_notice", data: { ...contact, amount_due_cents: 0 } }).success).toBe(false);
+    expect(
+      OutboxEvent.parse({ type: "payment.late_credited", data: { ...contact, amount_cents: 900, wallet_balance_cents: -300 } }).type,
+    ).toBe("payment.late_credited");
+  });
+
   it("rejects a payment.confirmed event without students", () => {
     const result = OutboxEvent.safeParse({
       type: "payment.confirmed",

@@ -20,7 +20,7 @@ export const InternalMagicLinkResponse = z.object({
 });
 export type InternalMagicLinkResponse = z.infer<typeof InternalMagicLinkResponse>;
 
-export const DueActionName = z.enum(["send_reminders", "close_service_day"]);
+export const DueActionName = z.enum(["send_reminders", "close_service_day", "send_debt_notices"]);
 
 /** GET /internal/v1/schedule/due */
 export const ScheduleDueResponse = z.object({
@@ -38,7 +38,7 @@ export const ReminderRecipient = z.object({
   first_name: z.string(),
   students: z.array(z.string()).min(1),
   link_url: z.string().url(),
-  wallet_balance_cents: z.number().int().nonnegative(),
+  wallet_balance_cents: z.number().int(),
   cutoff_at: IsoDateTime,
   cutoff_local_time: z.string().regex(/^\d{2}:\d{2}$/),
 });
@@ -71,3 +71,16 @@ export type JobDispatchResponse = z.infer<typeof JobDispatchResponse>;
 
 export const SafetyCloseResponse = z.object({ closed: z.number().int().nonnegative(), failed: z.number().int().nonnegative() });
 export type SafetyCloseResponse = z.infer<typeof SafetyCloseResponse>;
+
+/** POST /internal/v1/schools/{school_id}/debt-notices — sem corpo. */
+export const DebtNoticesResponse = z.object({ enqueued: z.number().int().nonnegative() });
+export type DebtNoticesResponse = z.infer<typeof DebtNoticesResponse>;
+
+/** POST /jobs/v1/topups/reconcile */
+export const TopupReconcileResponse = z.object({
+  schools: z.number().int().nonnegative(),
+  confirmed: z.number().int().nonnegative(),
+  expired: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+export type TopupReconcileResponse = z.infer<typeof TopupReconcileResponse>;

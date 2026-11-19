@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IsoDate, IsoDateTime, Uuid } from "./common";
+import { CounterSaleItems } from "./counter";
 import { ManifestContent } from "./manifest";
 
 export const PAIRING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -55,3 +56,15 @@ export const KdsChangeEvent = KdsEvent.extend({ deviceId: Uuid });
 export type KdsChangeEvent = z.infer<typeof KdsChangeEvent>;
 export const KdsChangesResponse = z.object({ events: z.array(KdsChangeEvent), cursor: z.string().nullable() });
 export type KdsChangesResponse = z.infer<typeof KdsChangesResponse>;
+
+/** POST /api/kds/v1/counter-sales — `id` gerado no tablet (regra 36). Resposta: KdsEventsResponse com ids de lançamento. */
+export const KdsCounterSale = z.object({ id: Uuid, studentId: Uuid, items: CounterSaleItems, occurredAt: IsoDateTime });
+export type KdsCounterSale = z.infer<typeof KdsCounterSale>;
+export const KdsCounterSalesRequest = z.object({ sales: z.array(KdsCounterSale).min(1).max(100) }).strict();
+export type KdsCounterSalesRequest = z.infer<typeof KdsCounterSalesRequest>;
+
+/** POST /api/kds/v1/counter-voids — idempotente pelo id do lançamento. Resposta: KdsEventsResponse com ids de lançamento. */
+export const KdsCounterVoid = z.object({ saleId: Uuid, occurredAt: IsoDateTime });
+export type KdsCounterVoid = z.infer<typeof KdsCounterVoid>;
+export const KdsCounterVoidsRequest = z.object({ voids: z.array(KdsCounterVoid).min(1).max(100) }).strict();
+export type KdsCounterVoidsRequest = z.infer<typeof KdsCounterVoidsRequest>;

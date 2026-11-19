@@ -185,8 +185,8 @@ Cancelamento pelo responsável: permitido enquanto o dia está `open` e antes de
 
 - Valores em centavos inteiros (`bigint`); nunca ponto flutuante.
 - `wallet_entries` é append-only: sem `UPDATE` nem `DELETE` (revogados do papel da aplicação).
-- Cada lançamento trava a linha de `wallets` (`FOR UPDATE`), insere a entrada e atualiza `balance_cents`. `CHECK (balance_cents >= 0)`.
-- Tipos: `checkout_hold`, `hold_release`, `late_payment_credit`, `cancel_credit`, `refund`, `manual_adjustment`.
+- Cada lançamento trava a linha de `wallets` (`FOR UPDATE`), insere a entrada e atualiza `balance_cents`. O saldo pode ficar negativo até `schools.debt_limit_cents` por lançamentos de balcão (fase F5B, `2026-11-19-balcao-carteira-design.md`); o piso é regra do serviço: débitos de checkout e ajuste manual não deixam o saldo abaixo de zero.
+- Tipos: `checkout_hold`, `hold_release`, `late_payment_credit`, `cancel_credit`, `refund`, `manual_adjustment`, `counter_charge`, `counter_void`, `topup_credit`.
 
 ### 5.8 Gateway
 
@@ -227,9 +227,12 @@ Erros seguem `{ "error": { "code": "…", "message": "…" } }` com códigos est
 ```json
 { "due": [
   { "action": "send_reminders", "school_id": "0193…", "service_date": "2026-11-17" },
-  { "action": "close_service_day", "school_id": "0193…", "service_date": "2026-11-17" }
+  { "action": "close_service_day", "school_id": "0193…", "service_date": "2026-11-17" },
+  { "action": "send_debt_notices", "school_id": "0193…", "service_date": "2026-11-17" }
 ] }
 ```
+
+`send_debt_notices` aparece das 09:00 às 19:00 no fuso da escola quando há carteira negativa sem aviso nos últimos 3 dias; o n8n chama `POST /internal/v1/schools/{school_id}/debt-notices` (sem corpo; resposta `{ "enqueued": 2 }`), que grava um `wallet.debt_notice` por carteira. A ação `reconcile_topups` da mesma função é só do job `/jobs/v1/topups/reconcile` e não aparece nesta rota.
 
 **`POST /internal/v1/schools/{school_id}/reminders/prepare`**
 
@@ -305,6 +308,14 @@ Exemplo de `document.published` (um por responsável; só primeiros nomes, nunca
             "batch_id": "0193…", "template_name": "Autorização de passeio", "students": ["Bia", "Léo"] } }
 ```
 
+Exemplo de `wallet.debt_notice` (só primeiro nome; o link de escopo `wallet` é pedido pelo n8n):
+
+```json
+{ "id": "0193…", "type": "wallet.debt_notice", "school_id": "0193…",
+  "occurred_at": "2026-11-19T10:05:00-03:00",
+  "data": { "guardian_id": "0193…", "phone": "+5511999990000", "first_name": "Ana", "amount_due_cents": 1350 } }
+```
+
 | Tipo | Uso no n8n |
 |---|---|
 | `payment.confirmed` | Confirmação do pedido ao responsável |
@@ -312,6 +323,9 @@ Exemplo de `document.published` (um por responsável; só primeiros nomes, nunca
 | `auth.otp_requested` | Envio do código (WhatsApp ou e-mail, conforme `data.channel`) |
 | `service_day.closed` | Notificação opcional à secretaria |
 | `document.published` | Envio do link do documento, um evento por responsável |
+| `wallet.debt_notice` | Aviso de débito, com link de escopo `wallet` pedido pelo n8n |
+| `wallet.payment_requested` | Link de pagamento pedido pela secretaria (mesmos campos do aviso) |
+| `wallet.topup_confirmed` | Confirmação da recarga, com `amount_cents` e `wallet_balance_cents` |
 
 ## 7. KDS offline-first
 
