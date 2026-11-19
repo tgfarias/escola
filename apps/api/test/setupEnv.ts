@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, inject } from "vitest";
 import { closeDb } from "../src/db/index";
 import { closeAdminDb } from "./helpers";
@@ -11,6 +14,9 @@ process.env.JOBS_TOKEN = "test-jobs-token-with-at-least-32-chars";
 process.env.APP_BASE_URL = "https://app.test";
 process.env.ENABLE_FAKE_PAYMENTS = "true";
 process.env.PAYMENT_WEBHOOK_SECRET_TEST = "test-payment-webhook-secret-with-32-chars";
+process.env.STORAGE_DRIVER = "local";
+process.env.ENABLE_LOCAL_STORAGE = "true";
+process.env.LOCAL_STORAGE_DIR = mkdtempSync(join(tmpdir(), "app-lanche-docs-"));
 
 afterAll(async () => {
   await closeDb();

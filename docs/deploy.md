@@ -48,7 +48,7 @@ gcloud run deploy app-lanche-api --project "$GCP_PROJECT" --region southamerica-
   --image "$IMAGE" \
   --add-cloudsql-instances "$SQL_INSTANCE" \
   --set-secrets DATABASE_URL=DATABASE_URL:latest,INTERNAL_SERVICE_TOKEN=INTERNAL_SERVICE_TOKEN:latest,INTERNAL_HMAC_SECRET=INTERNAL_HMAC_SECRET:latest,SESSION_SECRET=SESSION_SECRET:latest,JOBS_TOKEN=JOBS_TOKEN:latest,N8N_EVENTS_URL=N8N_EVENTS_URL:latest,N8N_HMAC_SECRET=N8N_HMAC_SECRET:latest \
-  --set-env-vars APP_BASE_URL=https://<dominio>,DB_POOL_MAX=5 \
+  --set-env-vars APP_BASE_URL=https://<dominio>,DB_POOL_MAX=5,STORAGE_DRIVER=gcs,DOCUMENTS_BUCKET=$DOCUMENTS_BUCKET \
   --concurrency 80 --max-instances 5 --allow-unauthenticated
 ```
 
@@ -73,7 +73,33 @@ Guarde esse valor no segredo `DATABASE_URL`. `<SQL_INSTANCE>` tem o formato `pro
 A conta de serviço do serviço Cloud Run precisa dos papéis:
 
 - `roles/secretmanager.secretAccessor` (ler os segredos);
-- `roles/cloudsql.client` (conectar ao Cloud SQL).
+- `roles/cloudsql.client` (conectar ao Cloud SQL);
+- `roles/storage.objectCreator` e `roles/storage.objectViewer` no bucket de documentos;
+- `roles/iam.serviceAccountTokenCreator` sobre ela mesma (assinar URLs). Veja "Documentos (Cloud Storage)".
+
+## Documentos (Cloud Storage)
+
+```bash
+DOCUMENTS_BUCKET=<projeto>-app-lanche-documentos
+RUN_SA=<conta de serviço do Cloud Run>
+gcloud storage buckets create "gs://$DOCUMENTS_BUCKET" --project "$GCP_PROJECT" \
+  --location southamerica-east1 --uniform-bucket-level-access --public-access-prevention
+gcloud storage buckets add-iam-policy-binding "gs://$DOCUMENTS_BUCKET" \
+  --member "serviceAccount:$RUN_SA" --role roles/storage.objectCreator
+gcloud storage buckets add-iam-policy-binding "gs://$DOCUMENTS_BUCKET" \
+  --member "serviceAccount:$RUN_SA" --role roles/storage.objectViewer
+# URL assinada V4 sem chave privada: a biblioteca usa a IAM signBlob da própria conta.
+gcloud services enable iamcredentials.googleapis.com --project "$GCP_PROJECT"
+gcloud iam service-accounts add-iam-policy-binding "$RUN_SA" \
+  --member "serviceAccount:$RUN_SA" --role roles/iam.serviceAccountTokenCreator
+```
+
+O bucket é privado e o objeto nunca é sobrescrito (`ifGenerationMatch=0`), por isso a conta não precisa de
+`objectAdmin`. O `gcloud run deploy` da seção "API" inclui `STORAGE_DRIVER=gcs,DOCUMENTS_BUCKET=$DOCUMENTS_BUCKET`
+em `--set-env-vars`. `STORAGE_DRIVER=local` é recusado sem `ENABLE_LOCAL_STORAGE=true` e não deve ser usado em
+produção.
+
+Item de homologação: gerar um lote real e abrir o PDF pela URL assinada.
 
 ## Pagamentos
 

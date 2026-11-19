@@ -32,6 +32,10 @@ const Env = z.object({
   JOBS_TOKEN: secret,
   N8N_EVENTS_URL: z.url().optional(),
   N8N_HMAC_SECRET: secret.optional(),
+  STORAGE_DRIVER: z.enum(["gcs", "local"]).default("gcs"),
+  DOCUMENTS_BUCKET: z.string().min(3).optional(),
+  ENABLE_LOCAL_STORAGE: z.enum(["true", "false"]).default("false"),
+  LOCAL_STORAGE_DIR: z.string().min(1).optional(),
 });
 
 export interface Config {
@@ -47,6 +51,7 @@ export interface Config {
   jobsToken: string;
   n8nEventsUrl: string | null;
   n8nHmacSecret: string | null;
+  storage: { driver: "gcs"; bucket: string } | { driver: "local"; dir: string };
 }
 
 let cached: Config | undefined;
@@ -66,6 +71,12 @@ export function config(): Config {
   if ((env.N8N_EVENTS_URL === undefined) !== (env.N8N_HMAC_SECRET === undefined)) {
     throw new Error("invalid environment: N8N_EVENTS_URL, N8N_HMAC_SECRET");
   }
+  // Disco local só em desenvolvimento, como o provedor fake de pagamento.
+  if (env.STORAGE_DRIVER === "local" && env.ENABLE_LOCAL_STORAGE !== "true") throw new Error("invalid environment: STORAGE_DRIVER");
+  if (env.STORAGE_DRIVER === "local" && !env.LOCAL_STORAGE_DIR) throw new Error("invalid environment: LOCAL_STORAGE_DIR");
+  if (env.STORAGE_DRIVER === "gcs" && !env.DOCUMENTS_BUCKET) throw new Error("invalid environment: DOCUMENTS_BUCKET");
+  const storage: Config["storage"] =
+    env.STORAGE_DRIVER === "local" ? { driver: "local", dir: env.LOCAL_STORAGE_DIR! } : { driver: "gcs", bucket: env.DOCUMENTS_BUCKET! };
   cached = {
     databaseUrl: env.DATABASE_URL,
     internalServiceToken: env.INTERNAL_SERVICE_TOKEN,
@@ -85,6 +96,7 @@ export function config(): Config {
     jobsToken: env.JOBS_TOKEN,
     n8nEventsUrl: env.N8N_EVENTS_URL ?? null,
     n8nHmacSecret: env.N8N_HMAC_SECRET ?? null,
+    storage,
   };
   return cached;
 }

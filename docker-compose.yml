@@ -36,7 +36,12 @@ services:
       APP_BASE_URL: http://localhost:8088
       PAYMENT_PROVIDER: fake
       ENABLE_FAKE_PAYMENTS: "true"
+      STORAGE_DRIVER: local
+      ENABLE_LOCAL_STORAGE: "true"
+      LOCAL_STORAGE_DIR: /data/documents
       PORT: "8080"
+    volumes:
+      - documents:/data/documents
     ports:
       - "8080:8080"
     depends_on:
@@ -52,3 +57,4 @@ services:
 
 volumes:
   dbdata:
+  documents:

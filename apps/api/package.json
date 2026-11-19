@@ -15,6 +15,7 @@
   "dependencies": {
     "@app-lanche/contracts": "workspace:*",
     "@fastify/cookie": "^11.1.5",
+    "@google-cloud/storage": "^9.0.0",
     "csv-parse": "^7.0.3",
     "fastify": "^5.12.8",
     "jose": "^6.2.17",

@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
 const DB = "postgres://app_user:app_user@localhost:5432/app_lanche_e2e";
@@ -26,6 +28,9 @@ export default defineConfig({
         APP_BASE_URL: "http://localhost:4173",
         PAYMENT_PROVIDER: "fake",
         ENABLE_FAKE_PAYMENTS: "true",
+        STORAGE_DRIVER: "local",
+        ENABLE_LOCAL_STORAGE: "true",
+        LOCAL_STORAGE_DIR: join(tmpdir(), "app-lanche-e2e-docs"),
         PORT: "8080",
       },
     },

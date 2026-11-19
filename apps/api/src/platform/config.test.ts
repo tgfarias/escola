@@ -8,6 +8,8 @@ const valid = {
   SESSION_SECRET: "e".repeat(32),
   APP_BASE_URL: "https://app.example.com",
   JOBS_TOKEN: "j".repeat(32),
+  STORAGE_DRIVER: "gcs",
+  DOCUMENTS_BUCKET: "app-lanche-docs-test",
 };
 
 describe("config", () => {
@@ -42,12 +44,29 @@ describe("config", () => {
       jobsToken: "j".repeat(32),
       n8nEventsUrl: null,
       n8nHmacSecret: null,
+      storage: { driver: "gcs", bucket: "app-lanche-docs-test" },
     });
   });
 
   it("requires JOBS_TOKEN with at least 32 characters", () => {
     setEnv({ JOBS_TOKEN: "short" });
     expect(() => config()).toThrow("invalid environment: JOBS_TOKEN");
+  });
+
+  it("requires a bucket for the gcs driver", () => {
+    setEnv({ DOCUMENTS_BUCKET: undefined });
+    expect(() => config()).toThrow("invalid environment: DOCUMENTS_BUCKET");
+  });
+
+  it("refuses the local storage driver unless explicitly enabled", () => {
+    setEnv({ STORAGE_DRIVER: "local", ENABLE_LOCAL_STORAGE: undefined, LOCAL_STORAGE_DIR: "/tmp/docs" });
+    expect(() => config()).toThrow("invalid environment: STORAGE_DRIVER");
+    resetConfigForTests();
+    setEnv({ STORAGE_DRIVER: "local", ENABLE_LOCAL_STORAGE: "true", LOCAL_STORAGE_DIR: undefined });
+    expect(() => config()).toThrow("invalid environment: LOCAL_STORAGE_DIR");
+    resetConfigForTests();
+    setEnv({ STORAGE_DRIVER: "local", ENABLE_LOCAL_STORAGE: "true", LOCAL_STORAGE_DIR: "/tmp/docs" });
+    expect(config().storage).toEqual({ driver: "local", dir: "/tmp/docs" });
   });
 
   it("requires the n8n URL and secret together", () => {
