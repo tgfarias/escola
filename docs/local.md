@@ -34,13 +34,26 @@ preciso abrir um dia na área admin.
 
 O link abre a PWA em http://localhost:8088 (`APP_BASE_URL`). Se ela pedir o código de acesso, `pnpm app:otp` mostra o
 último. Os responsáveis de demonstração usam telefones fictícios: Ana `+5511900000001` (Léo e Bia), Bruno
-`+5511900000002` (Caio) e Carla `+5511900000003` (Duda).
+`+5511900000002` (Caio), Carla `+5511900000003` (Duda) e Diego `+5511900000004` (segundo responsável de Léo, sem ser
+o financeiro).
 
 ### Ver um documento publicado como responsável
 
 1. Na área admin, em Documentos, copie um exemplo, gere o lote para os alunos de demonstração, aguarde a geração e publique.
 2. `pnpm app:link +5511900000001 documents` e abra o link impresso.
 3. Em `/documentos`, toque no documento: o PDF abre pela URL assinada de 5 minutos.
+
+## Balcão, contas e carteira (F5B)
+
+- Saldos de demonstração: Ana +R$ 30,00, Bruno −R$ 15,00 (lanche de Caio lançado pela secretaria), Carla zerada.
+- Admin → "Contas": débitos primeiro, extrato, "Lançar no balcão", estorno, QR de pagamento e "Enviar link de
+  pagamento por WhatsApp" (o evento fica na outbox sem o n8n). O limite de débito (padrão R$ 50,00) fica no cartão
+  "Limite de débito" (só administradores alteram).
+- Tablet: pareie em /kds (código gerado em "Tablets da cozinha") e use a aba "Lançar". Sem rede, o lançamento fica
+  pendente e sai quando a conexão volta.
+- Responsável: `pnpm app:link +5511900000002 wallet` abre a carteira de Bruno com "Pagar débito" e "Adicionar
+  créditos". O provedor `fake` gera um Pix de mentira; sem o webhook configurado a recarga fica pendente e o job
+  `/jobs/v1/topups/reconcile` a expira depois de 60 minutos.
 
 ## Documentos (PDF)
 

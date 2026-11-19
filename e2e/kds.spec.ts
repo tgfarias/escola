@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import pg from "pg";
 import { PAIRING_CODE, SCHOOL_ID } from "./global-setup";
@@ -142,5 +142,66 @@ test("a second tablet sees deliveries made on the first", async ({ browser }) =>
     await expect(page.getByTestId(`kds-order-${o.id}`)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
   }
   await expect(page.getByTestId(`kds-order-${pending!.id}`)).toHaveAttribute("aria-pressed", "false");
+  await context.close();
+});
+
+test("a tablet still on the v1 database keeps and sends its pending deliveries after the upgrade", async ({ browser }) => {
+  // Tablet pareado antes da F5B: IndexedDB na versão 1 do Dexie (versão nativa 10) com uma entrega pendente sem `kind`.
+  const code = "KDSE2E98";
+  await query(
+    `INSERT INTO devices (id, school_id, kind, pairing_code_hash, pairing_expires_at) VALUES (gen_random_uuid(), $1, 'kitchen', $2, now() + interval '30 minutes')`,
+    [SCHOOL_ID, createHash("sha256").update(code).digest("hex")],
+  );
+  const [day] = await query<{ date: string }>(`SELECT service_date::text AS date FROM service_days WHERE school_id = $1`, [SCHOOL_ID]);
+  const [pending] = await query<{ id: string }>(`SELECT id FROM orders WHERE school_id = $1 AND status = 'confirmed'`, [SCHOOL_ID]);
+  const before = await eventIds();
+  const eventId = randomUUID();
+
+  const context = await browser.newContext({ timezoneId: "America/Sao_Paulo" });
+  const page = await context.newPage();
+  // Página vazia na mesma origem (sem o app nem o service worker) para montar o banco antigo antes de o app abri-lo.
+  await page.route("**/e2e-blank", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>blank</title>" }));
+  await page.goto("/e2e-blank");
+  await page.evaluate(
+    async ({ code, eventId, orderId, serviceDate }) => {
+      const res = await fetch("/api/kds/v1/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code }) });
+      if (!res.ok) throw new Error(`pair failed: ${res.status}`);
+      const { deviceId } = (await res.json()) as { deviceId: string };
+      const occurredAt = new Date().toISOString();
+      await new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open("app-lanche-kds", 10);
+        open.onupgradeneeded = () => {
+          const db = open.result;
+          db.createObjectStore("manifest", { keyPath: "serviceDate" });
+          db.createObjectStore("orderState", { keyPath: "orderId" }).createIndex("serviceDate", "serviceDate");
+          const outbox = db.createObjectStore("outbox", { keyPath: "eventId" });
+          outbox.createIndex("occurredAt", "occurredAt");
+          outbox.createIndex("serviceDate", "serviceDate");
+          db.createObjectStore("meta", { keyPath: "key" });
+        };
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction(["orderState", "outbox", "meta"], "readwrite");
+          tx.objectStore("meta").put({ key: "deviceId", value: deviceId });
+          tx.objectStore("orderState").put({ orderId, serviceDate, state: "delivered", occurredAt, eventId });
+          tx.objectStore("outbox").put({ eventId, orderId, type: "delivered", occurredAt, serviceDate });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      });
+    },
+    { code, eventId, orderId: pending!.id, serviceDate: day!.date },
+  );
+
+  // O app abre o banco na versão 2: a entrega antiga vira `kind: "delivery"`, aparece marcada e é enviada uma vez.
+  await page.goto(`/kds?date=${day!.date}`);
+  await expect(page.getByTestId(`kds-order-${pending!.id}`)).toHaveAttribute("aria-pressed", "true", { timeout: 20_000 });
+  await expect(page.getByTestId("kds-badge")).toHaveText(SYNCED, { timeout: 30_000 });
+  expect(await eventIds()).toEqual([...before, eventId].sort());
+  expect((await statusMap())[pending!.id]).toBe("delivered");
   await context.close();
 });

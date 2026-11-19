@@ -18,10 +18,11 @@ const classes = [
   { id: id(0xc1), name: "Infantil 3A" },
   { id: id(0xc2), name: "Infantil 4B" },
 ];
-const guardians = [
+const guardians: { id: string; first: string; full: string | null; cpf: string | null; phone: string }[] = [
   { id: id(0xa1), first: "Ana", full: "Ana Paula Souza", cpf: "52998224725", phone: "+5511900000001" },
   { id: id(0xa2), first: "Bruno", full: "Bruno Lima", cpf: "11144477735", phone: "+5511900000002" },
   { id: id(0xa3), first: "Carla", full: "Carla Alves", cpf: "12345678909", phone: "+5511900000003" },
+  { id: id(0xa4), first: "Diego", full: null, cpf: null, phone: "+5511900000004" },
 ];
 const students = [
   { id: id(0xb1), cls: 0, code: "DEMO-1", first: "Léo", full: "Leonardo Souza", birth: "2021-03-15", guardian: 0 },
@@ -61,15 +62,49 @@ try {
        ON CONFLICT (id) DO UPDATE SET full_name = coalesce(students.full_name, EXCLUDED.full_name), birth_date = coalesce(students.birth_date, EXCLUDED.birth_date)`,
       [s.id, SCHOOL, classes[s.cls]!.id, s.code, s.first, s.full, s.birth],
     );
+    // The first and only guardian of each seeded student is the financial one; the target-less ON CONFLICT also
+    // covers an older database where migration 0010 already marked it.
     await db.query(
-      "INSERT INTO guardian_students (school_id, guardian_id, student_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+      "INSERT INTO guardian_students (school_id, guardian_id, student_id, financial) VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING",
       [SCHOOL, guardians[s.guardian]!.id, s.id],
     );
   }
+  // Diego sees Léo's snacks, without Ana's wallet.
+  await db.query("INSERT INTO guardian_students (school_id, guardian_id, student_id, financial) VALUES ($1, $2, $3, false) ON CONFLICT DO NOTHING", [SCHOOL, guardians[3]!.id, students[0]!.id]);
   for (const m of items) {
     await db.query(
       "INSERT INTO menu_items (id, school_id, name, price_cents) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
       [m.id, SCHOOL, m.name, m.cents],
+    );
+  }
+  // Saldos de demonstração. Cada lançamento entra uma vez (ids fixos + ON CONFLICT) e o saldo só muda se ele entrou,
+  // mantendo saldo = soma dos lançamentos.
+  async function post(entryId: string, guardianId: string, kind: string, amountCents: number, sourceType: string, sourceId: string, note: string | null) {
+    await db.query("INSERT INTO wallets (id, school_id, guardian_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [id(0xd0 + guardians.findIndex((g) => g.id === guardianId)), SCHOOL, guardianId]);
+    const { rowCount } = await db.query(
+      `INSERT INTO wallet_entries (id, school_id, wallet_id, kind, amount_cents, source_type, source_id, note)
+       SELECT $1, $2, w.id, $4, $5, $6, $7, $8 FROM wallets w WHERE w.school_id = $2 AND w.guardian_id = $3
+       ON CONFLICT DO NOTHING`,
+      [entryId, SCHOOL, guardianId, kind, amountCents, sourceType, sourceId, note],
+    );
+    if (rowCount === 1) {
+      await db.query("UPDATE wallets SET balance_cents = balance_cents + $3 WHERE school_id = $1 AND guardian_id = $2", [SCHOOL, guardianId, amountCents]);
+    }
+  }
+  // Ana: R$ 30,00 de crédito.
+  await post(id(0x5a1), guardians[0]!.id, "manual_adjustment", 3000, "adjustment", id(0x5a2), "Saldo de demonstração");
+  // Bruno: lanche de Caio lançado pela secretaria (misto quente + suco), saldo -R$ 15,00.
+  const sale = id(0x5b1);
+  await post(id(0x5b2), guardians[1]!.id, "counter_charge", -1500, "counter_sale", sale, null);
+  await db.query(
+    `INSERT INTO counter_sales (id, school_id, student_id, guardian_id, source, staff_user_id, occurred_at, total_cents, over_limit, wallet_entry_id)
+     VALUES ($1, $2, $3, $4, 'staff', $5, now(), 1500, false, $6) ON CONFLICT DO NOTHING`,
+    [sale, SCHOOL, students[2]!.id, guardians[1]!.id, id(0xf1), id(0x5b2)],
+  );
+  for (const [item, price] of [[items[0]!, 900], [items[1]!, 600]] as const) {
+    await db.query(
+      "INSERT INTO counter_sale_items (school_id, sale_id, menu_item_id, qty, unit_price_cents) VALUES ($1, $2, $3, 1, $4) ON CONFLICT DO NOTHING",
+      [SCHOOL, sale, item.id, price],
     );
   }
   await db.query("COMMIT");

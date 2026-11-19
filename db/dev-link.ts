@@ -1,5 +1,5 @@
 // Local only: prints a guardian magic link for the Docker app (`pnpm app:up`).
-// Usage: pnpm app:link <phone_e164> [order|documents]
+// Usage: pnpm app:link <phone_e164> [order|documents|wallet]
 // An order link is for the next open service day whose cutoff has not passed (create one in the admin area first).
 // It reuses the n8n route (POST /internal/v1/schools/<id>/magic-links) signed like n8n does; no tenant bypass in the API.
 // The guardian lookup uses the admin database user, outside the application, like seed-dev.
@@ -7,9 +7,9 @@ import pg from "pg";
 import { signInternal } from "../apps/api/src/platform/hmac";
 
 const [phone, scopeArg = "documents"] = process.argv.slice(2);
-const scope = scopeArg === "order" || scopeArg === "documents" ? scopeArg : null;
+const scope = scopeArg === "order" || scopeArg === "documents" || scopeArg === "wallet" ? scopeArg : null;
 if (!phone || !/^\+\d{8,15}$/.test(phone) || !scope) {
-  console.error("usage: pnpm app:link <phone_e164> [order|documents]   e.g. pnpm app:link +5511900000001 documents");
+  console.error("usage: pnpm app:link <phone_e164> [order|documents|wallet]   e.g. pnpm app:link +5511900000001 documents");
   process.exit(1);
 }
 

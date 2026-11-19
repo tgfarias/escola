@@ -37,7 +37,7 @@ export default async function globalSetup(): Promise<void> {
         `INSERT INTO students (id, school_id, class_id, external_code, first_name) VALUES (gen_random_uuid(), $1, $2, $3, $4) RETURNING id`,
         [SCHOOL_ID, cls!.id, `E2E-${i}`, name],
       );
-      await db.query(`INSERT INTO guardian_students (school_id, guardian_id, student_id) VALUES ($1, $2, $3)`, [SCHOOL_ID, guardian!.id, student!.id]);
+      await db.query(`INSERT INTO guardian_students (school_id, guardian_id, student_id, financial) VALUES ($1, $2, $3, true)`, [SCHOOL_ID, guardian!.id, student!.id]);
       const { rows: [order] } = await db.query<{ id: string }>(
         `INSERT INTO orders (id, school_id, checkout_id, student_id, service_date, status) VALUES (gen_random_uuid(), $1, $2, $3, $4::date, 'confirmed') RETURNING id`,
         [SCHOOL_ID, checkout!.id, student!.id, day!.date],
