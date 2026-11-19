@@ -94,6 +94,8 @@ export function AdminHome() {
         <>
           <nav>
             <Link to="/admin/alunos">Alunos e responsáveis</Link>
+            {" · "}
+            <Link to="/admin/documentos">Documentos</Link>
           </nav>
           <MenuAdmin />
           <ServiceDaysAdmin />

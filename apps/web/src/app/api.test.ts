@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { ApiError, apiFetch } from "./api";
+import { ApiError, apiFetch, apiFetchBlob } from "./api";
 
 function mockFetch(status: number, body: unknown) {
   const fn = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(body), { status }));
@@ -77,5 +77,18 @@ describe("apiFetch", () => {
     const err = await apiFetch("/api/v1/x", z.object({})).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 502, code: "internal_error" });
+  });
+});
+
+describe("api details and binary bodies", () => {
+  it("exposes the error details", async () => {
+    mockFetch(422, { error: { code: "document_missing_data", message: "x", details: { missing: [] } } });
+    await expect(apiFetch("/api/v1/x", z.object({}))).rejects.toMatchObject({ status: 422, code: "document_missing_data", details: { missing: [] } });
+  });
+
+  it("returns a binary body as a Blob", async () => {
+    mockResponse(new Response("%PDF-1.7", { status: 200, headers: { "content-type": "application/pdf" } }));
+    const blob = await apiFetchBlob("/api/v1/x", { method: "POST", body: {} });
+    expect(await blob.text()).toBe("%PDF-1.7");
   });
 });
