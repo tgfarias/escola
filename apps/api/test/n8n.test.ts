@@ -29,6 +29,7 @@ const ENV = {
   WA_TEMPLATE_OTP: "codigo_acesso",
   WA_TEMPLATE_PAYMENT_CONFIRMED: "pedido_confirmado",
   WA_TEMPLATE_LATE_CREDIT: "credito_atrasado",
+  WA_TEMPLATE_DOCUMENT: "documento_publicado",
 };
 
 type Sent = { to: string; template: string; params: string[]; components: { type: string; sub_type?: string; index?: string; parameters: { text: string }[] }[] };
@@ -171,6 +172,26 @@ describe("n8n workflows", () => {
       school_id: crypto.randomUUID(),
       occurred_at: new Date().toISOString(),
       data,
+    });
+
+    it("sends the document link with a documents-scope magic link from document.published", async () => {
+      const schoolId = await createSchool();
+      const fam = await seedFamily(schoolId, ["Léo", "Bia"]);
+      const data = { guardian_id: fam.guardianId, phone: "+5511999990003", first_name: "Ana", batch_id: crypto.randomUUID(), template_name: "Autorização de passeio", students: ["Bia", "Léo"] };
+      const req = await withN8n(async () => signedEventRequest({ ...envelope(crypto.randomUUID(), "document.published", data), school_id: schoolId }));
+      const h = harness(schoolId);
+      const staticData = {};
+      const input = { json: { headers: req.headers } };
+      const out = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
+      expect(out).toEqual([{ json: { ok: true, type: "document.published", email: null } }]);
+      expect(h.whatsapp).toEqual([
+        expect.objectContaining({ to: "5511999990003", template: "documento_publicado", params: ["Ana", "Autorização de passeio", "Bia e Léo", expect.stringMatching(/^https:\/\/app\.test\/l#/)] }),
+      ]);
+      const links = await adminDb().selectFrom("magicLinks").select(["scope", "serviceDate"]).where("guardianId", "=", fam.guardianId).execute();
+      expect(links).toEqual([{ scope: "documents", serviceDate: null }]);
+      const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
+      expect(dup[0]!.json).toMatchObject({ duplicate: true });
+      expect(h.whatsapp).toHaveLength(1);
     });
 
     it("verifies the dispatcher signature, sends the OTP and deduplicates", async () => {

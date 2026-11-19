@@ -52,6 +52,15 @@ switch (event.type) {
     }
     break;
   }
+  case "document.published": {
+    // Link de escopo `documents` (7 dias) pedido à API; o n8n nunca gera token (spec 4.1). Falha → 500 → nova tentativa.
+    const link = ensureOk(
+      await api(this, "POST", `/internal/v1/schools/${event.school_id}/magic-links`, { guardian_id: d.guardian_id, scope: "documents" }),
+      "magic link",
+    );
+    await send.call(this, d.phone, $env.WA_TEMPLATE_DOCUMENT, [d.first_name, d.template_name, joinNames(d.students), link.link_url]);
+    break;
+  }
   default:
     // Tipos futuros: aceitos sem mensagem.
     break;
