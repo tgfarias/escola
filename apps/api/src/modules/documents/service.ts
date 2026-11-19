@@ -7,19 +7,24 @@ import {
   type BatchSummary,
   type CreateBatchRequest,
   type DocumentCategory,
+  type DocumentDownloadResponse,
   type DocumentStatus,
   type MissingDataDetails,
+  type RenderProgress,
   type Template,
   type TemplateExampleListResponse,
   type TemplateInput,
   type TemplateListResponse,
 } from "@app-lanche/contracts";
+import { createHash } from "node:crypto";
 import { uuidv7 } from "uuidv7";
 import { withTenant, type Trx } from "../../db/index";
+import { config } from "../../platform/config";
 import { audit } from "../../platform/audit";
 import { DomainError, isUniqueViolation } from "../../platform/errors";
 import { idempotent, requestHash } from "../../platform/idempotency";
 import type { SessionClaims } from "../../platform/session";
+import { documentPath, storage, verifyLocalToken, type ObjectStorage } from "../../platform/storage";
 import { TEMPLATE_EXAMPLES, sampleContext } from "./examples";
 import { renderDocument } from "./pdf";
 import * as repo from "./repo";
@@ -248,4 +253,113 @@ export async function getBatch(session: SessionClaims, batchId: string): Promise
       })),
     };
   });
+}
+
+export const RENDER_CHUNK = 10;
+
+export type RenderDeps = {
+  render?: (title: string, bodyMd: string, ctx: VariableContext) => Promise<Buffer>;
+  storage?: ObjectStorage;
+  log?: { warn: (obj: object, msg: string) => void };
+};
+
+type Outcome = { id: string; attempts: number } & ({ ok: true; path: string; sha256: string } | { ok: false });
+
+/**
+ * Uma rodada de renderização (spec 8.3): reserva até 10 documentos, desenha e grava fora da transação e registra.
+ * Fechar a aba pausa; a próxima chamada continua. Naturalmente idempotente.
+ */
+export async function renderBatch(session: SessionClaims, batchId: string, deps: RenderDeps = {}): Promise<RenderProgress> {
+  const render = deps.render ?? renderDocument;
+  const store = deps.storage ?? storage();
+  const schoolId = session.schoolId;
+
+  const work = await withTenant(schoolId, async (trx) => {
+    const batch = await repo.batchInfo(trx, batchId);
+    if (!batch) throw new DomainError("not_found");
+    await repo.failExhausted(trx, batchId);
+    const claims = await repo.claimDocuments(trx, batchId, RENDER_CHUNK);
+    const contexts = claims.length > 0 ? await repo.renderContexts(trx, claims.map((c) => c.id)) : [];
+    const school = await repo.schoolInfo(trx);
+    return { batch, claims, contexts, schoolName: school.name };
+  });
+
+  const outcomes: Outcome[] = [];
+  for (const claim of work.claims) {
+    const row = work.contexts.find((c) => c.id === claim.id)!;
+    const ctx: VariableContext = {
+      schoolName: work.schoolName,
+      student: { firstName: row.studentFirstName, fullName: row.studentFullName, birthDate: row.birthDate, className: row.className },
+      guardian: row.guardianFirstName === null ? null : { firstName: row.guardianFirstName, fullName: row.guardianFullName, cpf: row.cpf },
+      issuedOn: work.batch.issuedOn,
+      fields: work.batch.fields,
+      fieldValues: work.batch.fieldValues,
+    };
+    try {
+      if (missingVariables(work.batch.bodyMd, ctx).length > 0) throw new Error("data removed after the batch was created");
+      const path = documentPath(schoolId, batchId, claim.id);
+      let bytes = await render(work.batch.templateName, work.batch.bodyMd, ctx);
+      // Tentativa anterior pode ter gravado o objeto e caído antes de registrar: o arquivo gravado vale.
+      if ((await store.putIfAbsent(path, bytes, "application/pdf")) === "exists") bytes = await store.read(path);
+      outcomes.push({ id: claim.id, attempts: claim.attempts, ok: true, path, sha256: createHash("sha256").update(bytes).digest("hex") });
+    } catch (err) {
+      // Só ids: a mensagem de erro pode carregar texto do documento.
+      deps.log?.warn(
+        { batch_id: batchId, document_id: claim.id, attempt: claim.attempts, err_name: err instanceof Error ? err.name : "unknown" },
+        "document render failed",
+      );
+      outcomes.push({ id: claim.id, attempts: claim.attempts, ok: false });
+    }
+  }
+
+  return withTenant(schoolId, async (trx) => {
+    for (const o of outcomes) {
+      if (o.ok) await repo.markRendered(trx, { id: o.id, attempts: o.attempts, storagePath: o.path, sha256: o.sha256 });
+      else await repo.markAttemptFailed(trx, o.id, o.attempts);
+    }
+    await repo.finishIfDone(trx, batchId);
+    const [summary] = await repo.batchSummaries(trx, batchId);
+    return { status: summary!.status as BatchStatus, counts: countsOf(summary!) };
+  });
+}
+
+export async function discardDocument(session: SessionClaims, documentId: string): Promise<void> {
+  await withTenant(session.schoolId, async (trx) => {
+    const doc = await repo.findDocument(trx, documentId);
+    if (!doc) throw new DomainError("not_found");
+    const batch = await repo.batchInfo(trx, doc.batchId, "update");
+    if (batch!.status === "published") throw new DomainError("document_batch_published");
+    if (doc.status !== "failed") throw new DomainError("request_rejected", "only failed documents can be discarded");
+    if (await repo.discardFailed(trx, documentId)) {
+      await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "document.discarded", detail: { document_id: documentId, batch_id: doc.batchId } });
+    }
+  });
+}
+
+export async function signedDownload(path: string, deps: { storage?: ObjectStorage } = {}): Promise<DocumentDownloadResponse> {
+  const signed = await (deps.storage ?? storage()).signedUrl(path);
+  return { url: signed.url, expiresAt: signed.expiresAt.toISOString() };
+}
+
+/** A secretaria baixa qualquer PDF pronto do lote, publicado ou não (para imprimir). Cada download é auditado. */
+export async function staffDownload(session: SessionClaims, documentId: string, deps: { storage?: ObjectStorage } = {}): Promise<DocumentDownloadResponse> {
+  const path = await withTenant(session.schoolId, async (trx) => {
+    const doc = await repo.findDocument(trx, documentId);
+    if (!doc || doc.status !== "rendered" || !doc.storagePath) throw new DomainError("not_found");
+    await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "document.downloaded", detail: { document_id: documentId, batch_id: doc.batchId } });
+    return doc.storagePath;
+  });
+  return signedDownload(path, deps);
+}
+
+/** GET /api/v1/files — só no driver local; o token assinado é a autorização. */
+export async function readSignedFile(token: string): Promise<Buffer> {
+  if (config().storage.driver !== "local") throw new DomainError("not_found");
+  const path = verifyLocalToken(token);
+  if (!path) throw new DomainError("not_found");
+  try {
+    return await storage().read(path);
+  } catch {
+    throw new DomainError("not_found");
+  }
 }

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { RouteAuth } from "../../app";
 import { idempotencyKeyFrom } from "../../platform/idempotency";
+import { LOCAL_FILES_ROUTE } from "../../platform/storage";
 import * as service from "./service";
 
 export const OFFICE: RouteAuth = { kind: "staff", roles: ["admin", "secretaria"] };
@@ -41,4 +42,23 @@ export async function documentRoutes(app: FastifyInstance): Promise<void> {
   );
   app.get(B, { config: { auth: OFFICE } }, async (req) => service.listBatches(req.session!));
   app.get(`${B}/:id`, { config: { auth: OFFICE } }, async (req) => service.getBatch(req.session!, IdParams.parse(req.params).id));
+
+  // Naturalmente idempotente: repetir só continua de onde parou (spec 8.3).
+  app.post(`${B}/:id/render`, { config: { auth: OFFICE } }, async (req) =>
+    service.renderBatch(req.session!, IdParams.parse(req.params).id, { log: req.log }),
+  );
+  app.post("/api/admin/v1/documents/:id/discard", { config: { auth: OFFICE } }, async (req, reply) => {
+    await service.discardDocument(req.session!, IdParams.parse(req.params).id);
+    return reply.status(204).send();
+  });
+  app.post("/api/admin/v1/documents/:id/download", { config: { auth: OFFICE } }, async (req) =>
+    service.staffDownload(req.session!, IdParams.parse(req.params).id),
+  );
+
+  // Disco local: o token vai na query string, que o log de requisição descarta.
+  const FileQuery = z.object({ t: z.string().min(1).max(2000) });
+  app.get(LOCAL_FILES_ROUTE, { config: { auth: "public" } }, async (req, reply) => {
+    const pdf = await service.readSignedFile(FileQuery.parse(req.query).t);
+    return reply.type("application/pdf").header("content-disposition", 'inline; filename="documento.pdf"').send(pdf);
+  });
 }

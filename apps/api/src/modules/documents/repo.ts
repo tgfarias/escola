@@ -191,3 +191,89 @@ export async function batchInfo(trx: Trx, batchId: string, lock: "share" | "upda
   const { fieldsText, valuesText, ...rest } = r;
   return { ...rest, fields: JSON.parse(fieldsText) as DocumentField[], fieldValues: JSON.parse(valuesText) as Record<string, string> };
 }
+
+/** Arrendamento vencido sem tentativas sobrando: não volta para a fila. */
+export async function failExhausted(trx: Trx, batchId: string): Promise<void> {
+  await sql`
+    UPDATE documents SET status = 'failed', lease_until = NULL
+    WHERE batch_id = ${batchId} AND status = 'rendering' AND lease_until < now() AND attempts >= 3`.execute(trx);
+}
+
+/** Reserva até `limit` documentos: pendentes ou com arrendamento vencido; quem estiver travado por outra aba é pulado. */
+export async function claimDocuments(trx: Trx, batchId: string, limit: number) {
+  const { rows } = await sql<{ id: string; studentId: string; guardianId: string | null; attempts: number }>`
+    UPDATE documents d
+    SET status = 'rendering', attempts = d.attempts + 1, lease_until = now() + interval '2 minutes'
+    WHERE d.id IN (
+      SELECT c.id FROM documents c
+      WHERE c.batch_id = ${batchId} AND c.attempts < 3
+        AND (c.status = 'pending' OR (c.status = 'rendering' AND c.lease_until < now()))
+      ORDER BY c.id
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED)
+    RETURNING d.id, d.student_id, d.guardian_id, d.attempts`.execute(trx);
+  return rows;
+}
+
+export async function renderContexts(trx: Trx, documentIds: string[]) {
+  return trx
+    .selectFrom("documents")
+    .innerJoin("students", "students.id", "documents.studentId")
+    .innerJoin("classes", "classes.id", "students.classId")
+    .leftJoin("guardians", "guardians.id", "documents.guardianId")
+    .select([
+      "documents.id",
+      "students.firstName as studentFirstName",
+      "students.fullName as studentFullName",
+      "students.birthDate",
+      "classes.name as className",
+      "guardians.firstName as guardianFirstName",
+      "guardians.fullName as guardianFullName",
+      "guardians.cpf",
+    ])
+    .where("documents.id", "in", documentIds)
+    .execute();
+}
+
+export async function markRendered(trx: Trx, row: { id: string; attempts: number; storagePath: string; sha256: string }): Promise<boolean> {
+  const res = await trx
+    .updateTable("documents")
+    .set({ status: "rendered", storagePath: row.storagePath, sha256: row.sha256, renderedAt: sql`now()`, leaseUntil: null })
+    .where("id", "=", row.id)
+    .where("status", "=", "rendering")
+    .where("attempts", "=", row.attempts)
+    .executeTakeFirst();
+  return res.numUpdatedRows > 0n;
+}
+
+export async function markAttemptFailed(trx: Trx, id: string, attempts: number): Promise<void> {
+  await sql`
+    UPDATE documents SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END, lease_until = NULL
+    WHERE id = ${id} AND status = 'rendering' AND attempts = ${attempts}`.execute(trx);
+}
+
+export async function finishIfDone(trx: Trx, batchId: string): Promise<void> {
+  await sql`
+    UPDATE document_batches b SET status = 'ready'
+    WHERE b.id = ${batchId} AND b.status = 'rendering'
+      AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.batch_id = b.id AND d.status IN ('pending', 'rendering'))`.execute(trx);
+}
+
+export async function findDocument(trx: Trx, id: string) {
+  return trx
+    .selectFrom("documents")
+    .select(["id", "batchId", "status", "discardedAt", "storagePath"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+}
+
+export async function discardFailed(trx: Trx, id: string): Promise<boolean> {
+  const res = await trx
+    .updateTable("documents")
+    .set({ discardedAt: sql`now()` })
+    .where("id", "=", id)
+    .where("status", "=", "failed")
+    .where("discardedAt", "is", null)
+    .executeTakeFirst();
+  return res.numUpdatedRows > 0n;
+}
