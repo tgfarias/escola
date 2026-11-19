@@ -148,7 +148,8 @@ export async function voidSales(
   return out;
 }
 
-function split(ids: string[], rejected: (id: string) => boolean): KdsEventsResponse {
+function split(allIds: string[], rejected: (id: string) => boolean): KdsEventsResponse {
+  const ids = [...new Set(allIds)];
   return { accepted: ids.filter((id) => !rejected(id)), rejected: ids.filter(rejected) };
 }
 

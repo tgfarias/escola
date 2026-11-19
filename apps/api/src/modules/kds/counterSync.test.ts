@@ -118,6 +118,27 @@ describe("kds counter sync", () => {
     expect(await walletLedgerMatches(s.schoolId, s.guardianId)).toBe(true);
   });
 
+  it("lists a sale id repeated inside one batch once and charges it once", async () => {
+    const s = await setup();
+    const a = sale(s.leo, s.misto);
+    const res = await push(s, [a, { ...a }]);
+    expect(res.json()).toEqual({ accepted: [a.id], rejected: [] });
+    expect(await balance(s.guardianId)).toBe(-900);
+  });
+
+  it("credits a void to the guardian recorded on the sale after the financial guardian changed", async () => {
+    const s = await setup();
+    const a = sale(s.leo, s.misto);
+    await push(s, [a]);
+    const other = await seedFamily(s.schoolId, ["Caio"]);
+    await adminDb().updateTable("guardianStudents").set({ financial: false }).where("studentId", "=", s.leo).execute();
+    await adminDb().insertInto("guardianStudents").values({ schoolId: s.schoolId, guardianId: other.guardianId, studentId: s.leo, financial: true }).execute();
+    expect((await pushVoids(s, [{ saleId: a.id, occurredAt: at() }])).json()).toEqual({ accepted: [a.id], rejected: [] });
+    expect(await balance(s.guardianId)).toBe(0);
+    expect(await balance(other.guardianId)).toBe(0);
+    expect(await walletLedgerMatches(s.schoolId, s.guardianId)).toBe(true);
+  });
+
   it("applies batches from two tablets on the same wallets concurrently", async () => {
     const s = await setup();
     const other = await seedFamily(s.schoolId, ["Caio"]);
