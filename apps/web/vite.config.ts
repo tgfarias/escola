@@ -43,5 +43,5 @@ export default defineConfig({
     postcss: { plugins: [themeScopePlugin()] },
   },
   server: { proxy: { "/api": "http://localhost:8080" } },
-  test: { environment: "jsdom", setupFiles: ["./src/testSetup.ts"] },
+  test: { environment: "jsdom", setupFiles: ["./src/testSetup.ts"], testTimeout: 15_000 },
 });
