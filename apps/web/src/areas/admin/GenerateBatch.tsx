@@ -9,7 +9,9 @@ import {
 } from "@app-lanche/contracts";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { Alert, Button, Card, CardBody, CardHeader, Form, FormGroup, Input, Label } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
+import { PageTitle } from "../../theme/layout/PageTitle";
 import { staffErrorMessage } from "../../ui/messages";
 import { StudentFilters } from "./StudentsAdmin";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
@@ -66,7 +68,19 @@ export function GenerateBatch() {
     }, fail);
   }, [templateId, fail]);
 
-  if (!template) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  if (!template) {
+    return (
+      <div>
+        {error ? (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        ) : (
+          <p>Carregando…</p>
+        )}
+      </div>
+    );
+  }
 
   const visible = filterStudents(students, { classId, query });
   const mark = (ids: string[], on: boolean) =>
@@ -109,14 +123,17 @@ export function GenerateBatch() {
   }
 
   return (
-    <main>
-      <p><Link to="/admin/documentos">Voltar aos documentos</Link></p>
-      <h1>Gerar: {template.name}</h1>
+    <>
+      <PageTitle
+        heading={`Gerar: ${template.name}`}
+        icon="pe-7s-news-paper"
+        actions={<Link className="btn btn-outline-secondary" to="/admin/documentos">Voltar aos documentos</Link>}
+      />
       {error && (
-        <div role="alert">
-          <p>{error}</p>
+        <Alert color="danger" fade={false}>
+          <p className="mb-0">{error}</p>
           {missing.length > 0 && (
-            <ul>
+            <ul className="mt-2 mb-0">
               {missingLines(missing).map((m) => (
                 <li key={m.key}>
                   {nameOf(m.studentId)}
@@ -125,46 +142,66 @@ export function GenerateBatch() {
               ))}
             </ul>
           )}
-          {missing.length > 0 && <p><Link to="/admin/alunos">Abrir Alunos e responsáveis</Link></p>}
-        </div>
+          {missing.length > 0 && (
+            <p className="mt-2 mb-0">
+              <Link className="alert-link" to="/admin/alunos">Abrir Alunos e responsáveis</Link>
+            </p>
+          )}
+        </Alert>
       )}
-      <form onSubmit={submit}>
-        <section>
-          <h2>Alunos</h2>
-          <StudentFilters classes={classes} classId={classId} query={query} onClass={setClassId} onQuery={setQuery} />
-          <button type="button" disabled={classId === ""} onClick={() => mark(students.filter((s) => s.classId === classId).map((s) => s.id), true)}>Marcar turma</button>
-          <button type="button" onClick={() => mark(students.map((s) => s.id), true)}>Marcar todos</button>
-          <button type="button" onClick={() => setSelected(new Set())}>Desmarcar todos</button>
-          <p>{selected.size} aluno(s) marcado(s)</p>
-          <ul>
-            {visible.map((s) => (
-              <li key={s.id}>
-                <input id={`pick-${s.id}`} type="checkbox" checked={selected.has(s.id)} onChange={(e) => mark([s.id], e.target.checked)} />
-                <label htmlFor={`pick-${s.id}`}>{studentLabel(s)} — {s.className}</label>
-              </li>
-            ))}
-          </ul>
-        </section>
+      <Form onSubmit={submit}>
+        <Card tag="section" className="main-card mb-3">
+          <CardHeader tag="h2" className="h6 mb-0">Alunos</CardHeader>
+          <CardBody>
+            <StudentFilters classes={classes} classId={classId} query={query} onClass={setClassId} onQuery={setQuery} />
+            <div className="d-flex flex-wrap gap-2 mb-2">
+              <Button size="sm" outline color="primary" type="button" disabled={classId === ""} onClick={() => mark(students.filter((s) => s.classId === classId).map((s) => s.id), true)}>
+                Marcar turma
+              </Button>
+              <Button size="sm" outline color="primary" type="button" onClick={() => mark(students.map((s) => s.id), true)}>
+                Marcar todos
+              </Button>
+              <Button size="sm" outline color="secondary" type="button" onClick={() => setSelected(new Set())}>
+                Desmarcar todos
+              </Button>
+            </div>
+            <p>{selected.size} aluno(s) marcado(s)</p>
+            <ul className="list-unstyled mb-0">
+              {visible.map((s) => (
+                <li key={s.id}>
+                  <FormGroup check>
+                    <Input id={`pick-${s.id}`} type="checkbox" checked={selected.has(s.id)} onChange={(e) => mark([s.id], e.target.checked)} />
+                    <Label check for={`pick-${s.id}`}>{studentLabel(s)} — {s.className}</Label>
+                  </FormGroup>
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
         {template.fields.length > 0 && (
-          <section>
-            <h2>Campos do lote</h2>
-            {template.fields.map((f) => (
-              <div key={f.key}>
-                <label htmlFor={`value-${f.key}`}>{f.label}</label>
-                <input
-                  id={`value-${f.key}`}
-                  type={f.type === "data" ? "date" : "text"}
-                  required
-                  maxLength={200}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
-                />
-              </div>
-            ))}
-          </section>
+          <Card tag="section" className="main-card mb-3">
+            <CardHeader tag="h2" className="h6 mb-0">Campos do lote</CardHeader>
+            <CardBody>
+              {template.fields.map((f) => (
+                <FormGroup key={f.key}>
+                  <Label for={`value-${f.key}`}>{f.label}</Label>
+                  <Input
+                    id={`value-${f.key}`}
+                    type={f.type === "data" ? "date" : "text"}
+                    required
+                    maxLength={200}
+                    value={values[f.key] ?? ""}
+                    onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+                  />
+                </FormGroup>
+              ))}
+            </CardBody>
+          </Card>
         )}
-        <button type="submit" disabled={busy || selected.size === 0}>Gerar documentos</button>
-      </form>
-    </main>
+        <Button color="primary" size="lg" type="submit" disabled={busy || selected.size === 0}>
+          Gerar documentos
+        </Button>
+      </Form>
+    </>
   );
 }

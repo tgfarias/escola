@@ -1,10 +1,14 @@
 import { BatchDetail, BatchSummary, DocumentDownloadResponse, RenderProgress, type BatchCounts } from "@app-lanche/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { Alert, Button, Card, CardBody, CardHeader, Table } from "reactstrap";
 import { z } from "zod";
 import { ApiError, apiFetch } from "../../app/api";
+import { PageTitle } from "../../theme/layout/PageTitle";
+import { announce, StatusNotice } from "../../theme/notify";
+import { StatusBadge } from "../../theme/StatusBadge";
 import { formatInstantDate, formatIsoDate } from "../../ui/dates";
-import { BATCH_STATUS_LABELS, DOCUMENT_STATUS_LABELS } from "./documentLabels";
+import { BATCH_STATUS_LABELS, BATCH_STATUS_TONES, DOCUMENT_STATUS_LABELS, DOCUMENT_STATUS_TONES } from "./documentLabels";
 import { useRequestKey } from "./useRequestKey";
 import { useStaffErrors } from "./useStaffErrors";
 
@@ -112,64 +116,113 @@ export function BatchPage() {
         await apiFetch(`/api/admin/v1/document-batches/${id}/publish`, BatchSummary, { method: "POST", idempotencyKey: publishKey.keyFor(id) });
         publishKey.succeeded();
         await load();
-        setStatus("Lote publicado. Os responsáveis serão avisados pelo WhatsApp.");
+        const message = "Lote publicado. Os responsáveis serão avisados pelo WhatsApp.";
+        setStatus(message);
+        announce(message);
       } catch (err) {
         fail(err);
       }
     });
 
-  if (!batch) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  if (!batch) {
+    return (
+      <div>
+        {error ? (
+          <Alert color="danger" fade={false}>
+            {error}
+          </Alert>
+        ) : (
+          <p>Carregando…</p>
+        )}
+      </div>
+    );
+  }
   const c = batch.counts;
   const canPublish = batch.status === "ready" && c.failed === 0 && c.rendered > 0;
   // Tudo descartado: o lote fica pronto sem nada para enviar.
   const nothingToPublish = batch.status === "ready" && c.failed === 0 && c.rendered === 0;
 
   return (
-    <main>
-      <p><Link to="/admin/documentos">Voltar aos documentos</Link></p>
-      <h1>{batch.templateName} — versão {batch.templateVersion}</h1>
-      <p>
-        Emitido em {formatIsoDate(batch.issuedOn)} · {BATCH_STATUS_LABELS[batch.status]} · {c.rendered} de {c.total - c.discarded} PDFs prontos
-        {c.failed > 0 ? ` · ${c.failed} com falha` : ""}
-      </p>
-      {rendering && <p role="status">Gerando PDFs… Mantenha esta página aberta.</p>}
-      {status && <p role="status">{status}</p>}
-      {error && <p role="alert">{error}</p>}
-      {batch.status !== "published" && batch.unreachable > 0 && (
-        <p>{batch.unreachable} documento(s) sem responsável vinculado não serão enviados</p>
-      )}
-      {batch.status === "published" ? (
-        <p>
-          Publicado em {formatInstantDate(batch.publishedAt!)}. Abriram: {batch.viewers} de {batch.recipients} responsáveis.
+    <>
+      <PageTitle
+        heading={`${batch.templateName} — versão ${batch.templateVersion}`}
+        icon="pe-7s-news-paper"
+        subheading={
+          <>
+            <StatusBadge tone={BATCH_STATUS_TONES[batch.status]}>{BATCH_STATUS_LABELS[batch.status]}</StatusBadge>{" "}
+            Emitido em {formatIsoDate(batch.issuedOn)} · {c.rendered} de {c.total - c.discarded} PDFs prontos
+            {c.failed > 0 ? ` · ${c.failed} com falha` : ""}
+          </>
+        }
+        actions={<Link className="btn btn-outline-secondary" to="/admin/documentos">Voltar aos documentos</Link>}
+      />
+      {rendering && (
+        <p role="status">
+          <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+          Gerando PDFs… Mantenha esta página aberta.
         </p>
-      ) : nothingToPublish ? (
-        <p>Nenhum documento para publicar.</p>
-      ) : (
-        <button type="button" disabled={!canPublish} onClick={() => void publish()}>Publicar e avisar os responsáveis</button>
       )}
-      <table>
-        <thead>
-          <tr><th>Aluno</th><th>Turma</th><th>Responsável</th><th>Situação</th><th>Ações</th></tr>
-        </thead>
-        <tbody>
-          {batch.documents.map((d) => (
-            <tr key={d.id}>
-              <td>{d.studentFirstName}</td>
-              <td>{d.className}</td>
-              <td>{d.guardianFirstName ?? "Todos"}</td>
-              <td>{d.discarded ? "Descartado" : DOCUMENT_STATUS_LABELS[d.status]}{d.viewed ? " · aberto" : ""}</td>
-              <td>
-                {d.status === "rendered" && (
-                  <button type="button" aria-label={`Baixar PDF de ${d.studentFirstName}`} onClick={() => void download(d.id)}>Baixar PDF</button>
-                )}
-                {d.status === "failed" && !d.discarded && batch.status !== "published" && (
-                  <button type="button" aria-label={`Descartar documento de ${d.studentFirstName}`} onClick={() => void discard(d.id)}>Descartar</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </main>
+      <StatusNotice message={status} />
+      {error && (
+        <Alert color="danger" fade={false}>
+          {error}
+        </Alert>
+      )}
+      {batch.status !== "published" && batch.unreachable > 0 && (
+        <div className="alert alert-warning">{batch.unreachable} documento(s) sem responsável vinculado não serão enviados</div>
+      )}
+      <Card className="main-card mb-3">
+        <CardBody>
+          {batch.status === "published" ? (
+            <p className="mb-0">
+              Publicado em {formatInstantDate(batch.publishedAt!)}. Abriram: {batch.viewers} de {batch.recipients} responsáveis.
+            </p>
+          ) : nothingToPublish ? (
+            <p className="mb-0">Nenhum documento para publicar.</p>
+          ) : (
+            <Button color="primary" type="button" disabled={!canPublish} onClick={() => void publish()}>
+              Publicar e avisar os responsáveis
+            </Button>
+          )}
+        </CardBody>
+      </Card>
+      <Card className="main-card mb-3">
+        <CardHeader tag="h2" className="h6 mb-0">Documentos</CardHeader>
+        <CardBody>
+          <Table responsive hover striped className="mb-0">
+            <thead>
+              <tr><th>Aluno</th><th>Turma</th><th>Responsável</th><th>Situação</th><th>Ações</th></tr>
+            </thead>
+            <tbody>
+              {batch.documents.map((d) => (
+                <tr key={d.id}>
+                  <td>{d.studentFirstName}</td>
+                  <td>{d.className}</td>
+                  <td>{d.guardianFirstName ?? "Todos"}</td>
+                  <td>
+                    <StatusBadge tone={d.discarded ? "light" : DOCUMENT_STATUS_TONES[d.status]}>
+                      {d.discarded ? "Descartado" : DOCUMENT_STATUS_LABELS[d.status]}
+                    </StatusBadge>
+                    {d.viewed ? " · aberto" : ""}
+                  </td>
+                  <td>
+                    {d.status === "rendered" && (
+                      <Button size="sm" outline color="primary" type="button" aria-label={`Baixar PDF de ${d.studentFirstName}`} onClick={() => void download(d.id)}>
+                        Baixar PDF
+                      </Button>
+                    )}
+                    {d.status === "failed" && !d.discarded && batch.status !== "published" && (
+                      <Button size="sm" outline color="danger" type="button" aria-label={`Descartar documento de ${d.studentFirstName}`} onClick={() => void discard(d.id)}>
+                        Descartar
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </CardBody>
+      </Card>
+    </>
   );
 }

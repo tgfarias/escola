@@ -239,6 +239,7 @@ describe("batch page", () => {
     fireEvent.click(publish);
     fireEvent.click(publish);
     await screen.findByText("Lote publicado. Os responsáveis serão avisados pelo WhatsApp.");
+    expect(screen.getByRole("status").textContent).toBe("Lote publicado. Os responsáveis serão avisados pelo WhatsApp.");
     expect(callOf(fn, `POST /api/admin/v1/document-batches/${B1}/publish`)!.headers["idempotency-key"]).toBeTruthy();
     expect(fn.mock.calls.filter((c) => c[0] === `/api/admin/v1/document-batches/${B1}/publish`)).toHaveLength(1);
   }, 10000);
@@ -382,5 +383,21 @@ describe("render loop", () => {
     cleanup();
     await tick(5000);
     expect(renders(fn)).toBe(1);
+  });
+});
+
+describe("batch page look", () => {
+  it("shows the batch and each document's situation as badges", async () => {
+    mockApi({
+      [`GET /api/admin/v1/document-batches/${B1}`]: {
+        status: 200,
+        body: detail("ready", counts({ rendered: 1, failed: 1 }), [doc(D1, "rendered"), doc(D2, "failed")]),
+      },
+    });
+    renderAt(`/admin/documentos/lotes/${B1}`);
+    expect(await screen.findByRole("heading", { level: 1, name: "Autorização de passeio — versão 1" })).toBeTruthy();
+    expect(screen.getByText("Pronto para publicar").className).toContain("text-bg-warning");
+    expect(screen.getByText("Pronto").className).toContain("text-bg-success");
+    expect(screen.getByText("Falhou").className).toContain("text-bg-danger");
   });
 });
