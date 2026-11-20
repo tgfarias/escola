@@ -220,16 +220,17 @@ describe("service days admin", () => {
     });
   });
 
-  it("closes a day after confirming and reports the order count", async () => {
+  it("closes a shift after confirming and reports the order count", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    mockApi({
+    const fn = mockApi({
       "GET /api/admin/v1/menu-items": MENU,
       "GET /api/admin/v1/service-days": { status: 200, body: { serviceDays: [OPEN_DAY] } },
       "GET /api/admin/v1/classes": CLASSES,
       "GET /api/admin/v1/me": me("admin"),
-      "POST /api/admin/v1/service-days/2030-03-04/close": {
+      "POST /api/admin/v1/service-days/2030-03-04/shifts/matutino/close": {
         status: 200,
         body: {
+          shift: "matutino",
           status: "closed",
           closed_at: "2030-03-04T11:00:00.000Z",
           manifest_version: 1,
@@ -242,9 +243,11 @@ describe("service days admin", () => {
     });
     renderAdmin("/admin/lanche/dias");
     await screen.findByText(/04\/03\/2030/);
-    fireEvent.click(screen.getByRole("button", { name: "Fechar dia" }));
-    await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Dia fechado: 3 pedidos."));
-    expect(window.confirm).toHaveBeenCalledWith("Fechar o dia? Os pedidos não pagos expiram e o romaneio fica congelado.");
+    expect(screen.getByText("Aberto")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Fechar turno — Manhã" }));
+    expect(window.confirm).toHaveBeenCalledWith("Fechar o turno da manhã? Os pedidos não pagos expiram e o romaneio fica congelado.");
+    await waitFor(() => expect(callOf(fn, "POST /api/admin/v1/service-days/2030-03-04/shifts/matutino/close")).toBeDefined());
+    await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Turno da manhã fechado: 3 pedidos."));
   });
 
   it("shows the locked-day message when the PUT is refused", async () => {

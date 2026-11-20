@@ -299,17 +299,23 @@ describe("n8n workflows", () => {
       const closed = await buildApp().inject(internalRequest("POST", `/internal/v1/service-days/${schoolId}/2031-09-09/close`));
       expect(closed.statusCode).toBe(200);
       const req = await withN8n(async () =>
-        signedEventRequest({ ...envelope(crypto.randomUUID(), "service_day.closed", { service_date: "2031-09-09", orders: 0, late_credits: 0 }), school_id: schoolId }),
+        signedEventRequest({ ...envelope(crypto.randomUUID(), "service_day.closed", { service_date: "2031-09-09", shift: "matutino", orders: 0, late_credits: 0 }), school_id: schoolId }),
       );
       const h = harness(schoolId);
       const staticData = {};
       const input = { json: { headers: req.headers } };
       const out = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(out).toEqual([{ json: { ok: true, type: "service_day.closed", email: null } }]);
-      expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511988880000", template: "resumo_cozinha", params: ["09/09", "0", "nenhum item"] })]);
+      expect(h.whatsapp).toEqual([expect.objectContaining({ to: "5511988880000", template: "resumo_cozinha", params: ["09/09 (manhã)", "0", "nenhum item"] })]);
       const dup = await h.run(code("events.json", "Verify and send"), { input, raw: req.body, staticData });
       expect(dup[0]!.json).toMatchObject({ duplicate: true });
       expect(h.whatsapp).toHaveLength(1);
+      const legacy = await withN8n(async () =>
+        signedEventRequest({ ...envelope(crypto.randomUUID(), "service_day.closed", { service_date: "2031-09-09", orders: 0, late_credits: 0 }), school_id: schoolId }),
+      );
+      await h.run(code("events.json", "Verify and send"), { input: { json: { headers: legacy.headers } }, raw: legacy.body, staticData });
+      expect(h.whatsapp).toHaveLength(2);
+      expect(h.whatsapp[1]!.params[0]).toBe("09/09 (manhã)");
     });
 
     it("rejects a tampered body", async () => {

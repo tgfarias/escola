@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { beforeAll, describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedFamily, seedServiceDay, seedTenant, type SeedIds } from "../../test/helpers";
+import { adminDb, createSchool, markDayClosed, seedFamily, seedServiceDay, seedTenant, type SeedIds } from "../../test/helpers";
 import { getDb, withTenant } from "./index";
 
 describe("F2 schema", () => {
@@ -442,5 +442,25 @@ describe("F5C shifts schema", () => {
     const { rows } = await sql<{ m: string; v: string }>`
       SELECT cutoff_time_matutino::text AS m, cutoff_time_vespertino::text AS v FROM schools WHERE id = ${schoolId}`.execute(adminDb());
     expect(rows[0]).toEqual({ m: "07:30:00", v: "13:00:00" });
+  });
+
+  it("lists a day for closing as soon as one of its shifts froze, and closed shifts for finishing after 23:00", async () => {
+    const school = await createSchool();
+    // Antecedência mínima (30 min): a tarde (corte em 120 min) ainda não entra na janela de lembrete.
+    await adminDb().updateTable("schools").set({ reminderLeadMinutes: 30 }).where("id", "=", school).execute();
+    await seedServiceDay(school, { serviceDate: "2031-04-01", shifts: { matutino: -6, vespertino: 120 } }); // manhã congelada
+    await seedServiceDay(school, { serviceDate: "2031-04-02", shifts: { matutino: -11, vespertino: -11 } }); // atrasado
+    const past = await seedServiceDay(school, { serviceDate: "2021-04-03", shifts: { matutino: -60 } });
+    await markDayClosed(past.serviceDayId); // 23:00 de 2021 já passou
+    const future = await seedServiceDay(school, { serviceDate: "2099-04-04", shifts: { matutino: -60 } });
+    await markDayClosed(future.serviceDayId);
+    const { rows } = await sql<{ action: string; serviceDate: string; overdue: boolean }>`
+      SELECT action, service_date, overdue FROM list_due_actions() WHERE school_id = ${school}
+      ORDER BY service_date, action`.execute(getDb());
+    expect(rows).toEqual([
+      { action: "finish_shifts", serviceDate: "2021-04-03", overdue: false },
+      { action: "close_service_day", serviceDate: "2031-04-01", overdue: false },
+      { action: "close_service_day", serviceDate: "2031-04-02", overdue: true },
+    ]);
   });
 });

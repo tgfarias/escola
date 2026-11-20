@@ -96,6 +96,12 @@ Exemplo de resposta (`period=7d`, papel secretaria; para a cozinha `documents` e
 - As regras 15 a 17 valem por turno:
   - confirmar um pedido trava o turno com `FOR SHARE`, e fechar trava com `FOR UPDATE`;
   - um pagamento depois do corte do turno vira crédito.
+- O evento `service_day.closed` é gravado uma vez por turno fechado e traz o `shift`:
+
+```json
+{ "type": "service_day.closed", "data": { "service_date": "2026-11-17", "shift": "vespertino", "orders": 42, "late_credits": 1 } }
+```
+
 - `orders.status` ganha `not_collected`.
 - `wallet_entries.kind` ganha `uncollected_credit` (positivo). Um índice único parcial por pedido impede devolver o mesmo pedido duas vezes.
 

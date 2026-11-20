@@ -261,19 +261,21 @@ Resposta: `204`.
 **`POST /internal/v1/service-days/{school_id}/{date}/close`** — sem corpo.
 
 ```json
-{ "status": "closed", "closed_at": "2026-11-17T07:35:02-03:00", "manifest_version": 1,
-  "kitchen_phone": "+5511988880000",
-  "totals": { "orders": 142, "by_item": [ { "item": "Misto quente", "qty": 61 } ] },
-  "by_class": [
-    { "class": "Infantil 3A",
-      "orders": [ { "order_id": "0193…", "student": "Léo", "items": ["Misto quente"], "restrictions": "sem lactose" } ] }
-  ],
-  "late_credits": 3 }
+{ "service_date": "2026-11-17", "status": "closed",
+  "shifts": [
+    { "shift": "matutino", "status": "closed", "closed_at": "2026-11-17T07:35:02-03:00", "manifest_version": 1,
+      "kitchen_phone": "+5511988880000",
+      "totals": { "orders": 142, "by_item": [ { "item": "Misto quente", "qty": 61 } ] },
+      "by_class": [
+        { "class": "Infantil 3A",
+          "orders": [ { "order_id": "0193…", "student": "Léo", "items": ["Misto quente"], "restrictions": "sem lactose" } ] }
+      ],
+      "late_credits": 3 } ] }
 ```
 
-Idempotente: a repetição devolve o mesmo romaneio. O resumo para o WhatsApp da cozinha (contingência) sai do evento `service_day.closed`, qualquer que seja o fechamento (n8n, equipe ou fechamento de segurança): o n8n lê o romaneio pela rota `manifest` e o formata.
+Fecha os turnos já congelados (`freeze_at`) e devolve os romaneios de todos os turnos fechados do dia; `409 service_day_open` se nenhum. Idempotente: a repetição devolve os mesmos romaneios. O resumo para o WhatsApp da cozinha (contingência) sai do evento `service_day.closed`, um por turno, qualquer que seja o fechamento (n8n, equipe ou fechamento de segurança): o n8n lê o romaneio pela rota `manifest` e o formata.
 
-**`GET /internal/v1/service-days/{school_id}/{date}/manifest`** — mesmo corpo do `close`; `409` se o dia ainda está aberto.
+**`GET /internal/v1/service-days/{school_id}/{date}/manifest?shift=matutino|vespertino`** (padrão `matutino`) — o romaneio daquele turno (um item de `shifts` acima); `409` se o turno ainda está aberto.
 
 **`POST /internal/v1/schools/{school_id}/magic-links`** — reenvio avulso.
 

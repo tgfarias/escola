@@ -2,6 +2,7 @@ import {
   DeliveriesRequest,
   InternalMagicLinkRequest,
   IsoDate,
+  ManifestQuery,
   RemindersPrepareRequest,
   Uuid,
   type DebtNoticesResponse,
@@ -23,8 +24,10 @@ const BatchParams = z.object({ school_id: Uuid, batch_id: Uuid });
 const DayParams = z.object({ school_id: Uuid, date: IsoDate });
 
 /** A conciliação de recargas é do job do Cloud Scheduler: o n8n não toca pagamento (CLAUDE.md regra 21). */
-type N8nAction = Exclude<serviceDays.DueAction["action"], "reconcile_topups">;
-const forN8n = (d: serviceDays.DueAction): d is serviceDays.DueAction & { action: N8nAction } => d.action !== "reconcile_topups";
+/** Conciliação de recargas e finalização de segurança são de jobs do Cloud Scheduler, não do n8n. */
+type N8nAction = Exclude<serviceDays.DueAction["action"], "reconcile_topups" | "finish_shifts">;
+const forN8n = (d: serviceDays.DueAction): d is serviceDays.DueAction & { action: N8nAction } =>
+  d.action !== "reconcile_topups" && d.action !== "finish_shifts";
 
 export async function internalRoutes(app: FastifyInstance): Promise<void> {
   app.post("/internal/v1/schools/:school_id/magic-links", INTERNAL, async (req) =>
@@ -56,11 +59,11 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/internal/v1/service-days/:school_id/:date/close", INTERNAL, async (req) => {
     const p = DayParams.parse(req.params);
-    return serviceDays.closeServiceDay(p.school_id, p.date, { log: req.log });
+    return serviceDays.closeServiceDay(p.school_id, p.date, { log: req.log, due: "frozen" });
   });
 
   app.get("/internal/v1/service-days/:school_id/:date/manifest", INTERNAL, async (req) => {
     const p = DayParams.parse(req.params);
-    return serviceDays.getManifest(p.school_id, p.date);
+    return serviceDays.getManifest(p.school_id, p.date, ManifestQuery.parse(req.query).shift);
   });
 }

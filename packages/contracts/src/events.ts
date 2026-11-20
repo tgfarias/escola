@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Shift } from "./shifts";
 
 export const OtpRequestedEvent = z.object({
   type: z.literal("auth.otp_requested"),
@@ -39,6 +40,7 @@ export const ServiceDayClosedEvent = z.object({
   type: z.literal("service_day.closed"),
   data: z.object({
     service_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    shift: Shift,
     orders: z.number().int().nonnegative(),
     late_credits: z.number().int().nonnegative(),
   }),

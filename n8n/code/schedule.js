@@ -3,8 +3,8 @@ async function closeDay(ctx, a) {
   const res = await api(ctx, "POST", `/internal/v1/service-days/${a.school_id}/${a.service_date}/close`);
   if (res.status === 409) return { closed: false, reason: res.body && res.body.error ? res.body.error.code : "conflict" };
   const m = ensureOk(res, "close");
-  // O resumo da cozinha sai do evento service_day.closed (fluxo de eventos), qualquer que seja o fechamento.
-  return { closed: true, orders: m.totals.orders };
+  // O resumo da cozinha sai do evento service_day.closed (um por turno), qualquer que seja o fechamento.
+  return { closed: true, orders: m.shifts.reduce((n, s) => n + s.totals.orders, 0) };
 }
 
 async function debtNotices(ctx, a) {

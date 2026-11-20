@@ -69,13 +69,13 @@ describe("enqueueEvent", () => {
     setOutboxKickHandler((id) => kicked.push(id));
     try {
       await withTenant(schoolId, async (trx) => {
-        await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-01", orders: 0, late_credits: 0 } });
+        await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-01", shift: "matutino", orders: 0, late_credits: 0 } });
         expect(kicked).toEqual([]);
       });
       expect(kicked).toEqual([schoolId]);
       await expect(
         withTenant(schoolId, async (trx) => {
-          await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-02", orders: 0, late_credits: 0 } });
+          await enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-07-02", shift: "matutino", orders: 0, late_credits: 0 } });
           throw new Error("rollback");
         }),
       ).rejects.toThrow("rollback");

@@ -58,7 +58,8 @@ export async function serviceDayPrices(
   return new Map(rows.map((r) => [r.menuItemId, { name: r.name, priceCents: r.priceCents }]));
 }
 
-export const markServiceDayClosed = repo.markServiceDayClosed;
+export const markShiftClosed = repo.markShiftClosed;
+export const closeDayIfNoOpenShift = repo.closeDayIfNoOpenShift;
 
 export type LockedShift = {
   id: string;

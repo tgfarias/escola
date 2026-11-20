@@ -202,19 +202,14 @@ export async function listOpenServiceDays(trx: Trx) {
     .execute();
 }
 
-export async function markServiceDayClosed(trx: Trx, serviceDayId: string): Promise<Date | null> {
-  await trx
-    .updateTable("serviceDayShifts")
-    .set({ status: "closed", closedAt: sql<Date>`now()` })
-    .where("serviceDayId", "=", serviceDayId)
-    .where("status", "=", "open")
-    .execute();
-  const row = await trx
-    .updateTable("serviceDays")
-    .set({ status: "closed", closedAt: sql<Date>`now()` })
-    .where("id", "=", serviceDayId)
-    .where("status", "=", "open")
-    .returning("closedAt")
-    .executeTakeFirst();
-  return row?.closedAt ?? null;
+export async function markShiftClosed(trx: Trx, shiftId: string): Promise<void> {
+  await trx.updateTable("serviceDayShifts").set({ status: "closed", closedAt: sql<Date>`now()` }).where("id", "=", shiftId).where("status", "=", "open").execute();
+}
+
+/** O dia fica `closed` quando nenhum turno está aberto (spec F5C, B.1). */
+export async function closeDayIfNoOpenShift(trx: Trx, serviceDayId: string): Promise<void> {
+  await sql`
+    UPDATE service_days SET status = 'closed', closed_at = now()
+    WHERE id = ${serviceDayId} AND status = 'open'
+      AND NOT EXISTS (SELECT 1 FROM service_day_shifts WHERE service_day_id = ${serviceDayId} AND status = 'open')`.execute(trx);
 }

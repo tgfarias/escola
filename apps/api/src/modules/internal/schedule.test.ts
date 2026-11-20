@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, internalRequest, seedServiceDay, seedTenant } from "../../../test/helpers";
+import { adminDb, createSchool, internalRequest, markDayClosed, seedServiceDay, seedTenant } from "../../../test/helpers";
 import { buildApp } from "../../app";
 
 describe("internal schedule and close routes", () => {
@@ -26,12 +26,20 @@ describe("internal schedule and close routes", () => {
     const url = `/internal/v1/service-days/${schoolId}/${day.serviceDate}/close`;
     const first = await app.inject(internalRequest("POST", url));
     expect(first.statusCode).toBe(200);
-    expect(first.json()).toMatchObject({ status: "closed", manifest_version: 1, kitchen_phone: "+5511988880000" });
+    expect(first.json()).toMatchObject({ status: "closed", shifts: [{ shift: "matutino", status: "closed", manifest_version: 1, kitchen_phone: "+5511988880000" }] });
     const again = await app.inject(internalRequest("POST", url));
     expect(again.json()).toEqual(first.json());
     const manifest = await app.inject(internalRequest("GET", `/internal/v1/service-days/${schoolId}/${day.serviceDate}/manifest`));
     expect(manifest.statusCode).toBe(200);
-    expect(manifest.json()).toEqual(first.json());
+    expect(manifest.json()).toEqual(first.json().shifts[0]);
+  });
+
+  it("keeps the safety finish out of the n8n schedule", async () => {
+    const schoolId = await createSchool();
+    const past = await seedServiceDay(schoolId, { serviceDate: "2021-04-05", shifts: { matutino: -60 } });
+    await markDayClosed(past.serviceDayId);
+    const res = await buildApp().inject(internalRequest("GET", "/internal/v1/schedule/due"));
+    expect(res.json().due.filter((d: { school_id: string }) => d.school_id === schoolId)).toEqual([]);
   });
 
   it("answers 409 service_day_open before the cutoff, for close and for manifest", async () => {

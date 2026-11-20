@@ -94,12 +94,12 @@ describe("outbox dispatcher", () => {
     const schoolId = await createSchool();
     await seedTenant(schoolId);
     const id = await withTenant(schoolId, (trx) =>
-      enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-06-02", orders: 3, late_credits: 0 } }),
+      enqueueEvent(trx, schoolId, { type: "service_day.closed", data: { service_date: "2031-06-02", shift: "matutino", orders: 3, late_credits: 0 } }),
     );
     await dispatchSchool(schoolId, log);
     await dispatchSchool(schoolId, log);
     expect(forSchool(schoolId).filter((e) => e.id === id)).toHaveLength(1);
-    expect(JSON.parse((await row(id)).data)).toEqual({ service_date: "2031-06-02", orders: 3, late_credits: 0 });
+    expect(JSON.parse((await row(id)).data)).toEqual({ service_date: "2031-06-02", shift: "matutino", orders: 3, late_credits: 0 });
   });
 
   it("backs off after a failed attempt and keeps the event pending", async () => {

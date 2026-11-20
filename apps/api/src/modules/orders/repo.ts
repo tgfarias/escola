@@ -138,11 +138,12 @@ export async function studentFirstNames(trx: Trx, checkoutId: string): Promise<s
   return rows.map((r) => r.firstName);
 }
 
-export async function checkoutIdsByStatus(trx: Trx, serviceDayId: string, status: string): Promise<string[]> {
+export async function checkoutIdsByStatus(trx: Trx, serviceDayId: string, shift: Shift, status: string): Promise<string[]> {
   const rows = await trx
     .selectFrom("checkouts")
     .select("id")
     .where("serviceDayId", "=", serviceDayId)
+    .where("shift", "=", shift)
     .where("status", "=", status)
     .orderBy("id")
     .execute();

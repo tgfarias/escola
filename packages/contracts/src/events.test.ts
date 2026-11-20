@@ -20,6 +20,12 @@ describe("outbox event contracts", () => {
     expect(OutboxEvent.parse({ type: example.type, data: example.data })).toEqual({ type: example.type, data: example.data });
   });
 
+  it("accepts the service_day.closed example from spec F5C B.1, one per shift", () => {
+    const data = { service_date: "2026-11-17", shift: "vespertino", orders: 42, late_credits: 1 };
+    expect(OutboxEvent.parse({ type: "service_day.closed", data })).toEqual({ type: "service_day.closed", data });
+    expect(OutboxEvent.safeParse({ type: "service_day.closed", data: { ...data, shift: undefined } }).success).toBe(false);
+  });
+
   it("accepts the document.published example from spec 6.3", () => {
     const example = {
       id: "0193a3b0-0000-7000-8000-000000000011",

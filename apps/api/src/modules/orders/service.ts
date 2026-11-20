@@ -287,14 +287,14 @@ export async function cancelCheckout(session: SessionClaims, checkoutId: string)
   return getCheckout(session, checkoutId);
 }
 
-export async function expirePendingCheckouts(trx: Trx, schoolId: string, serviceDayId: string): Promise<number> {
+export async function expirePendingCheckouts(trx: Trx, schoolId: string, serviceDayId: string, shift: Shift): Promise<number> {
   let expired = 0;
-  for (const id of await repo.checkoutIdsByStatus(trx, serviceDayId, "pending_payment")) {
+  for (const id of await repo.checkoutIdsByStatus(trx, serviceDayId, shift, "pending_payment")) {
     if (await expireCheckout(trx, schoolId, id)) expired += 1;
   }
   return expired;
 }
 
-export async function countLateCredited(trx: Trx, serviceDayId: string): Promise<number> {
-  return (await repo.checkoutIdsByStatus(trx, serviceDayId, "late_credited")).length;
+export async function countLateCredited(trx: Trx, serviceDayId: string, shift: Shift): Promise<number> {
+  return (await repo.checkoutIdsByStatus(trx, serviceDayId, shift, "late_credited")).length;
 }

@@ -8,6 +8,7 @@ import {
   type MenuItem,
   type ServiceDay,
   type Shift,
+  type ShiftStatus,
 } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Alert, Button, Card, CardBody, CardHeader, Col, Form, FormGroup, Input, Label, Row, Table } from "reactstrap";
@@ -26,6 +27,12 @@ function formatDate(iso: string): string {
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
+
+const SHIFT_STATUS: Record<ShiftStatus, { label: string; tone: "success" | "warning" | "secondary" }> = {
+  open: { label: "Aberto", tone: "success" },
+  closed: { label: "Fechado (romaneio pronto)", tone: "warning" },
+  finished: { label: "Finalizado", tone: "secondary" },
+};
 
 export function ServiceDaysAdmin() {
   const [days, setDays] = useState<ServiceDay[]>([]);
@@ -86,16 +93,15 @@ export function ServiceDaysAdmin() {
     }
   }
 
-  async function close(day: ServiceDay) {
-    if (!window.confirm("Fechar o dia? Os pedidos não pagos expiram e o romaneio fica congelado.")) return;
+  async function closeShift(day: ServiceDay, shift: Shift) {
+    const name = SHIFT_LABELS[shift].toLowerCase();
+    if (!window.confirm(`Fechar o turno da ${name}? Os pedidos não pagos expiram e o romaneio fica congelado.`)) return;
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const manifest = await apiFetch(`/api/admin/v1/service-days/${day.serviceDate}/close`, ManifestResponse, {
-        method: "POST",
-      });
-      const message = `Dia fechado: ${manifest.totals.orders} pedidos.`;
+      const manifest = await apiFetch(`/api/admin/v1/service-days/${day.serviceDate}/shifts/${shift}/close`, ManifestResponse, { method: "POST" });
+      const message = `Turno da ${name} fechado: ${manifest.totals.orders} pedidos.`;
       setNotice(message);
       announce(message);
       await reload();
@@ -119,23 +125,28 @@ export function ServiceDaysAdmin() {
             <thead>
               <tr>
                 <th>Data</th>
-                <th>Corte</th>
-                <th>Situação</th>
+                <th>Turnos</th>
                 <th>Itens</th>
-                <th>
-                  <span className="visually-hidden">Ações</span>
-                </th>
               </tr>
             </thead>
             <tbody>
               {days.map((d) => (
                 <tr key={d.serviceDate}>
                   <td>{formatDate(d.serviceDate)}</td>
-                  <td>{formatTime(d.cutoffAt)}</td>
                   <td>
-                    <StatusBadge tone={d.status === "open" ? "success" : "secondary"}>
-                      {d.status === "open" ? "Aberto" : "Fechado"}
-                    </StatusBadge>
+                    <ul className="list-unstyled mb-0">
+                      {d.shifts.map((s) => (
+                        <li key={s.shift} className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                          <span>{`${SHIFT_LABELS[s.shift]} — corte ${formatTime(s.cutoffAt)}`}</span>
+                          <StatusBadge tone={SHIFT_STATUS[s.status].tone}>{SHIFT_STATUS[s.status].label}</StatusBadge>
+                          {s.status === "open" && (
+                            <Button size="sm" outline color="danger" type="button" disabled={busy} onClick={() => closeShift(d, s.shift)}>
+                              Fechar turno <span className="visually-hidden">{`— ${SHIFT_LABELS[s.shift]}`}</span>
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </td>
                   <td>
                     <ul className="list-unstyled mb-0">
@@ -143,13 +154,6 @@ export function ServiceDaysAdmin() {
                         <li key={i.menuItemId}>{`${i.name} — ${formatCents(i.priceCents)}`}</li>
                       ))}
                     </ul>
-                  </td>
-                  <td className="text-end">
-                    {d.status === "open" && (
-                      <Button size="sm" outline color="danger" type="button" disabled={busy} onClick={() => close(d)}>
-                        Fechar dia
-                      </Button>
-                    )}
                   </td>
                 </tr>
               ))}

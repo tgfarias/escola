@@ -3,7 +3,7 @@ import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { getDb, type Trx } from "../../db/index";
 
-export async function manifestLines(trx: Trx, serviceDayId: string) {
+export async function manifestLines(trx: Trx, serviceDayId: string, shift: Shift) {
   return trx
     .selectFrom("orders")
     .innerJoin("checkouts", "checkouts.id", "orders.checkoutId")
@@ -24,6 +24,7 @@ export async function manifestLines(trx: Trx, serviceDayId: string) {
       ) THEN students.dietary_restrictions END`.as("restrictions"),
     ])
     .where("checkouts.serviceDayId", "=", serviceDayId)
+    .where("checkouts.shift", "=", shift)
     .where("orders.status", "=", "confirmed")
     .orderBy("classes.name")
     .orderBy("students.firstName")
@@ -36,11 +37,12 @@ export async function insertManifest(trx: Trx, row: { schoolId: string; serviceD
   await trx.insertInto("manifests").values({ id: uuidv7(), version: 1, ...row }).execute();
 }
 
-export async function readManifest(trx: Trx, serviceDayId: string) {
+export async function readManifest(trx: Trx, serviceDayId: string, shift: Shift) {
   return trx
     .selectFrom("manifests")
     .select(["version", sql<string>`content::text`.as("content")])
     .where("serviceDayId", "=", serviceDayId)
+    .where("shift", "=", shift)
     .orderBy("version", "desc")
     .executeTakeFirstOrThrow();
 }
@@ -54,7 +56,7 @@ export async function kitchenPhone(trx: Trx): Promise<string | null> {
 export async function listDueActions() {
   // getDb() só para a chamada da função SECURITY DEFINER; todo o resto usa withTenant.
   const { rows } = await sql<{
-    action: "send_reminders" | "close_service_day" | "send_debt_notices" | "reconcile_topups";
+    action: "send_reminders" | "close_service_day" | "send_debt_notices" | "reconcile_topups" | "finish_shifts";
     schoolId: string;
     serviceDate: string;
     overdue: boolean;
