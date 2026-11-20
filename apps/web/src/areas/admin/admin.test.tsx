@@ -37,6 +37,8 @@ const ME = {
   body: { id: "0193a000-0000-7000-8000-000000000001", email: "ana@escola.test", role: "secretaria", schoolName: "Escola Sol" },
 };
 
+const DASH = { status: 200, body: { period: "today", from: "2030-03-04", to: "2030-03-04", snacks: { paidOrders: 0, deliveredOrders: 0, notCollectedOrders: 0, counterSales: 0, topItems: [] }, documents: null, money: null } };
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -54,6 +56,7 @@ describe("admin area", () => {
       "/api/admin/v1/auth/otp/request": { status: 200, body: { otpToken: "otp-token" } },
       "/api/admin/v1/auth/otp/verify": { status: 200, body: { status: "ok", role: "secretaria" } },
       "/api/admin/v1/me": ME,
+      "/api/admin/v1/dashboard?period=today": DASH,
     });
     renderAt("/admin/login");
     fireEvent.change(screen.getByLabelText("E-mail"), { target: { value: "ana@escola.test" } });
@@ -119,7 +122,7 @@ describe("admin area", () => {
   });
 
   it("fetches /me once for the layout and the home page, also when coming back to Início", async () => {
-    const fetchMock = mockApi({ "/api/admin/v1/me": ME });
+    const fetchMock = mockApi({ "/api/admin/v1/me": ME, "/api/admin/v1/dashboard?period=today": DASH });
     renderAt("/admin");
     await screen.findByRole("heading", { name: "Escola Sol" });
     fireEvent.click(screen.getByRole("link", { name: "Alunos e responsáveis" }));

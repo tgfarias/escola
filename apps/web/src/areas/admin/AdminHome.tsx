@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from "react-router";
 import { PageTitle } from "../../theme/layout/PageTitle";
 import { useAdminMe } from "./AdminLayout";
+import { Dashboard } from "./Dashboard";
 
 const LEGACY_ANCHORS: Record<string, string> = {
   "#cardapio": "/admin/lanche/cardapio",
@@ -17,5 +18,10 @@ export function AdminHome() {
   // O AdminLayout busca /me e mostra o erro dessa busca; aqui só falta esperar.
   if (!me) return meFailed ? null : <p>Carregando…</p>;
 
-  return <PageTitle heading={me.schoolName} subheading="Início" icon="pe-7s-home" />;
+  return (
+    <>
+      <PageTitle heading={me.schoolName} subheading="Início" icon="pe-7s-home" />
+      <Dashboard role={me.role} />
+    </>
+  );
 }
