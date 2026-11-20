@@ -215,6 +215,77 @@ describe("guardian ordering", () => {
   });
 });
 
+const S3 = U(8);
+const ME2 = {
+  ...ME,
+  students: [
+    { id: S1, firstName: "Léo", className: "Maternal", shift: "matutino" },
+    { id: S3, firstName: "Caio", className: "Jardim", shift: "vespertino" },
+  ],
+};
+const AFTERNOON_CUTOFF = "2030-05-10T16:00:00.000Z";
+const DAYS2 = {
+  serviceDays: [
+    {
+      ...DAYS.serviceDays[0],
+      cutoffAt: AFTERNOON_CUTOFF,
+      shifts: [
+        { shift: "matutino", cutoffAt: CUTOFF, acceptingOrders: true },
+        { shift: "vespertino", cutoffAt: AFTERNOON_CUTOFF, acceptingOrders: true },
+      ],
+    },
+  ],
+};
+
+describe("order per shift", () => {
+  it("shows one card per shift, each with its own cutoff and payment", async () => {
+    const fn = mockApi({
+      "GET /api/v1/me": ok(ME2),
+      "GET /api/v1/service-days": ok(DAYS2),
+      [`GET /api/v1/checkouts?serviceDate=${DATE}`]: ok({ checkouts: [] }),
+      "POST /api/v1/checkouts": ok(checkout("pending_payment", { shift: "vespertino" })),
+    });
+    renderAt("/pedido");
+    expect(await screen.findByRole("heading", { name: "Manhã" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Tarde" })).toBeTruthy();
+    expect(screen.getAllByText(/^Pedidos até/)).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar Misto quente para Caio" }));
+    const pay = screen.getAllByRole("button", { name: /^Pagar/ });
+    expect(pay).toHaveLength(2);
+    expect((pay[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(pay[1]!);
+    await waitFor(() => expect(fn.mock.calls.some((c) => c[1]?.method === "POST")).toBe(true));
+    const post = fn.mock.calls.find((c) => c[1]?.method === "POST")!;
+    expect(JSON.parse(post[1]!.body as string)).toEqual({ serviceDate: DATE, orders: [{ studentId: S3, items: [{ menuItemId: MISTO, qty: 1 }] }] });
+  });
+
+  it("says when a shift no longer takes orders or has no snack that day", async () => {
+    mockApi({
+      "GET /api/v1/me": ok(ME2),
+      "GET /api/v1/service-days": ok({
+        serviceDays: [{ ...DAYS2.serviceDays[0], shifts: [{ shift: "matutino", cutoffAt: CUTOFF, acceptingOrders: false }] }],
+      }),
+      [`GET /api/v1/checkouts?serviceDate=${DATE}`]: ok({ checkouts: [] }),
+    });
+    renderAt("/pedido");
+    expect(await screen.findByText(/^Pedidos encerrados às/)).toBeTruthy();
+    expect(screen.getByText("Não há lanche para a turma de Caio neste dia.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Pagar/ })).toBeNull();
+  });
+
+  it("keeps a single untitled card when every child is in the same shift", async () => {
+    mockApi({
+      "GET /api/v1/me": ok(ME),
+      "GET /api/v1/service-days": ok(DAYS),
+      [`GET /api/v1/checkouts?serviceDate=${DATE}`]: ok({ checkouts: [] }),
+    });
+    renderAt("/pedido");
+    await screen.findByText("Léo");
+    expect(screen.queryByRole("heading", { name: "Manhã" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Pagar/ })).toHaveLength(1);
+  });
+});
+
 describe("checkout page", () => {
   it("shows the Pix code and polls until paid", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

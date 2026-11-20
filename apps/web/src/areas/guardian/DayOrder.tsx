@@ -1,25 +1,19 @@
 import {
   CheckoutListResponse,
-  CheckoutView,
+  SHIFTS,
   type GuardianServiceDay,
   type MeResponse,
 } from "@app-lanche/contracts";
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { useEffect, useState } from "react";
 import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
-import { formatCents } from "../../ui/money";
+import { ShiftOrder } from "./ShiftOrder";
 
-type Cart = Record<string, Record<string, number>>; // studentId → menuItemId → qty
 const ACTIVE = new Set(["pending", "confirmed", "delivered"]);
 
 export function DayOrder({ day, me }: { day: GuardianServiceDay; me: MeResponse }) {
-  const navigate = useNavigate();
-  const [cart, setCart] = useState<Cart>({});
   const [ordered, setOrdered] = useState<Map<string, string>>(new Map()); // studentId → checkoutId
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const keyRef = useRef<string | null>(null);
 
   useEffect(() => {
     apiFetch(`/api/v1/checkouts?serviceDate=${day.serviceDate}`, CheckoutListResponse).then(
@@ -32,102 +26,25 @@ export function DayOrder({ day, me }: { day: GuardianServiceDay; me: MeResponse 
     );
   }, [day.serviceDate]);
 
-  function change(studentId: string, menuItemId: string, delta: number) {
-    keyRef.current = null;
-    setCart((prev) => {
-      const current = prev[studentId]?.[menuItemId] ?? 0;
-      const qty = Math.min(10, Math.max(0, current + delta));
-      return { ...prev, [studentId]: { ...prev[studentId], [menuItemId]: qty } };
-    });
-  }
-
-  const price = new Map(day.items.map((i) => [i.menuItemId, i.priceCents]));
-  const orders = Object.entries(cart)
-    .map(([studentId, items]) => ({
-      studentId,
-      items: Object.entries(items)
-        .filter(([, qty]) => qty > 0)
-        .map(([menuItemId, qty]) => ({ menuItemId, qty })),
-    }))
-    .filter((o) => o.items.length > 0);
-  const total = orders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + (price.get(i.menuItemId) ?? 0) * i.qty, 0), 0);
-
-  async function pay() {
-    setBusy(true);
-    setError(null);
-    keyRef.current ??= crypto.randomUUID();
-    try {
-      const checkout = await apiFetch("/api/v1/checkouts", CheckoutView, {
-        method: "POST",
-        body: { serviceDate: day.serviceDate, orders },
-        idempotencyKey: keyRef.current,
-      });
-      navigate(`/pedido/checkout/${checkout.id}`);
-    } catch (err) {
-      setError(errorMessage(err instanceof ApiError ? err.code : "internal_error"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const cutoff = new Date(day.cutoffAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const groups = SHIFTS.map((shift) => ({ shift, students: me.students.filter((s) => s.shift === shift) })).filter((g) => g.students.length > 0);
   return (
     <section>
-      <p className="g-muted">Pedidos até {cutoff}</p>
-      {me.students.map((s) => (
-        <article key={s.id} className="g-card">
-          <h2>{s.firstName}</h2>
-          {ordered.has(s.id) ? (
-            <p className="mb-0">
-              <span className="g-tag ms-0">Pedido já feito</span> · <Link to={`/pedido/checkout/${ordered.get(s.id)}`}>Ver pedido</Link>
-            </p>
-          ) : (
-            <ul className="g-list">
-              {day.items.map((item) => {
-                const qty = cart[s.id]?.[item.menuItemId] ?? 0;
-                return (
-                  <li key={item.menuItemId} className="d-flex align-items-center justify-content-between gap-2">
-                    <span>
-                      {item.name}
-                      <br />
-                      <span className="g-muted">{formatCents(item.priceCents)}</span>
-                    </span>
-                    <span className="g-stepper">
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary"
-                        aria-label={`Remover ${item.name} de ${s.firstName}`}
-                        disabled={qty === 0}
-                        onClick={() => change(s.id, item.menuItemId, -1)}
-                      >
-                        −
-                      </button>
-                      <span className="g-stepper__qty">{qty}</span>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        aria-label={`Adicionar ${item.name} para ${s.firstName}`}
-                        onClick={() => change(s.id, item.menuItemId, 1)}
-                      >
-                        +
-                      </button>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </article>
+      {groups.map((g) => (
+        <ShiftOrder
+          key={g.shift}
+          serviceDate={day.serviceDate}
+          items={day.items}
+          shift={g.shift}
+          info={day.shifts.find((s) => s.shift === g.shift)}
+          students={g.students}
+          ordered={ordered}
+          labelled={groups.length > 1}
+        />
       ))}
       {error && (
         <p role="alert" className="g-alert">
           {error}
         </p>
-      )}
-      {me.students.some((s) => !ordered.has(s.id)) && (
-        <button type="button" className="btn btn-primary btn-lg w-100" disabled={total === 0 || busy} onClick={pay}>
-          Pagar {formatCents(total)}
-        </button>
       )}
     </section>
   );
