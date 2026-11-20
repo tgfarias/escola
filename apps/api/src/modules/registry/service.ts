@@ -3,6 +3,8 @@ import {
   type ClassListResponse,
   type GuardianDetail,
   type ImportStudentsResponse,
+  type SetClassShiftRequest,
+  type Shift,
   type SetFinancialGuardianRequest,
   type StudentListResponse,
   type UpdateGuardianRequest,
@@ -30,9 +32,13 @@ export async function importStudents(session: SessionClaims, csv: string): Promi
     const studentIds = new Map<string, string>();
     const guardianIds = new Map<string, string>();
 
+    // A turma nasce com o turno da primeira linha que o informa; sem turno no arquivo, mantém o atual.
+    const shiftOf = new Map<string, Shift>();
+    for (const r of rows) if (r.shift && !shiftOf.has(r.className)) shiftOf.set(r.className, r.shift);
+
     for (const row of rows) {
       if (!classIds.has(row.className)) {
-        classIds.set(row.className, await repo.upsertClass(trx, schoolId, row.className));
+        classIds.set(row.className, await repo.upsertClass(trx, schoolId, row.className, shiftOf.get(row.className) ?? null));
       }
       // Upsert on every row (not only the first of each code/phone): a value that only shows up on a
       // later row is stored, and coalesce in the repo never erases an existing one.
@@ -77,7 +83,18 @@ export async function importStudents(session: SessionClaims, csv: string): Promi
 }
 
 export async function listClasses(session: SessionClaims): Promise<ClassListResponse> {
-  return { classes: await withTenant(session.schoolId, (trx) => repo.listClasses(trx)) };
+  const classes = await withTenant(session.schoolId, (trx) => repo.listClasses(trx));
+  return { classes: classes.map((c) => ({ ...c, shift: c.shift as Shift })) };
+}
+
+export async function setClassShift(session: SessionClaims, classId: string, body: SetClassShiftRequest): Promise<void> {
+  await withTenant(session.schoolId, async (trx) => {
+    const result = await repo.setClassShift(trx, classId, body.shift);
+    if (result === "missing") throw new DomainError("not_found");
+    if (result === "changed") {
+      await audit(trx, { schoolId: session.schoolId, actorKind: "staff", actorId: session.sub, action: "class.shift_changed", detail: { class_id: classId, shift: body.shift } });
+    }
+  });
 }
 
 export async function listStudents(session: SessionClaims): Promise<StudentListResponse> {

@@ -7,6 +7,7 @@ import { PageTitle } from "../../theme/layout/PageTitle";
 import { announce, StatusNotice } from "../../theme/notify";
 import { StatusBadge } from "../../theme/StatusBadge";
 import { formatIsoDate } from "../../ui/dates";
+import { ClassShifts } from "./ClassShifts";
 import { ImportStudentsPanel } from "./ImportStudentsPanel";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
 import { useStaffErrors } from "./useStaffErrors";
@@ -315,6 +316,7 @@ export function StudentsAdmin() {
           </Table>
         </CardBody>
       </Card>
+      <ClassShifts classes={classes} onChanged={load} onError={fail} />
     </>
   );
 }

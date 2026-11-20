@@ -39,7 +39,7 @@ const STUDENTS = {
     { id: S2, externalCode: "B1", firstName: "Caio", fullName: null, birthDate: null, classId: C2, className: "Infantil 4B", guardians: [] },
   ],
 };
-const CLASSES = { classes: [{ id: C1, name: "Infantil 3A" }, { id: C2, name: "Infantil 4B" }] };
+const CLASSES = { classes: [{ id: C1, name: "Infantil 3A", shift: "matutino" }, { id: C2, name: "Infantil 4B", shift: "matutino" }] };
 const GENERATE: Record<string, Reply> = {
   [`GET /api/admin/v1/document-templates/${T1}`]: { status: 200, body: TEMPLATE },
   "GET /api/admin/v1/students": { status: 200, body: STUDENTS },

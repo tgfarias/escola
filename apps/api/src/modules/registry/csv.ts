@@ -1,4 +1,4 @@
-import { isValidCpf } from "@app-lanche/contracts";
+import { isValidCpf, type Shift } from "@app-lanche/contracts";
 import { parse } from "csv-parse/sync";
 
 const COLUMNS = ["codigo_aluno", "primeiro_nome", "turma", "responsavel_nome", "responsavel_telefone"] as const;
@@ -14,6 +14,7 @@ export type StudentRow = {
   birthDate: string | null;
   guardianFullName: string | null;
   guardianCpf: string | null;
+  shift: Shift | null;
 };
 
 export type CsvError = { line: number; message: string };
@@ -43,6 +44,14 @@ export function parseBirthDate(raw: string): string | null {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
 }
 
+/** "Manhã", "matutino", "TARDE"… → turno; desconhecido → null (vazio fica a cargo de quem chama). */
+export function parseShift(raw: string): Shift | null {
+  const v = raw.trim().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+  if (v === "matutino" || v === "manha") return "matutino";
+  if (v === "vespertino" || v === "tarde") return "vespertino";
+  return null;
+}
+
 /** Coluna opcional: ausente ou vazia vira null; espaços repetidos viram um. */
 function optional(value: string | undefined): string | null {
   const v = value?.trim().replace(/\s+/g, " ");
@@ -68,6 +77,7 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
   const errors: CsvError[] = [];
   const firstSeen = new Map<string, StudentRow>();
   const guardianSeen = new Map<string, StudentRow>();
+  const classShift = new Map<string, Shift>();
   // info.lines is the physical line where the record ends (blank lines and quoted newlines included).
   records.forEach(({ record, info }) => {
     const line = info.lines;
@@ -101,6 +111,20 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
       errors.push({ line, message: `responsavel_cpf inválido${hint}` });
       return;
     }
+    const rawShift = optional(record.turno);
+    const shift = rawShift === null ? null : parseShift(rawShift);
+    if (rawShift !== null && shift === null) {
+      errors.push({ line, message: "turno inválido" });
+      return;
+    }
+    if (shift !== null) {
+      const seen = classShift.get(record.turma!);
+      if (seen && seen !== shift) {
+        errors.push({ line, message: "turma com turnos diferentes" });
+        return;
+      }
+      classShift.set(record.turma!, shift);
+    }
     const row: StudentRow = {
       line,
       externalCode: record.codigo_aluno!,
@@ -112,6 +136,7 @@ export function parseStudentsCsv(csv: string): { rows: StudentRow[]; errors: Csv
       birthDate,
       guardianFullName,
       guardianCpf,
+      shift,
     };
     // Os mapas guardam cópias que acumulam os valores não vazios já vistos: vazio, "A" e depois "B" é conflito.
     const first = firstSeen.get(row.externalCode);

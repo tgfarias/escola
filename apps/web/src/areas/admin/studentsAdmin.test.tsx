@@ -24,7 +24,7 @@ function bodyOf(fn: ReturnType<typeof mockApi>, key: string): unknown {
 
 const U = (n: number) => `0193a000-0000-7000-8000-${String(n).padStart(12, "0")}`;
 const [C1, C2, S1, S2, G1] = [U(1), U(2), U(3), U(4), U(5)];
-const CLASSES = { classes: [{ id: C1, name: "Infantil 3A" }, { id: C2, name: "Infantil 4B" }] };
+const CLASSES = { classes: [{ id: C1, name: "Infantil 3A", shift: "matutino" }, { id: C2, name: "Infantil 4B", shift: "vespertino" }] };
 const STUDENTS = {
   students: [
     {
@@ -256,5 +256,16 @@ describe("import inside the students page", () => {
     fireEvent.change(screen.getByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: "Importar" }));
     await screen.findByText("login");
+  });
+
+  it("changes a class's shift from the classes card", async () => {
+    const fn = mockApi({ ...BASE, [`PUT /api/admin/v1/classes/${C1}/shift`]: { status: 204 } });
+    renderPage();
+    const select = await screen.findByLabelText("Turno de Infantil 3A");
+    expect((select as HTMLSelectElement).value).toBe("matutino");
+    expect((screen.getByLabelText("Turno de Infantil 4B") as HTMLSelectElement).value).toBe("vespertino");
+    fireEvent.change(select, { target: { value: "vespertino" } });
+    await waitFor(() => expect(bodyOf(fn, `PUT /api/admin/v1/classes/${C1}/shift`)).toEqual({ shift: "vespertino" }));
+    await waitFor(() => expect(fn.mock.calls.filter((c) => c[0] === "/api/admin/v1/classes").length).toBe(2));
   });
 });

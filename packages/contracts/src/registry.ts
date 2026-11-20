@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { IsoDate, Uuid } from "./common";
 import { Cpf } from "./cpf";
+import { Shift } from "./shifts";
 
 export const ImportStudentsRequest = z.object({ csv: z.string().min(1).max(900_000) });
 export type ImportStudentsRequest = z.infer<typeof ImportStudentsRequest>;
@@ -15,9 +16,13 @@ export const ImportStudentsResponse = z.object({
 export type ImportStudentsResponse = z.infer<typeof ImportStudentsResponse>;
 
 export const ClassListResponse = z.object({
-  classes: z.array(z.object({ id: z.string().uuid(), name: z.string() })),
+  classes: z.array(z.object({ id: z.string().uuid(), name: z.string(), shift: Shift })),
 });
 export type ClassListResponse = z.infer<typeof ClassListResponse>;
+
+/** PUT /api/admin/v1/classes/:id/shift — naturalmente idempotente (204). */
+export const SetClassShiftRequest = z.object({ shift: Shift }).strict();
+export type SetClassShiftRequest = z.infer<typeof SetClassShiftRequest>;
 
 export const PersonName = z.string().trim().min(1).max(200);
 

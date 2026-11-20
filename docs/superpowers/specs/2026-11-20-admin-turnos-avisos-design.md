@@ -80,6 +80,9 @@ Exemplo de resposta (`period=7d`, papel secretaria; para a cozinha `documents` e
 - `classes.shift text NOT NULL DEFAULT 'matutino' CHECK (shift IN ('matutino', 'vespertino'))`.
   - Escola de um turno só não muda nada: todas as turmas ficam no matutino.
   - O CSV de importação ganha a coluna opcional `turno`.
+    - Aceita `matutino`/`manhã` e `vespertino`/`tarde` (sem diferença de maiúsculas e acentos); vazio mantém o turno da turma (turma nova: matutino); a mesma turma com turnos diferentes no arquivo é erro de linha.
+    - `GET /api/admin/v1/classes` devolve `{ "classes": [{ "id": "0193a000-0000-7000-8000-000000000001", "name": "Infantil 3A", "shift": "matutino" }] }`.
+    - `PUT /api/admin/v1/classes/:id/shift` recebe `{ "shift": "vespertino" }` e responde 204 (admin e secretaria; naturalmente idempotente).
 - `service_day_shifts`, um por turno ativo no dia:
   - colunas: `school_id`, `service_day_id`, `shift`, `cutoff_at`, `freeze_at`, `status` (`open` | `closed` | `finished`), `closed_at`, `finished_at`, `finished_by_device_id` ou `finished_by_staff_id`;
   - `UNIQUE (school_id, service_day_id, shift)`, com RLS, FKs compostas e caso no teste de RLS.

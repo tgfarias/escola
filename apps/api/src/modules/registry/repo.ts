@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
+import type { Shift } from "@app-lanche/contracts";
 import type { Trx } from "../../db/index";
 
 /** Hoje no fuso da escola, pelo relógio do banco (AAAA-MM-DD). */
@@ -9,11 +10,13 @@ export async function schoolToday(trx: Trx): Promise<string> {
   return rows[0]!.today;
 }
 
-export async function upsertClass(trx: Trx, schoolId: string, name: string): Promise<string> {
+/** Turma por nome; `shift` null mantém o turno de uma turma existente (turma nova: matutino). */
+export async function upsertClass(trx: Trx, schoolId: string, name: string, shift: Shift | null): Promise<string> {
+  const set = shift ? { name, shift } : { name };
   const row = await trx
     .insertInto("classes")
-    .values({ id: uuidv7(), schoolId, name })
-    .onConflict((oc) => oc.columns(["schoolId", "name"]).doUpdateSet({ name }))
+    .values({ id: uuidv7(), schoolId, ...set })
+    .onConflict((oc) => oc.columns(["schoolId", "name"]).doUpdateSet(set))
     .returning("id")
     .executeTakeFirstOrThrow();
   return row.id;
@@ -91,7 +94,15 @@ export async function linkGuardianStudent(
 }
 
 export async function listClasses(trx: Trx) {
-  return trx.selectFrom("classes").select(["id", "name"]).orderBy("name").execute();
+  return trx.selectFrom("classes").select(["id", "name", "shift"]).orderBy("name").execute();
+}
+
+export async function setClassShift(trx: Trx, classId: string, shift: Shift): Promise<"changed" | "same" | "missing"> {
+  const row = await trx.selectFrom("classes").select("shift").where("id", "=", classId).forUpdate().executeTakeFirst();
+  if (!row) return "missing";
+  if (row.shift === shift) return "same";
+  await trx.updateTable("classes").set({ shift }).where("id", "=", classId).execute();
+  return "changed";
 }
 
 export async function listStudents(trx: Trx) {

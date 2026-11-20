@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhoneBR, parseStudentsCsv } from "./csv";
+import { normalizePhoneBR, parseShift, parseStudentsCsv } from "./csv";
 
 const HEADER = "codigo_aluno,primeiro_nome,turma,responsavel_nome,responsavel_telefone";
 
@@ -24,7 +24,7 @@ describe("parseStudentsCsv", () => {
     const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,(11) 99999-0001\n`);
     expect(errors).toEqual([]);
     expect(rows).toEqual([
-      { line: 2, externalCode: "A001", firstName: "Léo", className: "Infantil 3A", guardianFirstName: "Ana", guardianPhone: "+5511999990001", fullName: null, birthDate: null, guardianFullName: null, guardianCpf: null },
+      { line: 2, externalCode: "A001", firstName: "Léo", className: "Infantil 3A", guardianFirstName: "Ana", guardianPhone: "+5511999990001", fullName: null, birthDate: null, guardianFullName: null, guardianCpf: null, shift: null },
     ]);
   });
 
@@ -142,5 +142,28 @@ describe("optional personal columns", () => {
     const { rows, errors } = parseStudentsCsv(`${HEADER}\nA001,Léo,Infantil 3A,Ana,11999990001\n`);
     expect(errors).toEqual([]);
     expect(rows[0]).toMatchObject({ fullName: null, guardianCpf: null });
+  });
+});
+
+describe("turno column", () => {
+  const HEADER_T = "codigo_aluno,primeiro_nome,turma,responsavel_nome,responsavel_telefone,turno";
+
+  it("accepts morning and afternoon names without case or accents and leaves blanks as null", () => {
+    expect(parseShift("Matutino")).toBe("matutino");
+    expect(parseShift(" MANHÃ ")).toBe("matutino");
+    expect(parseShift("manha")).toBe("matutino");
+    expect(parseShift("Vespertino")).toBe("vespertino");
+    expect(parseShift("tarde")).toBe("vespertino");
+    expect(parseShift("integral")).toBeNull();
+    const { rows, errors } = parseStudentsCsv(`${HEADER_T}\nA1,Léo,3A,Ana,11999990001,Tarde\nA2,Bia,4B,Rui,11999990002,`);
+    expect(errors).toEqual([]);
+    expect(rows.map((r) => r.shift)).toEqual(["vespertino", null]);
+  });
+
+  it("rejects an unknown shift and a class with two shifts in the same file", () => {
+    expect(parseStudentsCsv(`${HEADER_T}\nA1,Léo,3A,Ana,11999990001,noite`).errors).toEqual([{ line: 2, message: "turno inválido" }]);
+    expect(parseStudentsCsv(`${HEADER_T}\nA1,Léo,3A,Ana,11999990001,manhã\nA2,Bia,3A,Rui,11999990002,tarde`).errors).toEqual([
+      { line: 3, message: "turma com turnos diferentes" },
+    ]);
   });
 });

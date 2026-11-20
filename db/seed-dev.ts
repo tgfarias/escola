@@ -15,8 +15,8 @@ const SCHOOL = "0193a3b0-0000-7000-8000-00000000de01";
 const id = (n: number) => `0193a3b0-0000-7000-8000-${n.toString(16).padStart(12, "0")}`;
 
 const classes = [
-  { id: id(0xc1), name: "Infantil 3A" },
-  { id: id(0xc2), name: "Infantil 4B" },
+  { id: id(0xc1), name: "Infantil 3A", shift: "matutino" },
+  { id: id(0xc2), name: "Infantil 4B", shift: "vespertino" },
 ];
 const guardians: { id: string; first: string; full: string | null; cpf: string | null; phone: string }[] = [
   { id: id(0xa1), first: "Ana", full: "Ana Paula Souza", cpf: "52998224725", phone: "+5511900000001" },
@@ -51,7 +51,7 @@ try {
     [id(0xf1), SCHOOL, adminEmail],
   );
   for (const c of classes) {
-    await db.query("INSERT INTO classes (id, school_id, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING", [c.id, SCHOOL, c.name]);
+    await db.query("INSERT INTO classes (id, school_id, name, shift) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING", [c.id, SCHOOL, c.name, c.shift]);
   }
   for (const g of guardians) {
     await db.query(
