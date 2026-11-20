@@ -13,6 +13,7 @@ import { internalRoutes } from "./modules/internal/routes";
 import { ordersRoutes } from "./modules/orders/routes";
 import { serviceDayRoutes } from "./modules/serviceDays/routes";
 import { webhookRoutes } from "./modules/webhooks/routes";
+import { dashboardRoutes } from "./modules/dashboard/routes";
 import { walletRoutes } from "./modules/wallet/routes";
 import { registryRoutes } from "./modules/registry/routes";
 import { verifyInternalRequest } from "./platform/hmac";
@@ -182,6 +183,7 @@ export function buildApp(options: { logger?: FastifyServerOptions["logger"] } = 
   app.register(registryRoutes);
   app.register(catalogRoutes);
   app.register(walletRoutes);
+  app.register(dashboardRoutes);
   app.register(counterRoutes);
   app.register(topupRoutes);
   app.register(ordersRoutes);
