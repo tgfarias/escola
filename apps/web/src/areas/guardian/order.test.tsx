@@ -30,8 +30,8 @@ const CUTOFF = "2030-05-10T11:00:00.000Z";
 const ME = {
   guardian: { id: G, firstName: "Ana" },
   students: [
-    { id: S1, firstName: "Léo", className: "Maternal" },
-    { id: S2, firstName: "Bia", className: "Maternal" },
+    { id: S1, firstName: "Léo", className: "Maternal", shift: "matutino" },
+    { id: S2, firstName: "Bia", className: "Maternal", shift: "matutino" },
   ],
   walletBalanceCents: 500,
 };
@@ -53,6 +53,7 @@ function checkout(status: string, extra: Record<string, unknown> = {}, orderStat
   return {
     id: C1,
     serviceDate: DATE,
+    shift: "matutino",
     cutoffAt: CUTOFF,
     status,
     totalCents: 2250,

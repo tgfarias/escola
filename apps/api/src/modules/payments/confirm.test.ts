@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, markDayClosed, moveCutoff, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { postEntry } from "../wallet/service";
@@ -117,5 +117,26 @@ describe("confirmPayment", () => {
     await markDayClosed(c.day.serviceDayId);
     expect(await confirm(c.schoolId, c.paymentId, new Date(c.cutoffAt.getTime() - 60_000))).toBe("late_credited");
     expect((await state(c.schoolId, c.checkoutId)).checkout).toBe("late_credited");
+  });
+
+  it("credits a payment made after its own shift's cutoff even while the day's later shift is open", async () => {
+    const schoolId = await createSchool();
+    const day = await seedServiceDay(schoolId, { shifts: { matutino: 60, vespertino: 300 } });
+    const fam = await seedFamily(schoolId, ["Léo"], { shift: "matutino" });
+    const res = await buildApp().inject({
+      method: "POST",
+      url: "/api/v1/checkouts",
+      cookies: await guardianCookie(schoolId, fam.guardianId),
+      headers: { "idempotency-key": uuidv7() },
+      payload: { serviceDate: day.serviceDate, orders: [{ studentId: fam.studentIds[0]!, items: [{ menuItemId: day.items[0]!.id, qty: 1 }] }] },
+    });
+    const checkoutId = res.json().id as string;
+    const payment = await adminDb().selectFrom("payments").select("id").where("checkoutId", "=", checkoutId).executeTakeFirstOrThrow();
+    await moveCutoff(day.serviceDayId, -60, "matutino");
+    const outcome = await withTenant(schoolId, (trx) => confirmPayment(trx, { schoolId, paymentId: payment.id, paidAt: new Date() }));
+    expect(outcome).toBe("late_credited");
+    const order = await adminDb().selectFrom("orders").select("status").where("checkoutId", "=", checkoutId).executeTakeFirstOrThrow();
+    expect(order.status).toBe("expired_late");
+    expect(await walletLedgerMatches(schoolId, fam.guardianId)).toBe(true);
   });
 });

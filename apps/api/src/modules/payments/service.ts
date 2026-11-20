@@ -1,4 +1,4 @@
-import type { PaymentStatus, PaymentView } from "@app-lanche/contracts";
+import type { PaymentStatus, PaymentView, Shift } from "@app-lanche/contracts";
 import type { FastifyBaseLogger } from "fastify";
 import { withTenant, type Trx } from "../../db/index";
 import { DomainError } from "../../platform/errors";
@@ -94,7 +94,7 @@ export type ConfirmOutcome = "confirmed" | "late_credited" | "already_processed"
 
 /**
  * Única função que confirma pagamento (CLAUDE.md regra 10). Webhook e conciliação chamam esta.
- * Ordem de travas da fase: service_days → checkouts → topups → payments → guardian_students → counter_sales → wallets.
+ * Ordem de travas da fase: service_days → service_day_shifts → checkouts → topups → payments → guardian_students → counter_sales → wallets.
  */
 export async function confirmPayment(
   trx: Trx,
@@ -118,14 +118,16 @@ export async function confirmPayment(
   }
 
   // payments_one_target garante checkout_id quando não há topup_id; a FK composta garante o checkout.
-  const { checkoutId, serviceDayId } = payment;
-  if (checkoutId === null || serviceDayId === null) throw new Error(`payment ${payment.id} has no target`);
-  // Checkout: travas service_days → checkouts → payments → wallets, a mesma do cancelamento e do fechamento.
-  const day = await catalog.lockServiceDayById(trx, serviceDayId, "share");
+  const { checkoutId, serviceDayId, shift } = payment;
+  if (checkoutId === null || serviceDayId === null || shift === null) throw new Error(`payment ${payment.id} has no target`);
+  // Checkout: travas service_days → service_day_shifts → checkouts → payments → wallets (regra 16, por turno).
+  await catalog.lockServiceDayById(trx, serviceDayId, "share");
+  const turn = await catalog.lockShift(trx, serviceDayId, shift as Shift, "share");
+  if (!turn) throw new Error(`shift ${shift} of service day ${serviceDayId} not found`);
   await orders.lockCheckout(trx, checkoutId);
   if (!(await repo.markPaid(trx, payment.id, input.paidAt))) return "already_processed";
 
-  const onTime = day.status === "open" && input.paidAt.getTime() <= day.cutoffAt.getTime();
+  const onTime = turn.status === "open" && input.paidAt.getTime() <= turn.cutoffAt.getTime();
   if (onTime && (await orders.confirmCheckout(trx, input.schoolId, checkoutId))) return "confirmed";
 
   await orders.creditLatePayment(trx, { schoolId: input.schoolId, checkoutId, paymentId: payment.id, amountCents: payment.amountCents });

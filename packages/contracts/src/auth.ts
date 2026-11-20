@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Shift } from "./shifts";
 
 export const GuardianScope = z.enum(["order", "documents", "wallet"]);
 export type GuardianScope = z.infer<typeof GuardianScope>;
@@ -30,7 +31,7 @@ export type OtpVerifyResponse = z.infer<typeof OtpVerifyResponse>;
 export const MeResponse = z.object({
   guardian: z.object({ id: z.string().uuid(), firstName: z.string() }),
   students: z.array(
-    z.object({ id: z.string().uuid(), firstName: z.string(), className: z.string() }),
+    z.object({ id: z.string().uuid(), firstName: z.string(), className: z.string(), shift: Shift }),
   ),
   walletBalanceCents: z.number().int(),
 });

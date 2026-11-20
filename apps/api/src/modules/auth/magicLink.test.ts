@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, markDayClosed, seedServiceDay, seedTenant } from "../../../test/helpers";
+import { adminDb, createSchool, internalRequest, markDayClosed, seedServiceDay, seedTenant } from "../../../test/helpers";
+import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { createMagicLink } from "./magicLink";
 import { hashToken } from "./tokens";
@@ -65,5 +66,16 @@ describe("createMagicLink", () => {
     const input = { schoolId, guardianId: seed.guardianId, scope: "order" as const, serviceDate: day.serviceDate };
     const [a, b] = await withTenant(schoolId, async (trx) => [await createMagicLink(trx, input), await createMagicLink(trx, input)]);
     expect(a.url).not.toBe(b.url);
+  });
+
+  it("keeps an order link valid until the latest shift's cutoff", async () => {
+    const schoolId = await createSchool();
+    const seed = await seedTenant(schoolId);
+    const day = await seedServiceDay(schoolId, { serviceDate: "2031-05-05", shifts: { matutino: 30, vespertino: 300 } });
+    const res = await buildApp().inject(
+      internalRequest("POST", `/internal/v1/schools/${schoolId}/magic-links`, { guardian_id: seed.guardianId, scope: "order", service_date: day.serviceDate }),
+    );
+    const shift = await adminDb().selectFrom("serviceDayShifts").select("cutoffAt").where("id", "=", day.shiftIds.vespertino!).executeTakeFirstOrThrow();
+    expect(new Date(res.json().expires_at).toISOString()).toBe(shift.cutoffAt.toISOString());
   });
 });

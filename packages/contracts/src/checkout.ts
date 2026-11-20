@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { Cents, IsoDate, IsoDateTime, Uuid } from "./common";
+import { Shift } from "./shifts";
 
 export const CheckoutStatus = z.enum(["pending_payment", "paid", "expired", "late_credited", "cancelled"]);
 export type CheckoutStatus = z.infer<typeof CheckoutStatus>;
-export const OrderStatus = z.enum(["pending", "confirmed", "delivered", "expired", "expired_late", "cancelled"]);
+export const OrderStatus = z.enum(["pending", "confirmed", "delivered", "expired", "expired_late", "cancelled", "not_collected"]);
 export type OrderStatus = z.infer<typeof OrderStatus>;
 export const PaymentStatus = z.enum(["pending", "paid", "expired", "refunded"]);
 export type PaymentStatus = z.infer<typeof PaymentStatus>;
@@ -34,6 +35,8 @@ export type PaymentView = z.infer<typeof PaymentView>;
 export const CheckoutView = z.object({
   id: Uuid,
   serviceDate: IsoDate,
+  shift: Shift,
+  /** Corte do turno do checkout. */
   cutoffAt: IsoDateTime,
   status: CheckoutStatus,
   totalCents: Cents,

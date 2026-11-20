@@ -73,7 +73,7 @@ export async function paymentTarget(trx: Trx, paymentId: string) {
   return trx
     .selectFrom("payments")
     .leftJoin("checkouts", "checkouts.id", "payments.checkoutId")
-    .select(["payments.id", "payments.checkoutId", "payments.topupId", "payments.amountCents", "checkouts.serviceDayId"])
+    .select(["payments.id", "payments.checkoutId", "payments.topupId", "payments.amountCents", "checkouts.serviceDayId", "checkouts.shift"])
     .where("payments.id", "=", paymentId)
     .executeTakeFirst();
 }

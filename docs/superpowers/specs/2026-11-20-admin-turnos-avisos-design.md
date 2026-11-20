@@ -126,6 +126,28 @@ Para o responsável, `GET /api/v1/service-days` e `GET /api/v1/service-days/{dat
     { "shift": "vespertino", "cutoffAt": "2026-11-23T16:00:00.000Z", "acceptingOrders": true } ] }
 ```
 
+Pedido do responsável: um checkout é de um turno só, derivado no servidor da turma dos alunos (`POST /api/v1/checkouts` não muda). Alunos de turnos diferentes no mesmo pedido → 422 `invalid_order`; turno sem linha no dia → 409 `shift_not_offered`. Confirmar, cancelar e pagar usam o corte do turno; o Pix expira no corte do turno. `GET /api/v1/me` traz o turno de cada aluno:
+
+```json
+{ "guardian": { "id": "0193a000-0000-7000-8000-000000000010", "firstName": "Ana" },
+  "students": [
+    { "id": "0193a000-0000-7000-8000-000000000011", "firstName": "Léo", "className": "Infantil 3A", "shift": "matutino" },
+    { "id": "0193a000-0000-7000-8000-000000000012", "firstName": "Bia", "className": "Infantil 5C", "shift": "vespertino" } ],
+  "walletBalanceCents": 0 }
+```
+
+O `CheckoutView` ganha `shift`, e `cutoffAt` passa a ser o corte do turno (`orders[].status` pode ser `not_collected`, B.3):
+
+```json
+{ "id": "0193a000-0000-7000-8000-000000000020", "serviceDate": "2026-11-23", "shift": "vespertino",
+  "cutoffAt": "2026-11-23T16:00:00.000Z", "status": "pending_payment", "totalCents": 900, "walletAppliedCents": 0, "amountDueCents": 900,
+  "orders": [{ "id": "0193a000-0000-7000-8000-000000000021", "studentId": "0193a000-0000-7000-8000-000000000012", "studentFirstName": "Bia",
+               "status": "pending", "items": [{ "menuItemId": "0193a000-0000-7000-8000-000000000030", "name": "Misto quente", "qty": 1, "unitPriceCents": 900 }] }],
+  "payment": { "status": "pending", "amountCents": 900, "pixCopyPaste": "000201…", "pixQrPngBase64": null, "expiresAt": "2026-11-23T16:00:00.000Z" } }
+```
+
+Erro de turno sem lanche: `{ "error": { "code": "shift_not_offered", "message": "…" } }` (409).
+
 ### B.3 Tablet: "Finalizar turno"
 
 - O quadro de entregas mostra um turno por vez, com abas Manhã e Tarde quando a escola tem os dois.

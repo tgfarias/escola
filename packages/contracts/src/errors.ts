@@ -18,6 +18,7 @@ export const errorCodes = [
   "cutoff_passed",
   "service_day_locked",
   "service_day_open",
+  "shift_not_offered",
   "menu_item_name_taken",
   "insufficient_balance",
   "order_already_exists",

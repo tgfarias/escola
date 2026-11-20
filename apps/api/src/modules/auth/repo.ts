@@ -188,7 +188,7 @@ export async function getGuardianWithStudents(trx: Trx, guardianId: string) {
     .selectFrom("guardianStudents")
     .innerJoin("students", "students.id", "guardianStudents.studentId")
     .innerJoin("classes", "classes.id", "students.classId")
-    .select(["students.id", "students.firstName", "classes.name as className"])
+    .select(["students.id", "students.firstName", "classes.name as className", "classes.shift"])
     .where("guardianStudents.guardianId", "=", guardianId)
     .where("students.active", "=", true)
     .orderBy("students.firstName")

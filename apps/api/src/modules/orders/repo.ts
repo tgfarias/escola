@@ -6,7 +6,8 @@ export async function guardianActiveStudents(trx: Trx, guardianId: string, stude
   return trx
     .selectFrom("guardianStudents")
     .innerJoin("students", "students.id", "guardianStudents.studentId")
-    .select(["students.id", "students.firstName"])
+    .innerJoin("classes", "classes.id", "students.classId")
+    .select(["students.id", "students.firstName", "classes.shift"])
     .where("guardianStudents.guardianId", "=", guardianId)
     .where("students.id", "in", studentIds)
     .where("students.active", "=", true)
@@ -63,15 +64,19 @@ export async function checkoutHeaders(trx: Trx, checkoutIds: string[]) {
   return trx
     .selectFrom("checkouts")
     .innerJoin("serviceDays", "serviceDays.id", "checkouts.serviceDayId")
+    .innerJoin("serviceDayShifts", (j) =>
+      j.onRef("serviceDayShifts.serviceDayId", "=", "checkouts.serviceDayId").onRef("serviceDayShifts.shift", "=", "checkouts.shift"),
+    )
     .select([
       "checkouts.id",
       "checkouts.guardianId",
       "checkouts.serviceDayId",
+      "checkouts.shift",
       "checkouts.status",
       "checkouts.totalCents",
       "checkouts.walletAppliedCents",
       "serviceDays.serviceDate",
-      "serviceDays.cutoffAt",
+      "serviceDayShifts.cutoffAt",
     ])
     .where("checkouts.id", "in", checkoutIds)
     .orderBy("checkouts.id")

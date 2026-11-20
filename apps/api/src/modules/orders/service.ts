@@ -1,4 +1,4 @@
-import type { CheckoutListResponse, CheckoutStatus, CheckoutView, CreateCheckoutRequest, OrderStatus } from "@app-lanche/contracts";
+import type { CheckoutListResponse, CheckoutStatus, CheckoutView, CreateCheckoutRequest, OrderStatus, Shift } from "@app-lanche/contracts";
 import type { FastifyBaseLogger } from "fastify";
 import { uuidv7 } from "uuidv7";
 import { withTenant, type Trx } from "../../db/index";
@@ -41,12 +41,19 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
 
   const day = await catalog.lockServiceDayByDate(trx, body.serviceDate, "share");
   if (!day) throw new DomainError("not_found");
-  if (day.status !== "open" || !day.beforeCutoff) throw new DomainError("cutoff_passed");
 
   const studentIds = body.orders.map((o) => o.studentId);
   if (new Set(studentIds).size !== studentIds.length) throw new DomainError("invalid_order");
   const students = await repo.guardianActiveStudents(trx, guardianId, studentIds);
   if (students.length !== studentIds.length) throw new DomainError("invalid_order");
+  // Um checkout é de um turno (spec F5C, B.1): a PWA manda um por turno.
+  const shifts = new Set(students.map((s) => s.shift as Shift));
+  if (shifts.size !== 1) throw new DomainError("invalid_order");
+  const shift = [...shifts][0]!;
+  // Travas: service_days → service_day_shifts (FOR SHARE, regra 16) → … → wallets.
+  const turn = await catalog.lockShift(trx, day.id, shift, "share");
+  if (!turn) throw new DomainError("shift_not_offered");
+  if (turn.status !== "open" || !turn.beforeCutoff) throw new DomainError("cutoff_passed");
 
   const prices = await catalog.serviceDayPrices(trx, day.id);
   let totalCents = 0;
@@ -61,7 +68,7 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
   }
 
   const checkoutId = uuidv7();
-  await repo.insertCheckout(trx, { id: checkoutId, schoolId, guardianId, serviceDayId: day.id, shift: "matutino", totalCents });
+  await repo.insertCheckout(trx, { id: checkoutId, schoolId, guardianId, serviceDayId: day.id, shift, totalCents });
   for (const order of body.orders) {
     const orderId = uuidv7();
     await repo.insertOrder(trx, { id: orderId, schoolId, checkoutId, studentId: order.studentId, serviceDate: day.serviceDate });
@@ -101,14 +108,14 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
       schoolId,
       checkoutId,
       amountCents: totalCents - appliedCents,
-      expiresAt: day.cutoffAt,
+      expiresAt: turn.cutoffAt,
     });
   }
   return { checkoutId };
 }
 
 /**
- * Ordem única de travas: service_days → checkouts → payments → wallets. Quem confirma, cancela, expira ou fecha
+ * Ordem única de travas: service_days → service_day_shifts → checkouts → payments → wallets. Quem confirma, cancela, expira ou fecha
  * o dia trava o checkout antes de mexer no pagamento; inverter a ordem causa deadlock com confirmPayment.
  */
 export async function lockCheckout(trx: Trx, checkoutId: string): Promise<{ status: CheckoutStatus } | undefined> {
@@ -155,6 +162,7 @@ async function views(trx: Trx, checkoutIds: string[]): Promise<CheckoutView[]> {
     return {
       id: h.id,
       serviceDate: h.serviceDate,
+      shift: h.shift as Shift,
       cutoffAt: h.cutoffAt.toISOString(),
       status: h.status as CheckoutStatus,
       totalCents: h.totalCents,
@@ -252,13 +260,14 @@ export async function cancelCheckout(session: SessionClaims, checkoutId: string)
   await withTenant(schoolId, async (trx) => {
     const [first] = await repo.checkoutHeaders(trx, [checkoutId]);
     if (!first || first.guardianId !== session.sub) throw new DomainError("not_found");
-    // Travas na ordem service_days → checkouts → payments → wallets.
-    const day = await catalog.lockServiceDayById(trx, first.serviceDayId, "share");
+    // Travas na ordem service_days → service_day_shifts → checkouts → payments → wallets.
+    await catalog.lockServiceDayById(trx, first.serviceDayId, "share");
+    const turn = (await catalog.lockShift(trx, first.serviceDayId, first.shift as Shift, "share"))!;
     // Relido sob a trava: um webhook pode ter confirmado o pagamento entre as duas leituras.
     const { status } = (await lockCheckout(trx, checkoutId))!;
     if (status === "cancelled" || status === "expired") return;
     if (status === "late_credited") throw new DomainError("checkout_not_cancellable");
-    if (day.status !== "open" || !day.beforeCutoff) throw new DomainError("cutoff_passed");
+    if (turn.status !== "open" || !turn.beforeCutoff) throw new DomainError("cutoff_passed");
     if (status === "paid") {
       const cancelled = await repo.transitionCheckout(trx, checkoutId, ["paid"], "cancelled");
       if (!cancelled) return;

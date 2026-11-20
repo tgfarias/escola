@@ -70,7 +70,7 @@ describe("guardian authentication", () => {
     expect(me.statusCode).toBe(200);
     expect(me.json()).toEqual({
       guardian: { id: seed.guardianId, firstName: "Ana" },
-      students: [{ id: seed.studentId, firstName: "Léo", className: "Infantil 3A" }],
+      students: [{ id: seed.studentId, firstName: "Léo", className: "Infantil 3A", shift: "matutino" }],
       walletBalanceCents: 50, // seedTenant wallet
     });
   });

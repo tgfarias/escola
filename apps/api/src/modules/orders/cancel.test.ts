@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, moveCutoff, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, moveCutoff, seedFamily, seedServiceDay, seedTwoShiftFamily, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeReset } from "../payments/fakeProvider";
@@ -160,5 +160,22 @@ describe("cancel and a Pix arriving together", () => {
       expect(await balance(s.family.guardianId)).toBe(900);
       expect(await walletLedgerMatches(s.schoolId, s.family.guardianId)).toBe(true);
     }
+  });
+
+  it("lets a guardian cancel an afternoon order after the morning cutoff", async () => {
+    const schoolId = await createSchool();
+    const day = await seedServiceDay(schoolId, { shifts: { matutino: 60, vespertino: 300 } });
+    const f = await seedTwoShiftFamily(schoolId);
+    const created = await buildApp().inject({
+      method: "POST",
+      url: "/api/v1/checkouts",
+      cookies: await guardianCookie(schoolId, f.guardianId),
+      headers: { "idempotency-key": uuidv7() },
+      payload: { serviceDate: day.serviceDate, orders: [{ studentId: f.bia, items: [{ menuItemId: day.items[0]!.id, qty: 1 }] }] },
+    });
+    await moveCutoff(day.serviceDayId, -1, "matutino");
+    const res = await buildApp().inject({ method: "POST", url: `/api/v1/checkouts/${created.json().id}/cancel`, cookies: await guardianCookie(schoolId, f.guardianId) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().status).toBe("expired");
   });
 });

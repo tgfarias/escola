@@ -2,6 +2,7 @@ import type {
   InternalMagicLinkRequest,
   InternalMagicLinkResponse,
   MeResponse,
+  Shift,
   StaffMeResponse,
   StaffRole,
 } from "@app-lanche/contracts";
@@ -113,7 +114,13 @@ export async function verifyGuardianOtp(input: {
 export async function getMe(session: SessionClaims): Promise<MeResponse> {
   const found = await withTenant(session.schoolId, async (trx) => {
     const data = await repo.getGuardianWithStudents(trx, session.sub);
-    return data && { ...data, walletBalanceCents: await wallet.balanceOf(trx, session.sub) };
+    return (
+      data && {
+        guardian: data.guardian,
+        students: data.students.map((s) => ({ ...s, shift: s.shift as Shift })),
+        walletBalanceCents: await wallet.balanceOf(trx, session.sub),
+      }
+    );
   });
   if (!found) throw new DomainError("unauthenticated");
   return found;

@@ -381,6 +381,14 @@ export async function seedFamily(
   return { guardianId, studentIds };
 }
 
+/** Responsável com Léo na turma da manhã ("Infantil 3A") e Bia na da tarde ("Infantil 5C"). */
+export async function seedTwoShiftFamily(schoolId: string): Promise<{ guardianId: string; leo: string; bia: string }> {
+  const fam = await seedFamily(schoolId, ["Léo"], { className: "Infantil 3A", shift: "matutino" });
+  const other = await seedFamily(schoolId, ["Bia"], { className: "Infantil 5C", shift: "vespertino" });
+  await adminDb().insertInto("guardianStudents").values({ schoolId, guardianId: fam.guardianId, studentId: other.studentIds[0]!, financial: false }).execute();
+  return { guardianId: fam.guardianId, leo: fam.studentIds[0]!, bia: other.studentIds[0]! };
+}
+
 export async function seedServiceDay(
   schoolId: string,
   opts: { serviceDate?: string; cutoffInMinutes?: number; items?: { name: string; priceCents: number }[]; shifts?: Partial<Record<Shift, number>> } = {},
@@ -403,6 +411,11 @@ export async function seedServiceDay(
               now() + make_interval(mins => ${minutes}), now() + make_interval(mins => ${minutes + 5}))`.execute(db);
     shiftIds[shift] = id;
   }
+  // O dia espelha o turno mais tarde exatamente (cada INSERT acima tem o seu now()).
+  await sql`
+    UPDATE service_days d SET cutoff_at = m.cutoff_at, freeze_at = m.freeze_at
+    FROM (SELECT max(cutoff_at) AS cutoff_at, max(freeze_at) AS freeze_at FROM service_day_shifts WHERE service_day_id = ${serviceDayId}) m
+    WHERE d.id = ${serviceDayId}`.execute(db);
   const items: { id: string; name: string; priceCents: number }[] = [];
   for (const item of opts.items ?? [
     { name: "Misto quente", priceCents: 900 },

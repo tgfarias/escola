@@ -1,7 +1,17 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import {
+  adminDb,
+  createSchool,
+  guardianCookie,
+  markDayClosed,
+  moveCutoff,
+  seedFamily,
+  seedServiceDay,
+  seedTwoShiftFamily,
+  walletLedgerMatches,
+} from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeFailNextCreate, fakeReset } from "../payments/fakeProvider";
@@ -263,5 +273,59 @@ describe("GET /api/v1/checkouts", () => {
 
     const list = await buildApp().inject({ method: "GET", url: `/api/v1/checkouts?serviceDate=${s.day.serviceDate}`, cookies: s.cookies });
     expect(list.json()).toEqual({ checkouts: [created] });
+  });
+});
+
+const twoShiftFamily = seedTwoShiftFamily;
+
+describe("checkout per shift", () => {
+  const post = async (schoolId: string, guardianId: string, serviceDate: string, orders: { studentId: string; items: { menuItemId: string; qty: number }[] }[]) =>
+    buildApp().inject({
+      method: "POST",
+      url: "/api/v1/checkouts",
+      cookies: await guardianCookie(schoolId, guardianId),
+      headers: { "idempotency-key": uuidv7() },
+      payload: { serviceDate, orders },
+    });
+
+  it("places one checkout per shift, with that shift's cutoff, and refuses mixing shifts", async () => {
+    const schoolId = await createSchool();
+    const day = await seedServiceDay(schoolId, { shifts: { matutino: 60, vespertino: 300 } });
+    const f = await twoShiftFamily(schoolId);
+    const item = [{ menuItemId: day.items[0]!.id, qty: 1 }];
+    const mixed = await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.leo, items: item }, { studentId: f.bia, items: item }]);
+    expect(mixed.statusCode).toBe(422);
+    expect(mixed.json().error.code).toBe("invalid_order");
+    const morning = await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.leo, items: item }]);
+    const afternoon = await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.bia, items: item }]);
+    expect(morning.json().shift).toBe("matutino");
+    expect(afternoon.json().shift).toBe("vespertino");
+    const shifts = await adminDb().selectFrom("serviceDayShifts").select(["shift", "cutoffAt"]).where("serviceDayId", "=", day.serviceDayId).execute();
+    const cutoff = Object.fromEntries(shifts.map((s) => [s.shift, s.cutoffAt.toISOString()]));
+    expect(morning.json().cutoffAt).toBe(cutoff.matutino);
+    expect(afternoon.json().cutoffAt).toBe(cutoff.vespertino);
+    const pix = await adminDb().selectFrom("payments").select("expiresAt").where("checkoutId", "=", afternoon.json().id).executeTakeFirstOrThrow();
+    expect(pix.expiresAt.toISOString()).toBe(cutoff.vespertino);
+  });
+
+  it("closes orders for a shift past its cutoff while the other shift still takes them", async () => {
+    const schoolId = await createSchool();
+    const day = await seedServiceDay(schoolId, { shifts: { matutino: 60, vespertino: 300 } });
+    const f = await twoShiftFamily(schoolId);
+    await moveCutoff(day.serviceDayId, -1, "matutino");
+    const item = [{ menuItemId: day.items[0]!.id, qty: 1 }];
+    const late = await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.leo, items: item }]);
+    expect(late.statusCode).toBe(409);
+    expect(late.json().error.code).toBe("cutoff_passed");
+    expect((await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.bia, items: item }])).statusCode).toBe(200);
+  });
+
+  it("refuses a shift the day does not offer", async () => {
+    const schoolId = await createSchool();
+    const day = await seedServiceDay(schoolId); // só matutino
+    const f = await twoShiftFamily(schoolId);
+    const res = await post(schoolId, f.guardianId, day.serviceDate, [{ studentId: f.bia, items: [{ menuItemId: day.items[0]!.id, qty: 1 }] }]);
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("shift_not_offered");
   });
 });

@@ -12,6 +12,10 @@ describe("ErrorResponse", () => {
     expect(parsed.error.details).toEqual({ missing: [] });
   });
 
+  it("accepts shift_not_offered", () => {
+    expect(ErrorResponse.parse({ error: { code: "shift_not_offered", message: "x" } }).error.code).toBe("shift_not_offered");
+  });
+
   it("rejects an unknown error code", () => {
     expect(() => ErrorResponse.parse({ error: { code: "whatever", message: "x" } })).toThrow();
   });
