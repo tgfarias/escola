@@ -3,6 +3,7 @@ import { Link, Route, Routes, useNavigate } from "react-router";
 import { LinkLanding } from "../areas/guardian/LinkLanding";
 import { CheckoutPage } from "../areas/guardian/CheckoutPage";
 import { DocumentsPage } from "../areas/guardian/DocumentsPage";
+import { GuardianShell } from "../areas/guardian/GuardianShell";
 import { OrderHome } from "../areas/guardian/OrderHome";
 import { TopupPage } from "../areas/guardian/TopupPage";
 import { WalletPage } from "../areas/guardian/WalletPage";
@@ -30,13 +31,15 @@ function Home() {
     };
   }, [navigate]);
   return (
-    <main>
-      <h1>App Lanche</h1>
-      <p>Abra o link que a escola enviou pelo WhatsApp.</p>
-      <p>
+    <GuardianShell>
+      <section className="g-card text-center">
+        <h1>App Lanche</h1>
+        <p className="mb-0">Abra o link que a escola enviou pelo WhatsApp.</p>
+      </section>
+      <p className="text-center g-muted">
         <Link to="/kds">Tablet da cozinha</Link>
       </p>
-    </main>
+    </GuardianShell>
   );
 }
 

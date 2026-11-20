@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
 import { getDeviceSecret } from "./device";
+import { GuardianShell } from "./GuardianShell";
 
 type State =
   | { step: "loading" }
@@ -63,17 +64,34 @@ export function LinkLanding() {
     }
   }
 
-  if (state.step === "loading") return <main><p>Abrindo…</p></main>;
-  if (state.step === "error") return <main><p role="alert">{state.message}</p></main>;
+  if (state.step === "loading") {
+    return (
+      <GuardianShell>
+        <p className="g-muted">Abrindo…</p>
+      </GuardianShell>
+    );
+  }
+  if (state.step === "error") {
+    return (
+      <GuardianShell>
+        <p role="alert" className="g-alert">
+          {state.message}
+        </p>
+      </GuardianShell>
+    );
+  }
 
   return (
-    <main>
+    <GuardianShell>
       <h1>Confirme que é você</h1>
-      <p>Enviamos um código para o seu WhatsApp, porque este aparelho ainda não foi usado.</p>
-      <form onSubmit={submit}>
-        <label htmlFor="otp">Código de 6 dígitos</label>
+      <form className="g-card" onSubmit={submit}>
+        <p>Enviamos um código para o seu WhatsApp, porque este aparelho ainda não foi usado.</p>
+        <label htmlFor="otp" className="form-label">
+          Código de 6 dígitos
+        </label>
         <input
           id="otp"
+          className="form-control form-control-lg text-center mb-3"
           inputMode="numeric"
           autoComplete="one-time-code"
           pattern="\d{6}"
@@ -82,9 +100,15 @@ export function LinkLanding() {
           value={code}
           onChange={(e) => setCode(e.target.value)}
         />
-        {state.error && <p role="alert">{state.error}</p>}
-        <button type="submit" disabled={state.busy}>Confirmar</button>
+        {state.error && (
+          <p role="alert" className="g-alert">
+            {state.error}
+          </p>
+        )}
+        <button type="submit" className="btn btn-primary btn-lg w-100" disabled={state.busy}>
+          Confirmar
+        </button>
       </form>
-    </main>
+    </GuardianShell>
   );
 }

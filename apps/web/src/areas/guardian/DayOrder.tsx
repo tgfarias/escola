@@ -73,28 +73,45 @@ export function DayOrder({ day, me }: { day: GuardianServiceDay; me: MeResponse 
   const cutoff = new Date(day.cutoffAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return (
     <section>
-      <p>Pedidos até {cutoff}</p>
+      <p className="g-muted">Pedidos até {cutoff}</p>
       {me.students.map((s) => (
-        <article key={s.id}>
+        <article key={s.id} className="g-card">
           <h2>{s.firstName}</h2>
           {ordered.has(s.id) ? (
-            <p>
-              Pedido já feito · <Link to={`/pedido/checkout/${ordered.get(s.id)}`}>Ver pedido</Link>
+            <p className="mb-0">
+              <span className="g-tag ms-0">Pedido já feito</span> · <Link to={`/pedido/checkout/${ordered.get(s.id)}`}>Ver pedido</Link>
             </p>
           ) : (
-            <ul>
+            <ul className="g-list">
               {day.items.map((item) => {
                 const qty = cart[s.id]?.[item.menuItemId] ?? 0;
                 return (
-                  <li key={item.menuItemId}>
-                    {item.name} — {formatCents(item.priceCents)}{" "}
-                    <button type="button" aria-label={`Remover ${item.name} de ${s.firstName}`} onClick={() => change(s.id, item.menuItemId, -1)}>
-                      −
-                    </button>{" "}
-                    {qty}{" "}
-                    <button type="button" aria-label={`Adicionar ${item.name} para ${s.firstName}`} onClick={() => change(s.id, item.menuItemId, 1)}>
-                      +
-                    </button>
+                  <li key={item.menuItemId} className="d-flex align-items-center justify-content-between gap-2">
+                    <span>
+                      {item.name}
+                      <br />
+                      <span className="g-muted">{formatCents(item.priceCents)}</span>
+                    </span>
+                    <span className="g-stepper">
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary"
+                        aria-label={`Remover ${item.name} de ${s.firstName}`}
+                        disabled={qty === 0}
+                        onClick={() => change(s.id, item.menuItemId, -1)}
+                      >
+                        −
+                      </button>
+                      <span className="g-stepper__qty">{qty}</span>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        aria-label={`Adicionar ${item.name} para ${s.firstName}`}
+                        onClick={() => change(s.id, item.menuItemId, 1)}
+                      >
+                        +
+                      </button>
+                    </span>
                   </li>
                 );
               })}
@@ -102,10 +119,16 @@ export function DayOrder({ day, me }: { day: GuardianServiceDay; me: MeResponse 
           )}
         </article>
       ))}
-      {error && <p role="alert">{error}</p>}
-      <button type="button" disabled={total === 0 || busy} onClick={pay}>
-        Pagar {formatCents(total)}
-      </button>
+      {error && (
+        <p role="alert" className="g-alert">
+          {error}
+        </p>
+      )}
+      {me.students.some((s) => !ordered.has(s.id)) && (
+        <button type="button" className="btn btn-primary btn-lg w-100" disabled={total === 0 || busy} onClick={pay}>
+          Pagar {formatCents(total)}
+        </button>
+      )}
     </section>
   );
 }

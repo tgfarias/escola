@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
+import { GuardianPending, GuardianShell } from "./GuardianShell";
 
 const FINAL_TEXT: Partial<Record<CheckoutView["status"], string>> = {
   expired: "Este pedido expirou sem pagamento.",
@@ -65,32 +66,34 @@ export function CheckoutPage() {
     }
   }
 
-  if (!checkout) return <main>{error ? <p role="alert">{error}</p> : <p>Carregando…</p>}</main>;
+  if (!checkout) return <GuardianPending error={error} />;
   const until = new Date(checkout.cutoffAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const pix = checkout.payment;
 
   return (
-    <main>
+    <GuardianShell>
+      <h1>Pedido</h1>
       {checkout.status === "pending_payment" &&
         (pix?.pixCopyPaste ? (
-          <section>
-            <p>Pague com Pix até {until}</p>
+          <section className="g-card g-pix">
+            <p className="fw-semibold">Pague com Pix até {until}</p>
             {pix.pixQrPngBase64 && <img alt="QR Code Pix" src={`data:image/png;base64,${pix.pixQrPngBase64}`} />}
-            <textarea readOnly value={pix.pixCopyPaste} aria-label="Código Pix" />
+            <textarea className="form-control mb-3" rows={3} readOnly value={pix.pixCopyPaste} aria-label="Código Pix" />
             <button
               type="button"
+              className="btn btn-primary btn-lg w-100"
               onClick={() => navigator.clipboard.writeText(pix.pixCopyPaste!).then(() => setCopied(true), () => setCopied(false))}
             >
               {copied ? "Código copiado" : "Copiar código Pix"}
             </button>
           </section>
         ) : (
-          <p>Gerando o Pix… aguarde alguns segundos.</p>
+          <p className="g-card g-muted">Gerando o Pix… aguarde alguns segundos.</p>
         ))}
       {checkout.status === "paid" && (
-        <section>
-          <p>Pedido confirmado!</p>
-          <ul>
+        <section className="g-card">
+          <p className="g-ok">Pedido confirmado!</p>
+          <ul className="g-list">
             {checkout.orders.map((o) => (
               <li key={o.id}>
                 {o.studentFirstName}: {o.items.map((i) => `${i.qty}x ${i.name}`).join(", ")}
@@ -99,14 +102,20 @@ export function CheckoutPage() {
           </ul>
         </section>
       )}
-      {FINAL_TEXT[checkout.status] && <p>{FINAL_TEXT[checkout.status]}</p>}
+      {FINAL_TEXT[checkout.status] && <p className="g-card">{FINAL_TEXT[checkout.status]}</p>}
+      {error && (
+        <p role="alert" className="g-alert">
+          {error}
+        </p>
+      )}
       {(checkout.status === "paid" || checkout.status === "pending_payment") && (
-        <button type="button" onClick={cancel}>
+        <button type="button" className="btn btn-outline-danger w-100 mb-2" onClick={cancel}>
           Cancelar pedido
         </button>
       )}
-      {error && <p role="alert">{error}</p>}
-      <Link to="/pedido">Voltar</Link>
-    </main>
+      <Link className="btn btn-link w-100" to="/pedido">
+        Voltar
+      </Link>
+    </GuardianShell>
   );
 }

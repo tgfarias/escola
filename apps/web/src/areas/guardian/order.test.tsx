@@ -200,6 +200,16 @@ describe("guardian ordering", () => {
     expect(screen.getByRole("link", { name: "Ver pedido" }).getAttribute("href")).toBe(`/pedido/checkout/${C1}`);
     expect(screen.queryByRole("button", { name: "Adicionar Suco para Léo" })).toBeNull();
     expect(screen.getByRole("button", { name: "Adicionar Suco para Bia" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pagar R$ 0,00" })).toBeTruthy();
+  });
+
+  it("hides the pay button when every child already has an order", async () => {
+    const both = checkout("paid", {}, "confirmed");
+    both.orders.push({ ...both.orders[0]!, id: U(8), studentId: S2, studentFirstName: "Bia" });
+    mockApi({ ...baseReplies(), [LIST]: ok({ checkouts: [both] }) });
+    renderAt("/pedido");
+    await waitFor(() => expect(screen.getAllByText(/Pedido já feito/)).toHaveLength(2));
+    expect(screen.queryByRole("button", { name: /^Pagar/ })).toBeNull();
   });
 });
 

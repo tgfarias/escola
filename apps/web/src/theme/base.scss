@@ -1,4 +1,5 @@
-// Responsáveis: só o CSS base do Bootstrap com as cores da marca. Nada do layout do tema entra aqui.
+// Responsáveis: só o CSS base do Bootstrap com as cores da marca e o layout leve de _guardian.scss. Nada do layout do
+// tema (ArchitectUI) entra aqui: build/guardianCss.ts falha o build se entrar.
 @import 'bootstrap/scss/functions';
 @import 'brand';
 @import 'bootstrap/scss/variables';
@@ -13,3 +14,4 @@
 @import 'bootstrap/scss/buttons';
 @import 'bootstrap/scss/helpers';
 @import 'bootstrap/scss/utilities/api';
+@import 'guardian';

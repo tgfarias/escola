@@ -1,0 +1,190 @@
+// Responsáveis: layout próprio, leve e pensado para celular. Só usa as cores de _brand.scss; nada do ArchitectUI.
+
+body {
+  background: $brand-body-bg;
+}
+
+.g-header {
+  background: $brand-header-bg;
+  color: $brand-header-text;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+
+  &__inner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 36rem;
+    margin: 0 auto;
+    padding: 0.625rem 1rem;
+  }
+
+  &__logo {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: #fff;
+    object-fit: contain;
+    padding: 2px;
+    flex: none;
+  }
+
+  &__name {
+    font-weight: 600;
+    font-size: 1.0625rem;
+  }
+}
+
+.g-main {
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2.5rem;
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }
+
+  h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+}
+
+.g-card {
+  background: #fff;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.g-balance {
+  text-align: center;
+
+  &__value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  &--debt {
+    border-top: 4px solid $danger;
+
+    .g-balance__value {
+      color: $danger;
+    }
+  }
+
+  &--ok {
+    border-top: 4px solid $primary;
+
+    .g-balance__value {
+      color: $brand-on-tint;
+    }
+  }
+}
+
+// Lista de lançamentos, documentos e itens: linhas com divisória, sem marcadores.
+.g-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+
+  > li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid $gray-200;
+
+    &:last-child {
+      border-bottom: 0;
+    }
+  }
+}
+
+.g-amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+
+  &--in {
+    color: $brand-on-tint;
+  }
+}
+
+.g-tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 1rem;
+  background: $brand-tint;
+  color: $brand-on-tint;
+  margin-left: 0.25rem;
+
+  &--warn {
+    background: $warning;
+    color: $color-contrast-dark;
+  }
+}
+
+// Botões − e + do pedido: alvo de toque de 44 px.
+.g-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  &__qty {
+    min-width: 1.5rem;
+    text-align: center;
+    font-weight: 600;
+  }
+}
+
+.g-pix {
+  text-align: center;
+
+  img {
+    display: block;
+    width: 100%;
+    max-width: 16rem;
+    height: auto;
+    margin: 0 auto 1rem;
+    image-rendering: pixelated;
+  }
+
+  textarea {
+    font-family: $font-family-monospace;
+    font-size: 0.75rem;
+    word-break: break-all;
+  }
+}
+
+.g-alert {
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: #f8d7da;
+  color: #58151c;
+  border: 1px solid #f1aeb5;
+}
+
+.g-ok {
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: $brand-tint;
+  color: $color-contrast-dark;
+  font-weight: 600;
+}
+
+.g-muted {
+  color: $gray-700;
+  font-size: 0.875rem;
+}

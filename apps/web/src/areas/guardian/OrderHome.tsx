@@ -5,6 +5,7 @@ import { ApiError, apiFetch } from "../../app/api";
 import { errorMessage } from "../../ui/messages";
 import { formatCents } from "../../ui/money";
 import { DayOrder } from "./DayOrder";
+import { GuardianPending, GuardianShell } from "./GuardianShell";
 
 export function OrderHome() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -21,23 +22,26 @@ export function OrderHome() {
     }, fail);
   }, []);
 
-  if (error) return <main><p role="alert">{error}</p></main>;
-  if (!me || !days) return <main><p>Carregando…</p></main>;
+  if (error || !me || !days) return <GuardianPending error={error} />;
   const day = days.find((d) => d.serviceDate === selected);
 
   return (
-    <main>
+    <GuardianShell>
       <h1>Olá, {me.guardian.firstName}</h1>
-      <p>
-        Saldo na carteira: {formatCents(me.walletBalanceCents)} · <Link to="/carteira">Minha carteira</Link> · <Link to="/documentos">Documentos</Link>
-      </p>
+      <section className="g-card d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span className="fw-semibold">Saldo na carteira: {formatCents(me.walletBalanceCents)}</span>
+        <span className="d-flex gap-2">
+          <Link className="btn btn-outline-primary btn-sm" to="/carteira">Minha carteira</Link>
+          <Link className="btn btn-outline-primary btn-sm" to="/documentos">Documentos</Link>
+        </span>
+      </section>
       {days.length === 0 ? (
-        <p>Nenhum dia aberto para pedidos no momento.</p>
+        <p className="g-card g-muted">Nenhum dia aberto para pedidos no momento.</p>
       ) : (
         <>
-          <label>
-            Dia{" "}
-            <select value={selected ?? ""} onChange={(e) => setSelected(e.target.value)}>
+          <label className="form-label d-block mb-3">
+            Dia
+            <select className="form-select form-select-lg mt-1" value={selected ?? ""} onChange={(e) => setSelected(e.target.value)}>
               {days.map((d) => (
                 <option key={d.serviceDate} value={d.serviceDate}>
                   {d.serviceDate.split("-").reverse().join("/")}
@@ -48,6 +52,6 @@ export function OrderHome() {
           {day && <DayOrder key={day.serviceDate} day={day} me={me} />}
         </>
       )}
-    </main>
+    </GuardianShell>
   );
 }
