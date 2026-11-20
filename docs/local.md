@@ -17,11 +17,13 @@ Sem o n8n configurado, o código de acesso não sai por e-mail/WhatsApp: ele fic
 1. Em http://localhost:8088/admin, peça o código para `admin@escola.local`.
 2. `pnpm app:otp` mostra o último código gerado, se ainda valer (5 minutos).
 
-Cardápio, Dias de serviço e Tablets da cozinha ficam no grupo **Lanche** do menu; a importação CSV fica em **Alunos e responsáveis → Adicionar / importar**. A página inicial mostra os indicadores, com valores ocultos até tocar em **Mostrar valores**.
-
 Cada pessoa pode pedir 3 códigos a cada 15 minutos e 10 por dia. Passado o limite, a tela de login responde
 normalmente (para não revelar se a conta existe), mas nenhum código novo é criado e `pnpm app:otp` avisa isso.
 Localmente, `pnpm app:otp --reset` limpa os códigos da escola de demonstração; depois peça um novo na tela.
+
+### Onde fica cada coisa no admin
+
+Cardápio, Dias de serviço e Tablets da cozinha ficam no grupo **Lanche** do menu; a importação CSV fica em **Alunos e responsáveis → Adicionar / importar**. A página inicial mostra os indicadores, com valores ocultos até tocar em **Mostrar valores**.
 
 ## Entrar como responsável
 
