@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, moveCutoff, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeReset } from "../payments/fakeProvider";
@@ -78,7 +78,7 @@ describe("POST /api/v1/checkouts/:id/cancel", () => {
     const stranger = await seedFamily(s.schoolId, ["Caio"]);
     expect((await s.cancel(paid.id, await guardianCookie(s.schoolId, stranger.guardianId))).statusCode).toBe(404);
 
-    await sql`UPDATE service_days SET cutoff_at = now() - interval '1 minute', freeze_at = now() + interval '4 minutes' WHERE id = ${s.day.serviceDayId}`.execute(adminDb());
+    await moveCutoff(s.day.serviceDayId, -60);
     const late = await s.cancel(paid.id);
     expect(late.statusCode).toBe(409);
     expect(late.json().error.code).toBe("cutoff_passed");

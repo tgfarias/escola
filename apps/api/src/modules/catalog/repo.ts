@@ -63,20 +63,25 @@ export async function serviceDayHasCheckouts(trx: Trx, serviceDayId: string): Pr
   return row !== undefined;
 }
 
-/** Cria ou atualiza o horário do dia, calculado no banco no fuso da escola. */
+/** Cria ou atualiza o horário do dia (e do turno matutino), calculado no banco no fuso da escola. */
 export async function upsertServiceDay(trx: Trx, schoolId: string, serviceDate: string, cutoffTime: string | null) {
   const { rows } = await sql<{ id: string; cutoffInFuture: boolean }>`
     INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
     SELECT ${uuidv7()}, s.id, ${serviceDate}::date, c.cutoff_at, c.cutoff_at + interval '5 minutes'
     FROM schools s
     CROSS JOIN LATERAL (
-      SELECT ((${serviceDate}::date + coalesce(${cutoffTime}::time, s.default_cutoff_time)) AT TIME ZONE s.timezone) AS cutoff_at
+      SELECT ((${serviceDate}::date + coalesce(${cutoffTime}::time, s.cutoff_time_matutino)) AT TIME ZONE s.timezone) AS cutoff_at
     ) c
     WHERE s.id = ${schoolId}
     ON CONFLICT (school_id, service_date)
       DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at
-    RETURNING id, now() < cutoff_at AS cutoff_in_future`.execute(trx);
-  return rows[0]!;
+    RETURNING id, cutoff_at, freeze_at, now() < cutoff_at AS cutoff_in_future`.execute(trx);
+  const day = rows[0]!;
+  await sql`
+    INSERT INTO service_day_shifts (id, school_id, service_day_id, shift, cutoff_at, freeze_at)
+    SELECT ${uuidv7()}, d.school_id, d.id, 'matutino', d.cutoff_at, d.freeze_at FROM service_days d WHERE d.id = ${day.id}
+    ON CONFLICT (school_id, service_day_id, shift) DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at`.execute(trx);
+  return { id: day.id, cutoffInFuture: day.cutoffInFuture };
 }
 
 export async function replaceServiceDayItems(
@@ -131,6 +136,12 @@ export async function listOpenServiceDays(trx: Trx) {
 }
 
 export async function markServiceDayClosed(trx: Trx, serviceDayId: string): Promise<Date | null> {
+  await trx
+    .updateTable("serviceDayShifts")
+    .set({ status: "closed", closedAt: sql<Date>`now()` })
+    .where("serviceDayId", "=", serviceDayId)
+    .where("status", "=", "open")
+    .execute();
   const row = await trx
     .updateTable("serviceDays")
     .set({ status: "closed", closedAt: sql<Date>`now()` })

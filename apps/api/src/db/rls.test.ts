@@ -34,10 +34,13 @@ const TENANT_TABLES = [
   "payments",
   "reminder_batches",
   "service_day_items",
+  "service_day_shifts",
   "service_days",
+  "shift_events",
   "staff_users",
   "students",
   "topups",
+  "uncollected_decisions",
   "wallet_entries",
   "wallets",
 ];

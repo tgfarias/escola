@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, seedTenant, staffCookie, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, moveCutoff, seedFamily, seedServiceDay, seedTenant, staffCookie, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeMarkPaid, fakeReset } from "../payments/fakeProvider";
@@ -30,7 +30,7 @@ async function credit(schoolId: string, guardianId: string, amountCents: number)
 }
 
 async function passCutoff(serviceDayId: string) {
-  await sql`UPDATE service_days SET cutoff_at = now() - interval '1 second' WHERE id = ${serviceDayId}`.execute(adminDb());
+  await moveCutoff(serviceDayId, -1);
 }
 
 describe("closeServiceDay", () => {

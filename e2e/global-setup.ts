@@ -24,12 +24,17 @@ export default async function globalSetup(): Promise<void> {
       INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
       VALUES (gen_random_uuid(), $1, (now() AT TIME ZONE 'America/Sao_Paulo')::date, now() - interval '30 minutes', now() - interval '25 minutes')
       RETURNING id, service_date::text AS date`, [SCHOOL_ID]);
+    await db.query(
+      `INSERT INTO service_day_shifts (id, school_id, service_day_id, shift, cutoff_at, freeze_at)
+       SELECT gen_random_uuid(), school_id, id, 'matutino', cutoff_at, freeze_at FROM service_days WHERE id = $1`,
+      [day!.id],
+    );
     const { rows: [cls] } = await db.query<{ id: string }>(`INSERT INTO classes (id, school_id, name) VALUES (gen_random_uuid(), $1, 'Infantil 3A') RETURNING id`, [SCHOOL_ID]);
     const { rows: [guardian] } = await db.query<{ id: string }>(`INSERT INTO guardians (id, school_id, phone_e164, first_name) VALUES (gen_random_uuid(), $1, '+5511999990099', 'Ana') RETURNING id`, [SCHOOL_ID]);
     const { rows: [item] } = await db.query<{ id: string }>(`INSERT INTO menu_items (id, school_id, name, price_cents) VALUES (gen_random_uuid(), $1, 'Misto quente', 900) RETURNING id`, [SCHOOL_ID]);
     await db.query(`INSERT INTO service_day_items (school_id, service_day_id, menu_item_id, price_cents) VALUES ($1, $2, $3, 900)`, [SCHOOL_ID, day!.id, item!.id]);
     const { rows: [checkout] } = await db.query<{ id: string }>(
-      `INSERT INTO checkouts (id, school_id, guardian_id, service_day_id, status, total_cents) VALUES (gen_random_uuid(), $1, $2, $3, 'paid', 2700) RETURNING id`,
+      `INSERT INTO checkouts (id, school_id, guardian_id, service_day_id, shift, status, total_cents) VALUES (gen_random_uuid(), $1, $2, $3, 'matutino', 'paid', 2700) RETURNING id`,
       [SCHOOL_ID, guardian!.id, day!.id],
     );
     for (const [i, name] of ["Léo", "Bia", "Caio"].entries()) {

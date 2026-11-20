@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { postEntry } from "../wallet/service";
@@ -114,7 +114,7 @@ describe("confirmPayment", () => {
 
   it("credits the wallet when the day is already closed, even if paid on time", async () => {
     const c = await pendingCheckout();
-    await sql`UPDATE service_days SET status = 'closed', closed_at = now() WHERE id = ${c.day.serviceDayId}`.execute(adminDb());
+    await markDayClosed(c.day.serviceDayId);
     expect(await confirm(c.schoolId, c.paymentId, new Date(c.cutoffAt.getTime() - 60_000))).toBe("late_credited");
     expect((await state(c.schoolId, c.checkoutId)).checkout).toBe("late_credited");
   });

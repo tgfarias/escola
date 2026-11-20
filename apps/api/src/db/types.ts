@@ -39,6 +39,7 @@ export interface Checkouts {
   id: string;
   schoolId: string;
   serviceDayId: string;
+  shift: string;
   status: Generated<string>;
   totalCents: number;
   walletAppliedCents: Generated<number>;
@@ -49,6 +50,7 @@ export interface Classes {
   id: string;
   name: string;
   schoolId: string;
+  shift: Generated<string>;
 }
 
 export interface CounterSaleItems {
@@ -193,6 +195,7 @@ export interface Manifests {
   id: string;
   schoolId: string;
   serviceDayId: string;
+  shift: string;
   version: Generated<number>;
 }
 
@@ -301,8 +304,9 @@ export interface SchemaMigrations {
 
 export interface Schools {
   createdAt: Generated<Timestamp>;
+  cutoffTimeMatutino: Generated<string>;
+  cutoffTimeVespertino: Generated<string>;
   debtLimitCents: Generated<number>;
-  defaultCutoffTime: Generated<string>;
   id: string;
   kitchenPhone: string | null;
   name: string;
@@ -329,6 +333,31 @@ export interface ServiceDays {
   schoolId: string;
   serviceDate: string;
   status: Generated<string>;
+}
+
+export interface ServiceDayShifts {
+  closedAt: Timestamp | null;
+  createdAt: Generated<Timestamp>;
+  cutoffAt: Timestamp;
+  finishedAt: Timestamp | null;
+  finishedByDeviceId: string | null;
+  finishedByStaffId: string | null;
+  freezeAt: Timestamp;
+  id: string;
+  schoolId: string;
+  serviceDayId: string;
+  shift: string;
+  status: Generated<string>;
+}
+
+export interface ShiftEvents {
+  deviceId: string;
+  eventId: string;
+  occurredAt: Timestamp;
+  receivedAt: Generated<Timestamp>;
+  schoolId: string;
+  serviceDayShiftId: string;
+  type: string;
 }
 
 export interface StaffUsers {
@@ -362,6 +391,21 @@ export interface Topups {
   requestedBy: string;
   schoolId: string;
   status: Generated<string>;
+}
+
+export interface UncollectedDecisions {
+  amountCents: number | null;
+  decidedAt: Generated<Timestamp>;
+  decision: string;
+  guardianId: string | null;
+  id: string;
+  orderId: string;
+  reason: string | null;
+  reviewedAt: Timestamp | null;
+  reviewedByStaffId: string | null;
+  schoolId: string;
+  staffUserId: string;
+  walletEntryId: string | null;
 }
 
 export interface WalletEntries {
@@ -415,9 +459,12 @@ export interface DB {
   schools: Schools;
   serviceDayItems: ServiceDayItems;
   serviceDays: ServiceDays;
+  serviceDayShifts: ServiceDayShifts;
+  shiftEvents: ShiftEvents;
   staffUsers: StaffUsers;
   students: Students;
   topups: Topups;
+  uncollectedDecisions: UncollectedDecisions;
   walletEntries: WalletEntries;
   wallets: Wallets;
 }

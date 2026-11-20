@@ -83,6 +83,9 @@ Exemplo de resposta (`period=7d`, papel secretaria; para a cozinha `documents` e
 - `service_day_shifts`, um por turno ativo no dia:
   - colunas: `school_id`, `service_day_id`, `shift`, `cutoff_at`, `freeze_at`, `status` (`open` | `closed` | `finished`), `closed_at`, `finished_at`, `finished_by_device_id` ou `finished_by_staff_id`;
   - `UNIQUE (school_id, service_day_id, shift)`, com RLS, FKs compostas e caso no teste de RLS.
+- `shift_events`, o evento `shift_finished` recebido do tablet (B.3), append-only:
+  - colunas: `event_id` (gerado no cliente, chave primária, regra 36), `school_id`, `service_day_shift_id`, `device_id`, `type`, `occurred_at`, `received_at`;
+  - com RLS, FKs compostas e caso no teste de RLS.
 - O dia (`service_days`) continua a unidade do cardápio e do link de pedido.
   - Corte, congelamento, fechamento e romaneio passam a ser por turno: o pedido de um aluno usa o turno da turma dele.
   - `service_days.cutoff_at` e `freeze_at` ficam iguais aos do turno mais tarde (compatibilidade). O dia fica `closed` quando todos os turnos fecharam.

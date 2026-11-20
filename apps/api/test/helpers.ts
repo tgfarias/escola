@@ -1,4 +1,5 @@
 import { CamelCasePlugin, Kysely, PostgresDialect, sql } from "kysely";
+import type { Shift } from "@app-lanche/contracts";
 import type { InjectOptions } from "fastify";
 import pg from "pg";
 import { uuidv7 } from "uuidv7";
@@ -52,6 +53,9 @@ export type SeedIds = {
   documentId: string;
   counterSaleId: string;
   topupId: string;
+  serviceDayShiftId: string;
+  shiftEventId: string;
+  uncollectedDecisionId: string;
 };
 
 /** Insere uma linha em cada tabela de tenant. Estenda quando criar tabela nova. */
@@ -79,6 +83,9 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     documentId: uuidv7(),
     counterSaleId: uuidv7(),
     topupId: uuidv7(),
+    serviceDayShiftId: uuidv7(),
+    shiftEventId: uuidv7(),
+    uncollectedDecisionId: uuidv7(),
   };
   await db.insertInto("classes").values({ id: ids.classId, schoolId, name: "Infantil 3A" }).execute();
   await db
@@ -145,6 +152,10 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     })
     .execute();
   await db
+    .insertInto("serviceDayShifts")
+    .values({ id: ids.serviceDayShiftId, schoolId, serviceDayId: ids.serviceDayId, shift: "matutino", cutoffAt, freezeAt: new Date(cutoffAt.getTime() + 300_000) })
+    .execute();
+  await db
     .insertInto("serviceDayItems")
     .values({ schoolId, serviceDayId: ids.serviceDayId, menuItemId: ids.menuItemId, priceCents: 900 })
     .execute();
@@ -197,6 +208,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
       schoolId,
       guardianId: ids.guardianId,
       serviceDayId: ids.serviceDayId,
+      shift: "matutino",
       status: "expired",
       totalCents: 900,
     })
@@ -253,7 +265,7 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     .execute();
   await db
     .insertInto("manifests")
-    .values({ id: uuidv7(), schoolId, serviceDayId: ids.serviceDayId, content: JSON.stringify({}) })
+    .values({ id: uuidv7(), schoolId, serviceDayId: ids.serviceDayId, shift: "matutino", content: JSON.stringify({}) })
     .execute();
   await db
     .insertInto("idempotencyKeys")
@@ -289,6 +301,15 @@ export async function seedTenant(schoolId: string): Promise<SeedIds> {
     })
     .execute();
   await db.insertInto("documentViews").values({ id: uuidv7(), schoolId, documentId: ids.documentId, guardianId: ids.guardianId }).execute();
+  // F5C Parte B: evento de turno finalizado e decisão de não retirado.
+  await db
+    .insertInto("shiftEvents")
+    .values({ eventId: ids.shiftEventId, schoolId, serviceDayShiftId: ids.serviceDayShiftId, deviceId: ids.kitchenDeviceId, type: "shift_finished", occurredAt: new Date() })
+    .execute();
+  await db
+    .insertInto("uncollectedDecisions")
+    .values({ id: ids.uncollectedDecisionId, schoolId, orderId: ids.orderId, decision: "kept", staffUserId: ids.staffUserId })
+    .execute();
   return ids;
 }
 
@@ -330,12 +351,15 @@ let phoneSeq = 0;
 export async function seedFamily(
   schoolId: string,
   names: string[] = ["Léo", "Bia"],
+  opts: { className?: string; shift?: Shift } = {},
 ): Promise<{ guardianId: string; studentIds: string[] }> {
   const db = adminDb();
+  const className = opts.className ?? "Infantil 3A";
+  const shift = opts.shift ? { shift: opts.shift } : {};
   const cls = await db
     .insertInto("classes")
-    .values({ id: uuidv7(), schoolId, name: "Infantil 3A" })
-    .onConflict((oc) => oc.columns(["schoolId", "name"]).doUpdateSet({ name: "Infantil 3A" }))
+    .values({ id: uuidv7(), schoolId, name: className, ...shift })
+    .onConflict((oc) => oc.columns(["schoolId", "name"]).doUpdateSet({ name: className, ...shift }))
     .returning("id")
     .executeTakeFirstOrThrow();
   const guardianId = uuidv7();
@@ -359,16 +383,26 @@ export async function seedFamily(
 
 export async function seedServiceDay(
   schoolId: string,
-  opts: { serviceDate?: string; cutoffInMinutes?: number; items?: { name: string; priceCents: number }[] } = {},
-): Promise<{ serviceDayId: string; serviceDate: string; items: { id: string; name: string; priceCents: number }[] }> {
+  opts: { serviceDate?: string; cutoffInMinutes?: number; items?: { name: string; priceCents: number }[]; shifts?: Partial<Record<Shift, number>> } = {},
+): Promise<{ serviceDayId: string; serviceDate: string; items: { id: string; name: string; priceCents: number }[]; shiftIds: Partial<Record<Shift, string>> }> {
   const db = adminDb();
   const serviceDate = opts.serviceDate ?? "2030-03-04";
-  const minutes = opts.cutoffInMinutes ?? 60;
+  const shifts = opts.shifts ?? { matutino: opts.cutoffInMinutes ?? 60 };
+  const dayMinutes = Math.max(...Object.values(shifts));
   const serviceDayId = uuidv7();
   await sql`
     INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
     VALUES (${serviceDayId}, ${schoolId}, ${serviceDate}::date,
-            now() + make_interval(mins => ${minutes}), now() + make_interval(mins => ${minutes + 5}))`.execute(db);
+            now() + make_interval(mins => ${dayMinutes}), now() + make_interval(mins => ${dayMinutes + 5}))`.execute(db);
+  const shiftIds: Partial<Record<Shift, string>> = {};
+  for (const [shift, minutes] of Object.entries(shifts) as [Shift, number][]) {
+    const id = uuidv7();
+    await sql`
+      INSERT INTO service_day_shifts (id, school_id, service_day_id, shift, cutoff_at, freeze_at)
+      VALUES (${id}, ${schoolId}, ${serviceDayId}, ${shift},
+              now() + make_interval(mins => ${minutes}), now() + make_interval(mins => ${minutes + 5}))`.execute(db);
+    shiftIds[shift] = id;
+  }
   const items: { id: string; name: string; priceCents: number }[] = [];
   for (const item of opts.items ?? [
     { name: "Misto quente", priceCents: 900 },
@@ -380,7 +414,7 @@ export async function seedServiceDay(
     await db.insertInto("serviceDayItems").values({ schoolId, serviceDayId, menuItemId: id, priceCents: item.priceCents }).execute();
     items.push({ id, name, priceCents: item.priceCents });
   }
-  return { serviceDayId, serviceDate, items };
+  return { serviceDayId, serviceDate, items, shiftIds };
 }
 
 /** Invariante do ledger (spec 13): saldo gravado = soma dos lançamentos. Sem carteira conta como verdadeiro. */
@@ -411,24 +445,58 @@ export function internalRequest(method: "GET" | "POST", url: string, payload?: u
   };
 }
 
-/** Dia já fechado com um pedido confirmado (1x primeiro item) por aluno; romaneio gravado como o fechamento faria. */
-export async function seedClosedDayWithOrders(
+/** Pedidos confirmados (1x o item) de uma família nova, num checkout pago do turno. */
+export async function seedConfirmedOrders(
   schoolId: string,
-  opts: { serviceDate: string; studentNames: string[] },
-): Promise<{ serviceDayId: string; orderIds: string[] }> {
-  const day = await seedServiceDay(schoolId, { serviceDate: opts.serviceDate, cutoffInMinutes: -30 });
-  const fam = await seedFamily(schoolId, opts.studentNames);
+  opts: { serviceDayId: string; serviceDate: string; menuItemId: string; studentNames: string[]; shift?: Shift; className?: string },
+): Promise<{ guardianId: string; checkoutId: string; orderIds: string[] }> {
+  const shift = opts.shift ?? "matutino";
+  const fam = await seedFamily(schoolId, opts.studentNames, { shift, className: opts.className ?? (shift === "matutino" ? "Infantil 3A" : "Infantil 5C") });
   const db = adminDb();
   const checkoutId = uuidv7();
-  await db.insertInto("checkouts").values({ id: checkoutId, schoolId, guardianId: fam.guardianId, serviceDayId: day.serviceDayId, status: "paid", totalCents: 900 * fam.studentIds.length }).execute();
+  await db
+    .insertInto("checkouts")
+    .values({ id: checkoutId, schoolId, guardianId: fam.guardianId, serviceDayId: opts.serviceDayId, shift, status: "paid", totalCents: 900 * fam.studentIds.length })
+    .execute();
   const orderIds: string[] = [];
   for (const studentId of fam.studentIds) {
     const orderId = uuidv7();
     await db.insertInto("orders").values({ id: orderId, schoolId, checkoutId, studentId, serviceDate: opts.serviceDate, status: "confirmed" }).execute();
-    await db.insertInto("orderItems").values({ id: uuidv7(), schoolId, orderId, menuItemId: day.items[0]!.id, qty: 1, unitPriceCents: 900 }).execute();
+    await db.insertInto("orderItems").values({ id: uuidv7(), schoolId, orderId, menuItemId: opts.menuItemId, qty: 1, unitPriceCents: 900 }).execute();
     orderIds.push(orderId);
   }
-  return { serviceDayId: day.serviceDayId, orderIds };
+  return { guardianId: fam.guardianId, checkoutId, orderIds };
+}
+
+/** Dia (de um turno) já depois do corte, com um pedido confirmado por aluno; o teste fecha o dia. */
+export async function seedClosedDayWithOrders(
+  schoolId: string,
+  opts: { serviceDate: string; studentNames: string[]; shift?: Shift },
+): Promise<{ serviceDayId: string; orderIds: string[] }> {
+  const shift = opts.shift ?? "matutino";
+  const day = await seedServiceDay(schoolId, { serviceDate: opts.serviceDate, shifts: { [shift]: -30 } });
+  const seeded = await seedConfirmedOrders(schoolId, { serviceDayId: day.serviceDayId, serviceDate: opts.serviceDate, menuItemId: day.items[0]!.id, studentNames: opts.studentNames, shift });
+  return { serviceDayId: day.serviceDayId, orderIds: seeded.orderIds };
+}
+
+/** Corte do turno (ou de todos) = agora + `seconds`; congelamento 5 min depois; o dia espelha o turno mais tarde. */
+export async function moveCutoff(serviceDayId: string, seconds: number, shift?: Shift): Promise<void> {
+  const db = adminDb();
+  await sql`
+    UPDATE service_day_shifts
+    SET cutoff_at = now() + make_interval(secs => ${seconds}), freeze_at = now() + make_interval(secs => ${seconds + 300})
+    WHERE service_day_id = ${serviceDayId} AND (${shift ?? null}::text IS NULL OR shift = ${shift ?? null}::text)`.execute(db);
+  await sql`
+    UPDATE service_days d SET cutoff_at = m.cutoff_at, freeze_at = m.freeze_at
+    FROM (SELECT max(cutoff_at) AS cutoff_at, max(freeze_at) AS freeze_at FROM service_day_shifts WHERE service_day_id = ${serviceDayId}) m
+    WHERE d.id = ${serviceDayId}`.execute(db);
+}
+
+/** Dia e turnos abertos → closed, direto no banco (sem romaneio): testes de pedido e cardápio. */
+export async function markDayClosed(serviceDayId: string): Promise<void> {
+  const db = adminDb();
+  await sql`UPDATE service_day_shifts SET status = 'closed', closed_at = now() WHERE service_day_id = ${serviceDayId} AND status = 'open'`.execute(db);
+  await sql`UPDATE service_days SET status = 'closed', closed_at = now() WHERE id = ${serviceDayId} AND status = 'open'`.execute(db);
 }
 
 /**

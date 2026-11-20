@@ -9,7 +9,7 @@ const prepare = (schoolId: string, body: unknown) =>
 
 async function confirmOrder(schoolId: string, serviceDayId: string, serviceDate: string, guardianId: string, studentId: string) {
   const checkoutId = crypto.randomUUID();
-  await adminDb().insertInto("checkouts").values({ id: checkoutId, schoolId, guardianId, serviceDayId, status: "paid", totalCents: 900 }).execute();
+  await adminDb().insertInto("checkouts").values({ id: checkoutId, schoolId, guardianId, serviceDayId, shift: "matutino", status: "paid", totalCents: 900 }).execute();
   await adminDb().insertInto("orders").values({ id: crypto.randomUUID(), schoolId, checkoutId, studentId, serviceDate, status: "confirmed" }).execute();
 }
 

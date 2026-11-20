@@ -1,6 +1,6 @@
 import { sql } from "kysely";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, seedServiceDay, seedTenant } from "../../../test/helpers";
+import { adminDb, createSchool, markDayClosed, seedServiceDay, seedTenant } from "../../../test/helpers";
 import { withTenant } from "../../db/index";
 import { createMagicLink } from "./magicLink";
 import { hashToken } from "./tokens";
@@ -50,7 +50,7 @@ describe("createMagicLink", () => {
     const seed = await seedTenant(schoolId);
     const past = await seedServiceDay(schoolId, { serviceDate: "2031-03-03", cutoffInMinutes: -1 });
     const closed = await seedServiceDay(schoolId, { serviceDate: "2031-03-04", cutoffInMinutes: 60 });
-    await adminDb().updateTable("serviceDays").set({ status: "closed", closedAt: new Date() }).where("id", "=", closed.serviceDayId).execute();
+    await markDayClosed(closed.serviceDayId);
     for (const serviceDate of [past.serviceDate, closed.serviceDate, "2031-03-05"]) {
       await expect(
         withTenant(schoolId, (trx) => createMagicLink(trx, { schoolId, guardianId: seed.guardianId, scope: "order", serviceDate })),

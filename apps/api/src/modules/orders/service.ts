@@ -61,7 +61,7 @@ async function placeCheckout(trx: Trx, session: SessionClaims, body: CreateCheck
   }
 
   const checkoutId = uuidv7();
-  await repo.insertCheckout(trx, { id: checkoutId, schoolId, guardianId, serviceDayId: day.id, totalCents });
+  await repo.insertCheckout(trx, { id: checkoutId, schoolId, guardianId, serviceDayId: day.id, shift: "matutino", totalCents });
   for (const order of body.orders) {
     const orderId = uuidv7();
     await repo.insertOrder(trx, { id: orderId, schoolId, checkoutId, studentId: order.studentId, serviceDate: day.serviceDate });

@@ -42,6 +42,7 @@ describe("F2 schema", () => {
       );
     await insertOrder("pending");
     await expect(insertOrder("confirmed")).rejects.toThrow(/orders_one_active_per_student/);
+    await expect(insertOrder("not_collected")).rejects.toThrow(/orders_one_active_per_student/);
     await insertOrder("expired");
     await insertOrder("cancelled");
   });
@@ -366,5 +367,80 @@ describe("F5B schema", () => {
     await withTenant(schoolId, (trx) => trx.updateTable("schools").set({ debtLimitCents: 7000 }).execute());
     await expect(withTenant(schoolId, (trx) => trx.updateTable("schools").set({ name: "x" }).execute())).rejects.toThrow(/permission denied/);
     await expect(withTenant(schoolId, (trx) => trx.updateTable("schools").set({ debtLimitCents: -1 }).execute())).rejects.toThrow(/check constraint/);
+  });
+});
+
+describe("F5C shifts schema", () => {
+  let schoolId: string;
+  let ids: SeedIds;
+
+  beforeAll(async () => {
+    schoolId = await createSchool();
+    ids = await seedTenant(schoolId);
+  });
+
+  it("keeps one row per day and shift, with consistent states", async () => {
+    const insert = (values: Record<string, unknown>) =>
+      withTenant(schoolId, (trx) =>
+        sql`INSERT INTO service_day_shifts (id, school_id, service_day_id, shift, cutoff_at, freeze_at, status, closed_at, finished_at)
+            VALUES (${uuidv7()}, ${schoolId}, ${ids.serviceDayId}, ${values.shift}, now(), now() + interval '5 minutes',
+                    ${values.status ?? "open"}, ${values.closedAt ?? null}, ${values.finishedAt ?? null})`.execute(trx),
+      );
+    await expect(insert({ shift: "matutino" })).rejects.toThrow(/service_day_shifts_school_id_service_day_id_shift_key/);
+    await expect(insert({ shift: "integral" })).rejects.toThrow(/check constraint/);
+    await expect(insert({ shift: "vespertino", status: "closed" })).rejects.toThrow(/check constraint/);
+    await expect(insert({ shift: "vespertino", status: "finished", closedAt: new Date() })).rejects.toThrow(/check constraint/);
+    await insert({ shift: "vespertino", status: "finished", closedAt: new Date(), finishedAt: new Date() });
+  });
+
+  it("ties checkouts and manifests to a shift that exists on that day", async () => {
+    const day = await seedServiceDay(schoolId, { serviceDate: "2099-01-05" }); // só matutino
+    const fam = await seedFamily(schoolId, ["Léo"]);
+    const checkout = (shift: string) =>
+      withTenant(schoolId, (trx) =>
+        trx.insertInto("checkouts").values({ id: uuidv7(), schoolId, guardianId: fam.guardianId, serviceDayId: day.serviceDayId, shift, totalCents: 900 }).execute(),
+      );
+    await expect(checkout("vespertino")).rejects.toThrow(/checkouts_shift_fk/);
+    await checkout("matutino");
+    const manifest = (shift: string) =>
+      withTenant(schoolId, (trx) =>
+        trx.insertInto("manifests").values({ id: uuidv7(), schoolId, serviceDayId: day.serviceDayId, shift, content: JSON.stringify({}) }).execute(),
+      );
+    await expect(manifest("vespertino")).rejects.toThrow(/manifests_shift_fk/);
+    await manifest("matutino");
+    await expect(manifest("matutino")).rejects.toThrow(/manifests_shift_version_key/);
+  });
+
+  it("credits an uncollected order at most once and only as a positive amount", async () => {
+    const credit = (amountCents: number, sourceType = "order") =>
+      withTenant(schoolId, (trx) =>
+        trx.insertInto("walletEntries")
+          .values({ id: uuidv7(), schoolId, walletId: ids.walletId, kind: "uncollected_credit", amountCents, sourceType, sourceId: ids.orderId })
+          .execute(),
+      );
+    await expect(credit(-900)).rejects.toThrow(/check constraint/);
+    await credit(900);
+    await expect(credit(900, "adjustment")).rejects.toThrow(/wallet_entries_one_uncollected_credit/);
+  });
+
+  it("makes shift events append-only and lets decisions change only the review columns", async () => {
+    await expect(withTenant(schoolId, (trx) => sql`UPDATE shift_events SET occurred_at = now()`.execute(trx))).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => sql`DELETE FROM shift_events`.execute(trx))).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => sql`UPDATE uncollected_decisions SET decision = 'credited'`.execute(trx))).rejects.toThrow(/permission denied/);
+    await expect(withTenant(schoolId, (trx) => sql`DELETE FROM uncollected_decisions`.execute(trx))).rejects.toThrow(/permission denied/);
+    // A semente é uma decisão "kept": o privilégio de UPDATE nas colunas de conferência existe (o erro é da CHECK,
+    // avaliada depois da permissão), e só decisões "credited" podem ser conferidas.
+    const { staffUserId } = await adminDb().selectFrom("staffUsers").select("id as staffUserId").where("schoolId", "=", schoolId).executeTakeFirstOrThrow();
+    await expect(
+      withTenant(schoolId, (trx) => sql`UPDATE uncollected_decisions SET reviewed_at = now(), reviewed_by_staff_id = ${staffUserId}`.execute(trx)),
+    ).rejects.toThrow(/check constraint/);
+  });
+
+  it("defaults a class to the morning shift and moves the school's cutoff to the morning column", async () => {
+    const row = await adminDb().selectFrom("classes").select("shift").where("id", "=", ids.classId).executeTakeFirstOrThrow();
+    expect(row.shift).toBe("matutino");
+    const { rows } = await sql<{ m: string; v: string }>`
+      SELECT cutoff_time_matutino::text AS m, cutoff_time_vespertino::text AS v FROM schools WHERE id = ${schoolId}`.execute(adminDb());
+    expect(rows[0]).toEqual({ m: "07:30:00", v: "13:00:00" });
   });
 });

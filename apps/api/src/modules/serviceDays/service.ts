@@ -61,7 +61,7 @@ export async function closeServiceDay(
 
     await orders.expirePendingCheckouts(trx, schoolId, day.id);
     const content = buildManifest(await repo.manifestLines(trx, day.id), await orders.countLateCredited(trx, day.id));
-    await repo.insertManifest(trx, { schoolId, serviceDayId: day.id, content: JSON.stringify(content) });
+    await repo.insertManifest(trx, { schoolId, serviceDayId: day.id, shift: "matutino", content: JSON.stringify(content) });
     const closedAt = await catalog.markServiceDayClosed(trx, day.id);
     await enqueueEvent(trx, schoolId, {
       type: "service_day.closed",

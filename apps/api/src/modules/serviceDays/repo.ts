@@ -1,3 +1,4 @@
+import type { Shift } from "@app-lanche/contracts";
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { getDb, type Trx } from "../../db/index";
@@ -31,7 +32,7 @@ export async function manifestLines(trx: Trx, serviceDayId: string) {
     .execute();
 }
 
-export async function insertManifest(trx: Trx, row: { schoolId: string; serviceDayId: string; content: string }): Promise<void> {
+export async function insertManifest(trx: Trx, row: { schoolId: string; serviceDayId: string; shift: Shift; content: string }): Promise<void> {
   await trx.insertInto("manifests").values({ id: uuidv7(), version: 1, ...row }).execute();
 }
 

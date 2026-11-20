@@ -12,5 +12,6 @@ export * from "./internal";
 export * from "./kds";
 export * from "./manifest";
 export * from "./registry";
+export * from "./shifts";
 export * from "./topups";
 export * from "./wallet";

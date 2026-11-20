@@ -1,7 +1,7 @@
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { afterEach, describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, walletLedgerMatches } from "../../../test/helpers";
 import { buildApp } from "../../app";
 import { withTenant } from "../../db/index";
 import { fakeFailNextCreate, fakeReset } from "../payments/fakeProvider";
@@ -117,7 +117,7 @@ describe("POST /api/v1/checkouts", () => {
     expect(res.json().error.code).toBe("cutoff_passed");
 
     const closed = await setup();
-    await sql`UPDATE service_days SET status = 'closed', closed_at = now() WHERE id = ${closed.day.serviceDayId}`.execute(adminDb());
+    await markDayClosed(closed.day.serviceDayId);
     expect((await post(closed.cookies, oneOrder(closed))).json().error.code).toBe("cutoff_passed");
   });
 

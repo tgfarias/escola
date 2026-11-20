@@ -1,3 +1,4 @@
+import type { Shift } from "@app-lanche/contracts";
 import type { Trx } from "../../db/index";
 
 export async function guardianActiveStudents(trx: Trx, guardianId: string, studentIds: string[]) {
@@ -14,7 +15,7 @@ export async function guardianActiveStudents(trx: Trx, guardianId: string, stude
 
 export async function insertCheckout(
   trx: Trx,
-  row: { id: string; schoolId: string; guardianId: string; serviceDayId: string; totalCents: number },
+  row: { id: string; schoolId: string; guardianId: string; serviceDayId: string; shift: Shift; totalCents: number },
 ): Promise<void> {
   await trx.insertInto("checkouts").values(row).execute();
 }

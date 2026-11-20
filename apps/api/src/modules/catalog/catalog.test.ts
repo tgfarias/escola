@@ -1,7 +1,6 @@
-import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
-import { adminDb, createSchool, guardianCookie, seedFamily, seedServiceDay, staffCookie } from "../../../test/helpers";
+import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, staffCookie } from "../../../test/helpers";
 import { buildApp } from "../../app";
 
 const key = () => uuidv7();
@@ -132,7 +131,7 @@ describe("service days", () => {
     const family = await seedFamily(schoolId);
     await adminDb()
       .insertInto("checkouts")
-      .values({ id: uuidv7(), schoolId, guardianId: family.guardianId, serviceDayId: day.id, totalCents: 900 })
+      .values({ id: uuidv7(), schoolId, guardianId: family.guardianId, serviceDayId: day.id, shift: "matutino", totalCents: 900 })
       .execute();
     const res = await put(cookies, "2030-03-04", { items: [{ menuItemId: misto }] });
     expect(res.statusCode).toBe(409);
@@ -154,7 +153,7 @@ describe("service days", () => {
     const open = await seedServiceDay(schoolId, { serviceDate: "2030-03-04" });
     await seedServiceDay(schoolId, { serviceDate: "2030-03-05", cutoffInMinutes: -1 });
     const closed = await seedServiceDay(schoolId, { serviceDate: "2030-03-06" });
-    await sql`UPDATE service_days SET status = 'closed', closed_at = now() WHERE id = ${closed.serviceDayId}`.execute(adminDb());
+    await markDayClosed(closed.serviceDayId);
 
     const list = await buildApp().inject({ method: "GET", url: "/api/v1/service-days", cookies });
     expect(list.statusCode).toBe(200);
