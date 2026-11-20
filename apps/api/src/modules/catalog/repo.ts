@@ -1,4 +1,5 @@
 import { sql } from "kysely";
+import type { Shift } from "@app-lanche/contracts";
 import { uuidv7 } from "uuidv7";
 import type { Trx } from "../../db/index";
 
@@ -63,25 +64,91 @@ export async function serviceDayHasCheckouts(trx: Trx, serviceDayId: string): Pr
   return row !== undefined;
 }
 
-/** Cria ou atualiza o horário do dia (e do turno matutino), calculado no banco no fuso da escola. */
-export async function upsertServiceDay(trx: Trx, schoolId: string, serviceDate: string, cutoffTime: string | null) {
-  const { rows } = await sql<{ id: string; cutoffInFuture: boolean }>`
-    INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
-    SELECT ${uuidv7()}, s.id, ${serviceDate}::date, c.cutoff_at, c.cutoff_at + interval '5 minutes'
-    FROM schools s
-    CROSS JOIN LATERAL (
-      SELECT ((${serviceDate}::date + coalesce(${cutoffTime}::time, s.cutoff_time_matutino)) AT TIME ZONE s.timezone) AS cutoff_at
+function shiftQuery(trx: Trx) {
+  return trx
+    .selectFrom("serviceDayShifts")
+    .select([
+      "id",
+      "serviceDayId",
+      "shift",
+      "cutoffAt",
+      "freezeAt",
+      "status",
+      "closedAt",
+      sql<boolean>`now() <= cutoff_at`.as("beforeCutoff"),
+      sql<boolean>`now() >= freeze_at`.as("frozen"),
+    ]);
+}
+
+export async function lockShift(trx: Trx, serviceDayId: string, shift: Shift, mode: "share" | "update") {
+  const q = shiftQuery(trx).where("serviceDayId", "=", serviceDayId).where("shift", "=", shift);
+  return (mode === "share" ? q.forShare() : q.forUpdate()).executeTakeFirst();
+}
+
+export async function listShifts(trx: Trx, serviceDayIds: string[]) {
+  if (serviceDayIds.length === 0) return [];
+  return shiftQuery(trx).where("serviceDayId", "in", serviceDayIds).orderBy("serviceDayId").orderBy("shift").execute();
+}
+
+/** Turnos com ao menos uma turma com aluno ativo; matutino se nenhum. */
+export async function activeShifts(trx: Trx): Promise<Shift[]> {
+  const rows = await trx
+    .selectFrom("classes")
+    .innerJoin("students", "students.classId", "classes.id")
+    .select("classes.shift")
+    .where("students.active", "=", true)
+    .distinct()
+    .orderBy("classes.shift")
+    .execute();
+  return rows.length > 0 ? rows.map((r) => r.shift as Shift) : ["matutino"];
+}
+
+/** Corte de cada turno na data, no fuso da escola, pelo banco; `time` null usa o padrão da escola. */
+export async function computeCutoffs(trx: Trx, serviceDate: string, cutoffs: { shift: Shift; time: string | null }[]) {
+  const { rows } = await sql<{ shift: Shift; cutoffAt: Date; inFuture: boolean }>`
+    SELECT c.shift, c.cutoff_at, now() < c.cutoff_at AS in_future
+    FROM (
+      SELECT x.shift,
+        ((${serviceDate}::date + coalesce(x.time, CASE x.shift WHEN 'vespertino' THEN s.cutoff_time_vespertino ELSE s.cutoff_time_matutino END))
+          AT TIME ZONE s.timezone) AS cutoff_at
+      FROM schools s
+      CROSS JOIN unnest(${cutoffs.map((c) => c.shift)}::text[], ${cutoffs.map((c) => c.time)}::time[]) AS x(shift, time)
+      WHERE s.id = app_school_id()
     ) c
-    WHERE s.id = ${schoolId}
-    ON CONFLICT (school_id, service_date)
-      DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at
-    RETURNING id, cutoff_at, freeze_at, now() < cutoff_at AS cutoff_in_future`.execute(trx);
-  const day = rows[0]!;
+    ORDER BY c.shift`.execute(trx);
+  return rows;
+}
+
+/**
+ * Cria ou atualiza o dia e seus turnos; o dia espelha o turno mais tarde. Linhas de turno nunca são apagadas, e um
+ * turno que já não está aberto (fechado ou finalizado) mantém seus horários.
+ */
+export async function upsertServiceDay(
+  trx: Trx,
+  schoolId: string,
+  serviceDate: string,
+  cutoffs: { shift: Shift; cutoffAt: Date }[],
+): Promise<string> {
+  const latest = new Date(Math.max(...cutoffs.map((c) => c.cutoffAt.getTime())));
+  const { rows } = await sql<{ id: string }>`
+    INSERT INTO service_days (id, school_id, service_date, cutoff_at, freeze_at)
+    VALUES (${uuidv7()}, ${schoolId}, ${serviceDate}::date, ${latest}, ${latest}::timestamptz + interval '5 minutes')
+    ON CONFLICT (school_id, service_date) DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at
+    RETURNING id`.execute(trx);
+  const dayId = rows[0]!.id;
+  for (const c of cutoffs) {
+    await sql`
+      INSERT INTO service_day_shifts AS t (id, school_id, service_day_id, shift, cutoff_at, freeze_at)
+      VALUES (${uuidv7()}, ${schoolId}, ${dayId}, ${c.shift}, ${c.cutoffAt}, ${c.cutoffAt}::timestamptz + interval '5 minutes')
+      ON CONFLICT (school_id, service_day_id, shift)
+        DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at
+        WHERE t.status = 'open'`.execute(trx);
+  }
   await sql`
-    INSERT INTO service_day_shifts (id, school_id, service_day_id, shift, cutoff_at, freeze_at)
-    SELECT ${uuidv7()}, d.school_id, d.id, 'matutino', d.cutoff_at, d.freeze_at FROM service_days d WHERE d.id = ${day.id}
-    ON CONFLICT (school_id, service_day_id, shift) DO UPDATE SET cutoff_at = EXCLUDED.cutoff_at, freeze_at = EXCLUDED.freeze_at`.execute(trx);
-  return { id: day.id, cutoffInFuture: day.cutoffInFuture };
+    UPDATE service_days d SET cutoff_at = m.cutoff_at, freeze_at = m.freeze_at
+    FROM (SELECT max(cutoff_at) AS cutoff_at, max(freeze_at) AS freeze_at FROM service_day_shifts WHERE service_day_id = ${dayId}) m
+    WHERE d.id = ${dayId}`.execute(trx);
+  return dayId;
 }
 
 export async function replaceServiceDayItems(

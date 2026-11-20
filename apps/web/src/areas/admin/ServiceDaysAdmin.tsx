@@ -1,10 +1,13 @@
 import {
+  ClassListResponse,
   ManifestResponse,
   MenuItemListResponse,
   ServiceDay as ServiceDaySchema,
   ServiceDayListResponse,
+  SHIFTS,
   type MenuItem,
   type ServiceDay,
+  type Shift,
 } from "@app-lanche/contracts";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Alert, Button, Card, CardBody, CardHeader, Col, Form, FormGroup, Input, Label, Row, Table } from "reactstrap";
@@ -13,6 +16,7 @@ import { announce, StatusNotice } from "../../theme/notify";
 import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 import { formatCents } from "../../ui/money";
+import { SHIFT_LABELS } from "../../ui/shifts";
 
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split("-");
@@ -27,7 +31,8 @@ export function ServiceDaysAdmin() {
   const [days, setDays] = useState<ServiceDay[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [date, setDate] = useState("");
-  const [cutoff, setCutoff] = useState("");
+  const [formShifts, setFormShifts] = useState<Shift[]>(["matutino"]);
+  const [cutoffs, setCutoffs] = useState<Partial<Record<Shift, string>>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -43,6 +48,10 @@ export function ServiceDaysAdmin() {
   useEffect(() => {
     void reload();
     void apiFetch("/api/admin/v1/menu-items", MenuItemListResponse).then((res) => setMenu(res.items), fail);
+    void apiFetch("/api/admin/v1/classes", ClassListResponse).then((res) => {
+      const withClasses = SHIFTS.filter((s) => res.classes.some((c) => c.shift === s));
+      setFormShifts(withClasses.length > 0 ? withClasses : ["matutino"]);
+    }, fail);
   }, [reload]);
 
   function toggleItem(id: string) {
@@ -59,10 +68,13 @@ export function ServiceDaysAdmin() {
     setError(null);
     setNotice(null);
     try {
+      const filled = Object.fromEntries(
+        Object.entries(cutoffs).filter(([s, v]) => v && formShifts.includes(s as Shift)),
+      );
       await apiFetch(`/api/admin/v1/service-days/${date}`, ServiceDaySchema, {
         method: "PUT",
         body: {
-          ...(cutoff ? { cutoffTime: cutoff } : {}),
+          ...(Object.keys(filled).length > 0 ? { cutoffTimes: filled } : {}),
           items: [...selected].map((menuItemId) => ({ menuItemId })),
         },
       });
@@ -153,12 +165,19 @@ export function ServiceDaysAdmin() {
                 <Input id="day-date" type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
               </FormGroup>
             </Col>
-            <Col md={4}>
-              <FormGroup>
-                <Label for="day-cutoff">Horário de corte (opcional)</Label>
-                <Input id="day-cutoff" type="time" value={cutoff} onChange={(e) => setCutoff(e.target.value)} />
-              </FormGroup>
-            </Col>
+            {formShifts.map((s) => (
+              <Col md={4} key={s}>
+                <FormGroup>
+                  <Label for={`day-cutoff-${s}`}>{`Corte — ${SHIFT_LABELS[s]} (opcional)`}</Label>
+                  <Input
+                    id={`day-cutoff-${s}`}
+                    type="time"
+                    value={cutoffs[s] ?? ""}
+                    onChange={(e) => setCutoffs((prev) => ({ ...prev, [s]: e.target.value }))}
+                  />
+                </FormGroup>
+              </Col>
+            ))}
           </Row>
           <fieldset className="mb-3">
             <legend className="fs-6">Itens</legend>

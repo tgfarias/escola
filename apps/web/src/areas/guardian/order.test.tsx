@@ -44,6 +44,7 @@ const DAYS = {
         { menuItemId: MISTO, name: "Misto quente", priceCents: 900 },
         { menuItemId: SUCO, name: "Suco", priceCents: 450 },
       ],
+      shifts: [{ shift: "matutino", cutoffAt: CUTOFF, acceptingOrders: true }],
     },
   ],
 };

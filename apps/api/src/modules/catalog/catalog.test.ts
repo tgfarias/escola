@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 import { describe, expect, it } from "vitest";
 import { adminDb, createSchool, guardianCookie, markDayClosed, seedFamily, seedServiceDay, staffCookie } from "../../../test/helpers";
@@ -84,8 +85,9 @@ describe("service days", () => {
   const put = (cookies: Record<string, string>, date: string, payload: object) =>
     buildApp().inject({ method: "PUT", url: `/api/admin/v1/service-days/${date}`, cookies, payload });
 
-  it("computes the cutoff in the school's timezone", async () => {
-    const { cookies, misto, suco } = await setup();
+  it("computes one cutoff per shift that has classes, in the school's timezone", async () => {
+    const { schoolId, cookies, misto, suco } = await setup();
+    // Sem turma com aluno: só o matutino, no horário padrão da escola (07:30 em São Paulo = 10:30Z).
     const res = await put(cookies, "2030-03-04", { items: [{ menuItemId: misto }, { menuItemId: suco, priceCents: 400 }] });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -93,13 +95,73 @@ describe("service days", () => {
       cutoffAt: "2030-03-04T10:30:00.000Z",
       freezeAt: "2030-03-04T10:35:00.000Z",
       status: "open",
+      shifts: [{ shift: "matutino", cutoffAt: "2030-03-04T10:30:00.000Z", freezeAt: "2030-03-04T10:35:00.000Z", status: "open" }],
       items: [
         { menuItemId: misto, name: "Misto quente", priceCents: 900 },
         { menuItemId: suco, name: "Suco", priceCents: 400 },
       ],
     });
-    const custom = await put(cookies, "2030-03-05", { cutoffTime: "09:00", items: [{ menuItemId: misto }] });
-    expect(custom.json().cutoffAt).toBe("2030-03-05T12:00:00.000Z");
+    // Turmas nos dois turnos: o vespertino usa o padrão 13:00 (16:00Z) e o dia espelha o turno mais tarde.
+    await seedFamily(schoolId, ["Léo"], { className: "Infantil 3A", shift: "matutino" });
+    await seedFamily(schoolId, ["Bia"], { className: "Infantil 5C", shift: "vespertino" });
+    const both = await put(cookies, "2030-03-05", { cutoffTimes: { matutino: "09:00" }, items: [{ menuItemId: misto }] });
+    expect(both.json()).toMatchObject({
+      cutoffAt: "2030-03-05T16:00:00.000Z",
+      freezeAt: "2030-03-05T16:05:00.000Z",
+      shifts: [
+        { shift: "matutino", cutoffAt: "2030-03-05T12:00:00.000Z" },
+        { shift: "vespertino", cutoffAt: "2030-03-05T16:00:00.000Z" },
+      ],
+    });
+  });
+
+  it("refuses a cutoff for a shift without classes and a shift whose cutoff already passed", async () => {
+    const { schoolId, cookies, misto } = await setup();
+    const noClasses = await put(cookies, "2030-03-04", { cutoffTimes: { vespertino: "13:30" }, items: [{ menuItemId: misto }] });
+    expect(noClasses.statusCode).toBe(400);
+    expect(noClasses.json().error.code).toBe("validation_failed");
+    await seedFamily(schoolId, ["Bia"], { className: "Infantil 5C", shift: "vespertino" });
+    // Data de hoje com o corte do vespertino às 00:00: já passou.
+    const { rows } = await sql<{ d: string }>`SELECT (now() AT TIME ZONE timezone)::date::text AS d FROM schools WHERE id = ${schoolId}`.execute(adminDb());
+    const past = await put(cookies, rows[0]!.d, { cutoffTimes: { vespertino: "00:00" }, items: [{ menuItemId: misto }] });
+    expect(past.statusCode).toBe(409);
+    expect(past.json().error.code).toBe("cutoff_passed");
+  });
+
+  it("keeps the times of a shift that is no longer open when the day is saved again", async () => {
+    const { schoolId, cookies, misto } = await setup();
+    await seedFamily(schoolId, ["Léo"], { className: "Infantil 3A", shift: "matutino" });
+    await seedFamily(schoolId, ["Bia"], { className: "Infantil 5C", shift: "vespertino" });
+    await put(cookies, "2030-03-04", { items: [{ menuItemId: misto }] });
+    await adminDb()
+      .updateTable("serviceDayShifts")
+      .set({ status: "closed", closedAt: sql<Date>`now()` })
+      .where("schoolId", "=", schoolId)
+      .where("shift", "=", "matutino")
+      .execute();
+    const res = await put(cookies, "2030-03-04", { cutoffTimes: { matutino: "09:00", vespertino: "14:00" }, items: [{ menuItemId: misto }] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      cutoffAt: "2030-03-04T17:00:00.000Z",
+      shifts: [
+        { shift: "matutino", cutoffAt: "2030-03-04T10:30:00.000Z", freezeAt: "2030-03-04T10:35:00.000Z", status: "closed" },
+        { shift: "vespertino", cutoffAt: "2030-03-04T17:00:00.000Z", freezeAt: "2030-03-04T17:05:00.000Z", status: "open" },
+      ],
+    });
+  });
+
+  it("shows guardians each shift and whether it still takes orders", async () => {
+    const schoolId = await createSchool();
+    const family = await seedFamily(schoolId);
+    const cookies = await guardianCookie(schoolId, family.guardianId);
+    const day = await seedServiceDay(schoolId, { serviceDate: "2030-03-04", shifts: { matutino: -1, vespertino: 120 } });
+    const list = await buildApp().inject({ method: "GET", url: "/api/v1/service-days", cookies });
+    expect(list.json().serviceDays[0].shifts).toEqual([
+      { shift: "matutino", cutoffAt: expect.any(String), acceptingOrders: false },
+      { shift: "vespertino", cutoffAt: expect.any(String), acceptingOrders: true },
+    ]);
+    const menu = await buildApp().inject({ method: "GET", url: `/api/v1/service-days/${day.serviceDate}/menu`, cookies });
+    expect(menu.json()).toMatchObject({ acceptingOrders: true, shifts: [{ acceptingOrders: false }, { acceptingOrders: true }] });
   });
 
   it("replaces the items of an open day without checkouts", async () => {

@@ -43,13 +43,23 @@ const MENU: Reply = {
 const DAYS: Reply = { status: 200, body: { serviceDays: [] } };
 const DEVICES: Reply = { status: 200, body: { devices: [] } };
 const DASH_EMPTY: Reply = { status: 200, body: { period: "today", from: "2030-03-04", to: "2030-03-04", snacks: { paidOrders: 0, deliveredOrders: 0, notCollectedOrders: 0, counterSales: 0, topItems: [] }, documents: null, money: null } };
-const BASE = { "GET /api/admin/v1/menu-items": MENU, "GET /api/admin/v1/service-days": DAYS };
+const CLASSES: Reply = {
+  status: 200,
+  body: {
+    classes: [
+      { id: "0193a000-0000-7000-8000-0000000000c1", name: "Infantil 3A", shift: "matutino" },
+      { id: "0193a000-0000-7000-8000-0000000000c2", name: "Infantil 5C", shift: "vespertino" },
+    ],
+  },
+};
+const BASE = { "GET /api/admin/v1/menu-items": MENU, "GET /api/admin/v1/service-days": DAYS, "GET /api/admin/v1/classes": CLASSES };
 
 const OPEN_DAY = {
   serviceDate: "2030-03-04",
   cutoffAt: "2030-03-04T10:30:00.000Z",
   freezeAt: "2030-03-04T11:00:00.000Z",
   status: "open",
+  shifts: [{ shift: "matutino", cutoffAt: "2030-03-04T10:30:00.000Z", freezeAt: "2030-03-04T11:00:00.000Z", status: "open" }],
   items: [{ menuItemId: ID_PAO, name: "Pão", priceCents: 350 }],
 };
 
@@ -190,11 +200,32 @@ describe("service days admin", () => {
     expect(callOf(fn, "PUT /api/admin/v1/service-days/2030-03-04")!.body).toEqual({ items: [{ menuItemId: ID_PAO }] });
   });
 
+  it("asks one optional cutoff per shift that has classes and sends only the filled ones", async () => {
+    const fn = mockApi({
+      ...BASE,
+      "GET /api/admin/v1/me": me("secretaria"),
+      "PUT /api/admin/v1/service-days/2030-03-04": { status: 200, body: OPEN_DAY },
+    });
+    renderAdmin("/admin/lanche/dias");
+    await screen.findByRole("checkbox", { name: "Pão" });
+    fireEvent.change(screen.getByLabelText("Data"), { target: { value: "2030-03-04" } });
+    expect(await screen.findByLabelText("Corte — Manhã (opcional)")).toBeTruthy();
+    fireEvent.change(await screen.findByLabelText("Corte — Tarde (opcional)"), { target: { value: "13:30" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Pão" }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar dia" }));
+    await waitFor(() => expect(callOf(fn, "PUT /api/admin/v1/service-days/2030-03-04")).toBeDefined());
+    expect(callOf(fn, "PUT /api/admin/v1/service-days/2030-03-04")!.body).toEqual({
+      cutoffTimes: { vespertino: "13:30" },
+      items: [{ menuItemId: ID_PAO }],
+    });
+  });
+
   it("closes a day after confirming and reports the order count", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     mockApi({
       "GET /api/admin/v1/menu-items": MENU,
       "GET /api/admin/v1/service-days": { status: 200, body: { serviceDays: [OPEN_DAY] } },
+      "GET /api/admin/v1/classes": CLASSES,
       "GET /api/admin/v1/me": me("admin"),
       "POST /api/admin/v1/service-days/2030-03-04/close": {
         status: 200,
@@ -253,6 +284,7 @@ describe("lunch pages", () => {
     mockApi({
       "GET /api/admin/v1/menu-items": MENU,
       "GET /api/admin/v1/service-days": { status: 200, body: { serviceDays: [OPEN_DAY] } },
+      "GET /api/admin/v1/classes": CLASSES,
       "GET /api/admin/v1/me": me("admin"),
     });
     renderAdmin("/admin/lanche/dias");

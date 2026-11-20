@@ -104,6 +104,28 @@ Exemplo de resposta (`period=7d`, papel secretaria; para a cozinha `documents` e
 - Ao abrir um dia, a escola informa o horário de corte de cada turno que tem turmas. O padrão vem de `schools`: novas colunas `cutoff_time_matutino` e `cutoff_time_vespertino`.
 - O dia mostra a situação de cada turno: aberto, fechado (romaneio pronto) ou finalizado.
 
+Exemplo de `GET /api/admin/v1/service-days` (um dia; `cutoffAt`/`freezeAt` do dia = turno mais tarde):
+
+```json
+{ "serviceDate": "2026-11-23", "cutoffAt": "2026-11-23T16:00:00.000Z", "freezeAt": "2026-11-23T16:05:00.000Z", "status": "open",
+  "shifts": [
+    { "shift": "matutino", "cutoffAt": "2026-11-23T10:30:00.000Z", "freezeAt": "2026-11-23T10:35:00.000Z", "status": "closed" },
+    { "shift": "vespertino", "cutoffAt": "2026-11-23T16:00:00.000Z", "freezeAt": "2026-11-23T16:05:00.000Z", "status": "open" } ],
+  "items": [{ "menuItemId": "0193…", "name": "Misto quente", "priceCents": 900 }] }
+```
+
+`PUT /api/admin/v1/service-days/{date}` recebe `{ "cutoffTimes": { "vespertino": "13:30" }, "items": [...] }`; turno sem horário usa o padrão da escola. Só turnos com turmas (com aluno ativo) aceitam horário (`validation_failed` nos demais); um turno já fechado ou finalizado mantém seus horários ao salvar o dia de novo.
+
+Para o responsável, `GET /api/v1/service-days` e `GET /api/v1/service-days/{date}/menu` trazem cada turno e se ainda aceita pedido (o menu acrescenta `acceptingOrders` do dia = algum turno aceita):
+
+```json
+{ "serviceDate": "2026-11-23", "cutoffAt": "2026-11-23T16:00:00.000Z", "acceptingOrders": true,
+  "items": [{ "menuItemId": "0193…", "name": "Misto quente", "priceCents": 900 }],
+  "shifts": [
+    { "shift": "matutino", "cutoffAt": "2026-11-23T10:30:00.000Z", "acceptingOrders": false },
+    { "shift": "vespertino", "cutoffAt": "2026-11-23T16:00:00.000Z", "acceptingOrders": true } ] }
+```
+
 ### B.3 Tablet: "Finalizar turno"
 
 - O quadro de entregas mostra um turno por vez, com abas Manhã e Tarde quando a escola tem os dois.
