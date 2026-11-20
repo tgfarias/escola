@@ -15,7 +15,11 @@ A escola de demonstração tem o admin `admin@escola.local` (mude com `DEV_ADMIN
 Sem o n8n configurado, o código de acesso não sai por e-mail/WhatsApp: ele fica na outbox.
 
 1. Em http://localhost:8088/admin, peça o código para `admin@escola.local`.
-2. `pnpm app:otp` mostra o último código gerado.
+2. `pnpm app:otp` mostra o último código gerado, se ainda valer (5 minutos).
+
+Cada pessoa pode pedir 3 códigos a cada 15 minutos e 10 por dia. Passado o limite, a tela de login responde
+normalmente (para não revelar se a conta existe), mas nenhum código novo é criado e `pnpm app:otp` avisa isso.
+Localmente, `pnpm app:otp --reset` limpa os códigos da escola de demonstração; depois peça um novo na tela.
 
 ## Entrar como responsável
 
