@@ -30,8 +30,9 @@ try {
     } else {
       console.error(
         last
-          ? "no code issued in the last 5 minutes: request one on the login screen first. If you just did, the\n" +
-              "request hit the limit (3 per 15 min, 10 per day): run `pnpm app:otp --reset` and request again."
+          ? "no code issued in the last 5 minutes: request one on the login screen first (\"Enviar novo código\" if it\n" +
+              "already asks for the code). If you just did, the request hit the limit (3 per 15 min, 10 per day):\n" +
+              "run `pnpm app:otp --reset` and request again."
           : "no code issued yet: request one on the login screen first",
       );
       process.exitCode = 1;

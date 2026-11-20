@@ -13,10 +13,12 @@ export function AdminLogin() {
   const [otpToken, setOtpToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resent, setResent] = useState(false);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
+    setResent(false);
     try {
       await action();
     } catch (err) {
@@ -26,14 +28,25 @@ export function AdminLogin() {
     }
   }
 
+  async function fetchOtpToken(): Promise<string> {
+    const res = await apiFetch("/api/admin/v1/auth/otp/request", StaffOtpRequestResponse, {
+      method: "POST",
+      body: { email: email.trim() },
+    });
+    return res.otpToken;
+  }
+
   function requestCode(event: FormEvent) {
     event.preventDefault();
+    void run(async () => setOtpToken(await fetchOtpToken()));
+  }
+
+  // Each request answers a new token bound to the new code; the old code no longer works with it.
+  function resendCode() {
     void run(async () => {
-      const res = await apiFetch("/api/admin/v1/auth/otp/request", StaffOtpRequestResponse, {
-        method: "POST",
-        body: { email: email.trim() },
-      });
-      setOtpToken(res.otpToken);
+      setOtpToken(await fetchOtpToken());
+      setCode("");
+      setResent(true);
     });
   }
 
@@ -90,8 +103,14 @@ export function AdminLogin() {
                   />
                 </FormGroup>
                 {errorAlert}
+                <p role="status" className="text-success">
+                  {resent ? "Novo código enviado. Use só o último que chegar." : ""}
+                </p>
                 <Button color="primary" type="submit" className="w-100 mb-2" disabled={busy}>
                   Entrar
+                </Button>
+                <Button color="link" type="button" className="w-100" disabled={busy} onClick={resendCode}>
+                  Enviar novo código
                 </Button>
                 <Button
                   color="link"
@@ -101,6 +120,7 @@ export function AdminLogin() {
                     setOtpToken(null);
                     setCode("");
                     setError(null);
+                    setResent(false);
                   }}
                 >
                   Usar outro e-mail

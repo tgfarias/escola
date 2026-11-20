@@ -84,6 +84,34 @@ describe("admin area", () => {
     await screen.findByText("Se o e-mail estiver cadastrado, você receberá um código em instantes.");
   });
 
+  it("requests a new code for the same e-mail and verifies with the new token", async () => {
+    let n = 0;
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(async (url) => {
+      if (url === "/api/admin/v1/auth/otp/request") {
+        n += 1;
+        return new Response(JSON.stringify({ otpToken: `otp-token-${n}` }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { code: "otp_invalid", message: "x" } }), { status: 401 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderAt("/admin/login");
+    fireEvent.change(screen.getByLabelText("E-mail"), { target: { value: "ana@escola.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar código" }));
+    fireEvent.change(await screen.findByLabelText("Código de 6 dígitos"), { target: { value: "000000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await screen.findByText("Código incorreto. Confira e tente de novo.");
+    fireEvent.click(screen.getByRole("button", { name: "Enviar novo código" }));
+    await screen.findByText("Novo código enviado. Use só o último que chegar.");
+    expect(screen.queryByText("Código incorreto. Confira e tente de novo.")).toBeNull();
+    expect((screen.getByLabelText("Código de 6 dígitos") as HTMLInputElement).value).toBe("");
+    fireEvent.change(screen.getByLabelText("Código de 6 dígitos"), { target: { value: "123456" } });
+    fireEvent.click(screen.getByRole("button", { name: "Entrar" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const requests = fetchMock.mock.calls.filter((c) => c[0] === "/api/admin/v1/auth/otp/request");
+    expect(requests.map((c) => JSON.parse(String(c[1]?.body)).email)).toEqual(["ana@escola.test", "ana@escola.test"]);
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body)).otpToken).toBe("otp-token-2");
+  });
+
   it("sends anonymous visitors to the login", async () => {
     mockApi({ "/api/admin/v1/me": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } } });
     renderAt("/admin");
