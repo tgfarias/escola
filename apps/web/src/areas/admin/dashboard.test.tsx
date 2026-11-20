@@ -93,6 +93,24 @@ describe("admin dashboard", () => {
     expect(screen.getByText("—")).toBeTruthy();
   });
 
+  it("clears the error once another period loads", async () => {
+    mockApi({
+      "GET /api/admin/v1/dashboard?period=today": { status: 500, body: { error: { code: "internal_error", message: "x" } } },
+      "GET /api/admin/v1/dashboard?period=7d": { status: 200, body: WEEK },
+    });
+    renderDashboard("admin");
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "7 dias" }));
+    await screen.findByText("200");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("uses the singular for a single debtor", async () => {
+    mockApi({ "GET /api/admin/v1/dashboard?period=today": { status: 200, body: { ...TODAY, money: { ...TODAY.money, debtors: 1 } } } });
+    renderDashboard("admin");
+    expect(await screen.findByText(/· 1 responsável$/)).toBeTruthy();
+  });
+
   it("sends an expired session to the login", async () => {
     mockApi({ "GET /api/admin/v1/dashboard?period=today": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } } });
     renderDashboard("admin");

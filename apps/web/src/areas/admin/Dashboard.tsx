@@ -24,7 +24,7 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 
 /** Indicadores da página inicial (spec F5C, A.3). Valores em reais começam ocultos a cada montagem. */
 export function Dashboard({ role }: { role: StaffRole }) {
-  const { error, fail } = useStaffErrors();
+  const { error, setError, fail } = useStaffErrors();
   const [period, setPeriod] = useState<DashboardPeriod>("today");
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [showValues, setShowValues] = useState(false);
@@ -33,13 +33,17 @@ export function Dashboard({ role }: { role: StaffRole }) {
   useEffect(() => {
     let active = true;
     apiFetch(`/api/admin/v1/dashboard?period=${period}`, DashboardResponse).then(
-      (res) => active && setData(res),
+      (res) => {
+        if (!active) return;
+        setError(null);
+        setData(res);
+      },
       (err) => active && fail(err),
     );
     return () => {
       active = false;
     };
-  }, [period, fail]);
+  }, [period, fail, setError]);
 
   const money = (cents: number) => (showValues ? formatCents(cents) : HIDDEN);
   const range = data && (data.from === data.to ? `Hoje (${br(data.to)})` : `De ${br(data.from)} a ${br(data.to)}`);
@@ -117,7 +121,7 @@ export function Dashboard({ role }: { role: StaffRole }) {
                   <Stat label="Créditos em carteira">{money(data.money.creditsCents)}</Stat>
                   <Stat label="Débito em aberto">
                     {money(data.money.debtCents)}
-                    <span className="fw-normal">{` · ${data.money.debtors} responsáveis`}</span>
+                    <span className="fw-normal">{` · ${data.money.debtors} ${data.money.debtors === 1 ? "responsável" : "responsáveis"}`}</span>
                   </Stat>
                 </CardBody>
               </Card>
