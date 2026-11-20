@@ -4,6 +4,7 @@ export * from "./checkout";
 export * from "./common";
 export * from "./counter";
 export * from "./cpf";
+export * from "./dashboard";
 export * from "./documents";
 export * from "./errors";
 export * from "./events";

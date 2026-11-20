@@ -61,6 +61,18 @@ Grupos com título (`.app-sidebar__heading` do tema):
   - Contagens e percentuais nunca são ocultados.
 - A cozinha vê só o bloco Lanches, sem valores.
 
+Exemplo de resposta (`period=7d`, papel secretaria; para a cozinha `documents` e `money` vêm `null`):
+
+```json
+{
+  "period": "7d", "from": "2026-11-14", "to": "2026-11-20",
+  "snacks": { "paidOrders": 42, "deliveredOrders": 40, "notCollectedOrders": 2, "counterSales": 15,
+              "topItems": [{ "name": "Misto quente", "qty": 30 }] },
+  "documents": { "published": 80, "viewed": 61, "batchesRendering": 0, "batchesWithFailures": 1 },
+  "money": { "pixReceivedCents": 125000, "counterCents": 22500, "creditsCents": 48000, "debtCents": 3500, "debtors": 3 }
+}
+```
+
 ## Parte B — Turnos e "Finalizar turno"
 
 ### B.1 Modelo (migração `0012_shifts.sql`)
