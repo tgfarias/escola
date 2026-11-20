@@ -13,9 +13,9 @@ async function localDate(schoolId: string, offsetDays: number): Promise<string> 
   return rows[0]!.d;
 }
 
-async function firstOfMonth(schoolId: string, monthsBack: number): Promise<string> {
+async function firstOfMonth(schoolId: string): Promise<string> {
   const { rows } = await sql<{ d: string }>`
-    SELECT (date_trunc('month', (now() AT TIME ZONE timezone)::date) - make_interval(months => ${monthsBack}))::date::text AS d
+    SELECT (date_trunc('month', (now() AT TIME ZONE timezone)::date) )::date::text AS d
     FROM schools WHERE id = ${schoolId}`.execute(adminDb());
   return rows[0]!.d;
 }
@@ -75,7 +75,7 @@ describe("admin dashboard", () => {
   it("resolves 7 days and the current month in the school's local calendar", async () => {
     const schoolId = await createSchool();
     const today = await localDate(schoolId, 0);
-    const firstDay = await firstOfMonth(schoolId, 0);
+    const firstDay = await firstOfMonth(schoolId);
     const { rows } = await sql<{ d: string }>`
       SELECT (date_trunc('month', (now() AT TIME ZONE timezone)::date) - interval '1 day')::date::text AS d
       FROM schools WHERE id = ${schoolId}`.execute(adminDb());
@@ -118,6 +118,32 @@ describe("admin dashboard", () => {
 
     const body = (await get(cookies, "today")).json();
     expect(body.documents).toEqual({ published: 1, viewed: 1, batchesRendering: 0, batchesWithFailures: 0 });
+  });
+
+  it("counts batches still rendering and batches with undiscarded failed documents", async () => {
+    const schoolId = await createSchool();
+    const ids = await seedTenant(schoolId);
+    const db = adminDb();
+    const addBatch = async (status: "rendering" | "ready") => {
+      const id = uuidv7();
+      await db
+        .insertInto("documentBatches")
+        .values({ id, schoolId, templateId: ids.documentTemplateId, fieldValues: JSON.stringify({}), issuedOn: "2099-12-31", perGuardian: false, createdBy: ids.staffUserId, status })
+        .execute();
+      return id;
+    };
+    const addDoc = (batchId: string, extra: { status: "rendering" | "failed"; leaseUntil?: Date; discardedAt?: Date }) =>
+      db.insertInto("documents").values({ id: uuidv7(), schoolId, batchId, studentId: ids.studentId, ...extra }).execute();
+    const rendering = await addBatch("rendering");
+    await addDoc(rendering, { status: "rendering", leaseUntil: new Date(Date.now() + 60_000) });
+    const failing = await addBatch("ready");
+    await addDoc(failing, { status: "failed" });
+    const discarded = await addBatch("ready");
+    await addDoc(discarded, { status: "failed", discardedAt: new Date() }); // descartado não conta
+    const { cookies } = await staffCookie(schoolId, "secretaria");
+
+    const body = (await get(cookies)).json();
+    expect(body.documents).toMatchObject({ batchesRendering: 1, batchesWithFailures: 1 });
   });
 
   it("gives the kitchen only the snacks block", async () => {

@@ -74,6 +74,7 @@ export async function documentCounts(trx: Trx, p: Period) {
 export async function moneyTotals(trx: Trx, p: Period) {
   const { rows } = await sql<{ pixReceivedCents: number; counterCents: number; creditsCents: number; debtCents: number; debtors: number }>`
     SELECT
+      -- Só status 'paid': pagamentos estornados ficam de fora de propósito (valor líquido recebido).
       (SELECT coalesce(sum(amount_cents), 0)::bigint FROM payments
          WHERE status = 'paid' AND paid_at >= ${p.fromTs} AND paid_at < ${p.toTs}) AS pix_received_cents,
       (SELECT coalesce(sum(total_cents), 0)::bigint FROM counter_sales
