@@ -1,37 +1,28 @@
 import { ImportStudentsResponse } from "@app-lanche/contracts";
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useState, type ChangeEvent, type FormEvent } from "react";
+import { Navigate, useLocation, useNavigate } from "react-router";
 import { Alert, Button, Card, CardBody, CardHeader, Form, FormGroup, Input, Label } from "reactstrap";
 import { ApiError, apiFetch } from "../../app/api";
 import { PageTitle } from "../../theme/layout/PageTitle";
 import { announce, StatusNotice } from "../../theme/notify";
 import { staffErrorMessage } from "../../ui/messages";
 import { useAdminMe } from "./AdminLayout";
-import { KitchenDevicesAdmin } from "./KitchenDevicesAdmin";
-import { MenuAdmin } from "./MenuAdmin";
-import { ServiceDaysAdmin } from "./ServiceDaysAdmin";
+
+const LEGACY_ANCHORS: Record<string, string> = {
+  "#cardapio": "/admin/lanche/cardapio",
+  "#dias": "/admin/lanche/dias",
+  "#tablets": "/admin/lanche/tablets",
+};
 
 export function AdminHome() {
   const navigate = useNavigate();
-  const { hash, key } = useLocation();
+  const { hash } = useLocation();
   const { me, meFailed } = useAdminMe();
   const [csv, setCsv] = useState("");
   const [result, setResult] = useState<ImportStudentsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Cardápio, dias e tablets são seções desta página: o menu lateral aponta para elas por âncora. Rola a cada clique
-  // no menu (key muda mesmo com o hash igual) e de novo quando cada seção termina de carregar e muda de altura.
-  const [sectionsLoaded, setSectionsLoaded] = useState(0);
-  const sectionLoaded = useCallback(() => setSectionsLoaded((n) => n + 1), []);
-  useEffect(() => {
-    if (me && hash) document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
-  }, [me, hash, key, sectionsLoaded]);
-  // "Início" (sem hash) volta ao topo.
-  useEffect(() => {
-    if (me && !hash) window.scrollTo({ top: 0 });
-  }, [me, hash, key]);
 
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -65,6 +56,8 @@ export function AdminHome() {
       setBusy(false);
     }
   }
+
+  if (LEGACY_ANCHORS[hash]) return <Navigate to={LEGACY_ANCHORS[hash]} replace />;
 
   // O AdminLayout busca /me e mostra o erro dessa busca; aqui só falta esperar.
   if (!me) return meFailed ? null : <p>Carregando…</p>;
@@ -114,13 +107,6 @@ export function AdminHome() {
           )}
         </CardBody>
       </Card>
-      {(me.role === "admin" || me.role === "secretaria") && (
-        <>
-          <MenuAdmin onLoaded={sectionLoaded} />
-          <ServiceDaysAdmin onLoaded={sectionLoaded} />
-          <KitchenDevicesAdmin onLoaded={sectionLoaded} />
-        </>
-      )}
     </>
   );
 }

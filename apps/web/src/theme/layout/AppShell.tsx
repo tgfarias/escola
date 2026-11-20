@@ -4,10 +4,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { useLocation } from "react-router";
 import { ToastContainer } from "react-toastify";
 import { AppHeader, type HeaderUser } from "./AppHeader";
-import { AppSidebar, type NavItem } from "./AppSidebar";
+import { AppSidebar, type NavEntry } from "./AppSidebar";
 import { LayoutProvider, useLayout } from "./LayoutContext";
 
-type Props = { nav: NavItem[]; schoolName?: string; user?: HeaderUser; onLogout: () => void; children: ReactNode };
+type Props = { nav: NavEntry[]; schoolName?: string; user?: HeaderUser; onLogout: () => void; children: ReactNode };
 
 function Shell({ nav, schoolName, user, onLogout, children }: Props) {
   const { collapsed, mobileOpen, closeMobile } = useLayout();

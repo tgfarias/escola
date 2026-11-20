@@ -6,8 +6,7 @@ import { StatusBadge } from "../../theme/StatusBadge";
 import { staffErrorMessage } from "../../ui/messages";
 import { formatCents, parsePriceToCents } from "../../ui/money";
 
-/** `onLoaded`: chamado uma vez quando a primeira carga termina (a página inicial rola de novo até a âncora pedida). */
-export function MenuAdmin({ onLoaded }: { onLoaded?: () => void }) {
+export function MenuAdmin() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
@@ -19,8 +18,8 @@ export function MenuAdmin({ onLoaded }: { onLoaded?: () => void }) {
     apiFetch("/api/admin/v1/menu-items", MenuItemListResponse).then(
       (res) => setItems(res.items),
       (err) => setError(staffErrorMessage(err instanceof ApiError ? err.code : "internal_error")),
-    ).finally(() => onLoaded?.());
-  }, [onLoaded]);
+    );
+  }, []);
 
   async function add(event: FormEvent) {
     event.preventDefault();

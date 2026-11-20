@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe("admin layout", () => {
-  it("shows the school, the user and the whole menu to the office, highlighting the current page", async () => {
+  it("groups the office menu under Escola and Lanche, highlighting the current page", async () => {
     mockApi({ "GET /api/admin/v1/me": me("secretaria") });
     renderAt("/admin/documentos/lotes/0193a000-0000-7000-8000-000000000009");
     await screen.findByText("Escola Sol");
@@ -56,17 +56,19 @@ describe("admin layout", () => {
     expect(menu().getAllByRole("link").map((a) => a.textContent)).toEqual([
       "Início",
       "Alunos e responsáveis",
-      "Contas",
-      "Cardápio",
-      "Dias de serviço",
       "Documentos",
+      "Dias de serviço",
+      "Cardápio",
       "Tablets da cozinha",
+      "Contas",
     ]);
+    expect(menu().getByText("Escola").className).toContain("app-sidebar__heading");
+    expect(menu().getByText("Lanche").className).toContain("app-sidebar__heading");
     expect(menu().getByRole("link", { name: "Documentos" }).getAttribute("aria-current")).toBe("page");
     expect(menu().getByRole("link", { name: "Início" }).getAttribute("aria-current")).toBeNull();
-    expect(menu().getByRole("link", { name: "Cardápio" }).getAttribute("href")).toBe("/admin#cardapio");
-    expect(menu().getByRole("link", { name: "Dias de serviço" }).getAttribute("href")).toBe("/admin#dias");
-    expect(menu().getByRole("link", { name: "Tablets da cozinha" }).getAttribute("href")).toBe("/admin#tablets");
+    expect(menu().getByRole("link", { name: "Dias de serviço" }).getAttribute("href")).toBe("/admin/lanche/dias");
+    expect(menu().getByRole("link", { name: "Cardápio" }).getAttribute("href")).toBe("/admin/lanche/cardapio");
+    expect(menu().getByRole("link", { name: "Tablets da cozinha" }).getAttribute("href")).toBe("/admin/lanche/tablets");
     expect(screen.getByText("página de documentos")).toBeTruthy();
   });
 
@@ -75,6 +77,7 @@ describe("admin layout", () => {
     renderAt("/admin");
     await screen.findByText("Cozinha");
     expect(menu().getAllByRole("link").map((a) => a.textContent)).toEqual(["Início", "Contas"]);
+    expect(menu().queryByText("Escola")).toBeNull();
   });
 
   it("sends visitors without a session to the login", async () => {

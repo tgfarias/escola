@@ -11,7 +11,11 @@ export type NavItem = {
   isActive: (location: { pathname: string; hash: string }) => boolean;
 };
 
-export function AppSidebar({ items }: { items: NavItem[] }) {
+/** Título de grupo do menu (sem link). */
+export type NavHeading = { heading: string };
+export type NavEntry = NavItem | NavHeading;
+
+export function AppSidebar({ items }: { items: NavEntry[] }) {
   const location = useLocation();
   const { closeMobile } = useLayout();
   return (
@@ -21,17 +25,24 @@ export function AppSidebar({ items }: { items: NavItem[] }) {
         <div className="app-sidebar__inner">
           <div className="vertical-nav-menu">
             <ul className="metismenu-container">
-              {items.map((item) => {
-                const active = item.isActive(location);
+              {items.map((entry) => {
+                if ("heading" in entry) {
+                  return (
+                    <li key={`heading-${entry.heading}`} className="app-sidebar__heading">
+                      {entry.heading}
+                    </li>
+                  );
+                }
+                const active = entry.isActive(location);
                 return (
-                  <li key={item.to} className="metismenu-item">
+                  <li key={entry.to} className="metismenu-item">
                     <Link
-                      to={item.to}
+                      to={entry.to}
                       className={active ? "metismenu-link active" : "metismenu-link"}
                       aria-current={active ? "page" : undefined}
                     >
-                      <i className={`metismenu-icon ${item.icon}`} aria-hidden="true" />
-                      {item.label}
+                      <i className={`metismenu-icon ${entry.icon}`} aria-hidden="true" />
+                      {entry.label}
                     </Link>
                   </li>
                 );

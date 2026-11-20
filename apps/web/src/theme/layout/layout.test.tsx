@@ -3,8 +3,9 @@ import { useState } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { announce, StatusNotice } from "../notify";
+import { LayoutProvider } from "./LayoutContext";
 import { AppShell } from "./AppShell";
-import type { NavItem } from "./AppSidebar";
+import { AppSidebar, type NavItem } from "./AppSidebar";
 import { PageTitle } from "./PageTitle";
 
 const NAV: NavItem[] = [
@@ -156,5 +157,19 @@ describe("AppShell", () => {
     expect(document.querySelector(".Toastify")!.closest('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.getByRole("status").textContent).toBe("Dados salvos.");
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders a group heading in the sidebar as plain text, not a link", () => {
+    render(
+      <MemoryRouter>
+        <LayoutProvider>
+          <AppSidebar items={[{ heading: "Lanche" }, NAV[0]!]} />
+        </LayoutProvider>
+      </MemoryRouter>,
+    );
+    const heading = screen.getByText("Lanche");
+    expect(heading.tagName).toBe("LI");
+    expect(heading.className).toContain("app-sidebar__heading");
+    expect(heading.querySelector("a")).toBeNull();
   });
 });

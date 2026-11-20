@@ -3,6 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
 import { AdminLayout } from "./AdminLayout";
+import { KitchenDevicesPage, MenuPage, ServiceDaysPage } from "./LunchPages";
 
 type Reply = { status: number; body: unknown };
 
@@ -40,6 +41,8 @@ const MENU: Reply = {
   },
 };
 const DAYS: Reply = { status: 200, body: { serviceDays: [] } };
+const DEVICES: Reply = { status: 200, body: { devices: [] } };
+const DASH_EMPTY: Reply = { status: 200, body: { period: "today", from: "2030-03-04", to: "2030-03-04", snacks: { paidOrders: 0, deliveredOrders: 0, notCollectedOrders: 0, counterSales: 0, topItems: [] }, documents: null, money: null } };
 const BASE = { "GET /api/admin/v1/menu-items": MENU, "GET /api/admin/v1/service-days": DAYS };
 
 const OPEN_DAY = {
@@ -56,6 +59,9 @@ function renderAdmin(path = "/admin") {
       <Routes>
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<AdminHome />} />
+          <Route path="lanche/dias" element={<ServiceDaysPage />} />
+          <Route path="lanche/cardapio" element={<MenuPage />} />
+          <Route path="lanche/tablets" element={<KitchenDevicesPage />} />
         </Route>
         <Route path="/admin/login" element={<p>login</p>} />
       </Routes>
@@ -76,7 +82,7 @@ describe("menu admin", () => {
       "GET /api/admin/v1/me": me("secretaria"),
       "POST /api/admin/v1/menu-items": { status: 200, body: { id: ID_NEW, name: "Pão de queijo", priceCents: 450, active: true } },
     });
-    renderAdmin();
+    renderAdmin("/admin/lanche/cardapio");
     await screen.findByText("Pão — R$ 3,50");
     await screen.findByText("Suco — R$ 5,00 (inativo)");
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Pão de queijo" } });
@@ -90,7 +96,7 @@ describe("menu admin", () => {
 
   it("refuses an invalid price without calling the API", async () => {
     const fn = mockApi({ ...BASE, "GET /api/admin/v1/me": me("admin") });
-    renderAdmin();
+    renderAdmin("/admin/lanche/cardapio");
     await screen.findByText("Pão — R$ 3,50");
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Bolo" } });
     fireEvent.change(screen.getByLabelText("Preço (R$)"), { target: { value: "abc" } });
@@ -106,7 +112,7 @@ describe("menu admin", () => {
       "POST /api/admin/v1/menu-items": { status: 409, body: { error: { code: "menu_item_name_taken", message: "x" } } },
     };
     const fn = mockApi(replies);
-    renderAdmin();
+    renderAdmin("/admin/lanche/cardapio");
     await screen.findByText("Pão — R$ 3,50");
     const keys = () =>
       fn.mock.calls
@@ -140,7 +146,7 @@ describe("menu admin", () => {
       if (key === "GET /api/admin/v1/menu-items") return new Response(JSON.stringify(MENU.body));
       return new Response(JSON.stringify(DAYS.body));
     });
-    renderAdmin();
+    renderAdmin("/admin/lanche/cardapio");
     await screen.findByText("Pão — R$ 3,50");
     fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Bolo" } });
     fireEvent.change(screen.getByLabelText("Preço (R$)"), { target: { value: "5" } });
@@ -160,7 +166,7 @@ describe("menu admin", () => {
       "GET /api/admin/v1/me": me("secretaria"),
       [`PATCH /api/admin/v1/menu-items/${ID_PAO}`]: { status: 200, body: { id: ID_PAO, name: "Pão", priceCents: 350, active: false } },
     });
-    renderAdmin();
+    renderAdmin("/admin/lanche/cardapio");
     await screen.findByText("Pão — R$ 3,50");
     fireEvent.click(screen.getByRole("button", { name: "Desativar" }));
     await screen.findByText("Pão — R$ 3,50 (inativo)");
@@ -175,8 +181,8 @@ describe("service days admin", () => {
       "GET /api/admin/v1/me": me("secretaria"),
       "PUT /api/admin/v1/service-days/2030-03-04": { status: 200, body: OPEN_DAY },
     });
-    renderAdmin();
-    await screen.findByText("Pão — R$ 3,50");
+    renderAdmin("/admin/lanche/dias");
+    await screen.findByRole("checkbox", { name: "Pão" });
     fireEvent.change(screen.getByLabelText("Data"), { target: { value: "2030-03-04" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Pão" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar dia" }));
@@ -203,7 +209,7 @@ describe("service days admin", () => {
         },
       },
     });
-    renderAdmin();
+    renderAdmin("/admin/lanche/dias");
     await screen.findByText(/04\/03\/2030/);
     fireEvent.click(screen.getByRole("button", { name: "Fechar dia" }));
     await waitFor(() => expect(screen.getAllByRole("status").map((s) => s.textContent)).toContain("Dia fechado: 3 pedidos."));
@@ -216,73 +222,31 @@ describe("service days admin", () => {
       "GET /api/admin/v1/me": me("secretaria"),
       "PUT /api/admin/v1/service-days/2030-03-04": { status: 409, body: { error: { code: "service_day_locked", message: "x" } } },
     });
-    renderAdmin();
-    await screen.findByText("Pão — R$ 3,50");
+    renderAdmin("/admin/lanche/dias");
+    await screen.findByRole("checkbox", { name: "Pão" });
     fireEvent.change(screen.getByLabelText("Data"), { target: { value: "2030-03-04" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Pão" }));
     fireEvent.click(screen.getByRole("button", { name: "Salvar dia" }));
     await screen.findByText("Este dia já tem pedidos ou está fechado; o cardápio não pode mudar.");
   });
-
-  it("hides both sections from the kitchen role", async () => {
-    mockApi({ "GET /api/admin/v1/me": me("cozinha") });
-    renderAdmin();
-    await screen.findByRole("heading", { name: "Escola Sol" });
-    expect(screen.queryByText("Cardápio")).toBeNull();
-    expect(screen.queryByText("Dias de serviço")).toBeNull();
-  });
 });
 
-describe("home sections", () => {
-  function recordScrolls() {
-    const scrolled: { id: string; menuLoaded: boolean }[] = [];
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value(this: HTMLElement) {
-        scrolled.push({ id: this.id, menuLoaded: screen.queryByText("Pão — R$ 3,50") !== null });
-      },
-    });
-    return scrolled;
-  }
-
-  afterEach(() => {
-    delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+describe("lunch pages", () => {
+  it("sends the kitchen role back to the home page", async () => {
+    mockApi({ "GET /api/admin/v1/me": me("cozinha"), "GET /api/admin/v1/dashboard?period=today": DASH_EMPTY });
+    renderAdmin("/admin/lanche/cardapio");
+    await screen.findByRole("heading", { name: "Escola Sol" });
+    expect(screen.queryByText("Pão — R$ 3,50")).toBeNull();
   });
 
-  it("puts menu, days and tablets at the sidebar anchors and scrolls to the requested one, again once the sections load", async () => {
-    const scrolled = recordScrolls();
-    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
-    renderAdmin("/admin#dias");
-    await screen.findByText("Pão — R$ 3,50");
-    expect(document.getElementById("cardapio")).not.toBeNull();
-    expect(document.getElementById("tablets")).not.toBeNull();
-    await waitFor(() => expect(scrolled.some((s) => s.menuLoaded)).toBe(true));
-    expect(new Set(scrolled.map((s) => s.id))).toEqual(new Set(["dias"]));
-  });
-
-  it("scrolls again when the same anchor is clicked twice", async () => {
-    const scrolled = recordScrolls();
-    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
-    renderAdmin("/admin#dias");
-    await screen.findByText("Pão — R$ 3,50");
-    await waitFor(() => expect(scrolled.some((s) => s.menuLoaded)).toBe(true));
-    await new Promise((r) => setTimeout(r, 0));
-    const before = scrolled.length;
-    fireEvent.click(screen.getByRole("link", { name: "Dias de serviço" }));
-    await waitFor(() => expect(scrolled.length).toBeGreaterThan(before));
-    expect(scrolled.at(-1)!.id).toBe("dias");
-  });
-
-  it("scrolls back to the top on Início", async () => {
-    recordScrolls();
-    const scrollTo = vi.fn();
-    vi.stubGlobal("scrollTo", scrollTo);
-    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria") });
-    renderAdmin("/admin#dias");
-    await screen.findByText("Pão — R$ 3,50");
-    scrollTo.mockClear();
-    fireEvent.click(screen.getByRole("link", { name: "Início" }));
-    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0 }));
+  it.each([
+    ["#cardapio", "Cardápio"],
+    ["#dias", "Dias de serviço"],
+    ["#tablets", "Tablets da cozinha"],
+  ])("redirects the old anchor %s to its page", async (hash, heading) => {
+    mockApi({ ...BASE, "GET /api/admin/v1/me": me("secretaria"), "GET /api/admin/v1/kds/devices": DEVICES });
+    renderAdmin(`/admin${hash}`);
+    expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeTruthy();
   });
 
   it("shows each day's situation and each item's state as badges", async () => {
@@ -291,8 +255,10 @@ describe("home sections", () => {
       "GET /api/admin/v1/service-days": { status: 200, body: { serviceDays: [OPEN_DAY] } },
       "GET /api/admin/v1/me": me("admin"),
     });
-    renderAdmin();
+    renderAdmin("/admin/lanche/dias");
     expect((await screen.findByText("Aberto")).className).toContain("badge");
-    expect(screen.getByText("Inativo").className).toContain("badge");
+    cleanup();
+    renderAdmin("/admin/lanche/cardapio");
+    expect((await screen.findByText("Inativo")).className).toContain("badge");
   });
 });

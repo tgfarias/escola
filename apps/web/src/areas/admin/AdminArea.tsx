@@ -10,6 +10,7 @@ import { BatchPage } from "./BatchPage";
 import { CounterSaleAdmin } from "./CounterSaleAdmin";
 import { DocumentsAdmin } from "./DocumentsAdmin";
 import { GenerateBatch } from "./GenerateBatch";
+import { KitchenDevicesPage, MenuPage, ServiceDaysPage } from "./LunchPages";
 import { StudentsAdmin } from "./StudentsAdmin";
 import { TemplateEditor } from "./TemplateEditor";
 
@@ -22,6 +23,9 @@ export default function AdminArea() {
       <Route element={<AdminLayout />}>
         <Route index element={<AdminHome />} />
         <Route path="alunos" element={<StudentsAdmin />} />
+        <Route path="lanche/dias" element={<ServiceDaysPage />} />
+        <Route path="lanche/cardapio" element={<MenuPage />} />
+        <Route path="lanche/tablets" element={<KitchenDevicesPage />} />
         <Route path="contas" element={<AccountsAdmin />} />
         <Route path="contas/lancar" element={<CounterSaleAdmin />} />
         <Route path="contas/:guardianId" element={<AccountPage />} />
