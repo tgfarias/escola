@@ -7,6 +7,7 @@ import { PageTitle } from "../../theme/layout/PageTitle";
 import { announce, StatusNotice } from "../../theme/notify";
 import { StatusBadge } from "../../theme/StatusBadge";
 import { formatIsoDate } from "../../ui/dates";
+import { ImportStudentsPanel } from "./ImportStudentsPanel";
 import { filterStudents, studentLabel, type ClassRow, type StudentRow } from "./studentFilter";
 import { useStaffErrors } from "./useStaffErrors";
 
@@ -173,6 +174,7 @@ export function StudentsAdmin() {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<{ kind: "student"; student: StudentRow } | { kind: "guardian"; id: string } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -246,6 +248,12 @@ export function StudentsAdmin() {
   return (
     <>
       <PageTitle heading="Alunos e responsáveis" subheading="Nome completo, nascimento e CPF usados nos documentos; responsável financeiro de cada aluno." icon="pe-7s-users" />
+      <div className="mb-3">
+        <Button color="primary" aria-expanded={importing} aria-controls="importar" onClick={() => setImporting((v) => !v)}>
+          Adicionar / importar
+        </Button>
+      </div>
+      {importing && <ImportStudentsPanel onImported={() => void load()} />}
       <StatusNotice message={status} />
       {error && (
         <Alert color="danger" fade={false}>

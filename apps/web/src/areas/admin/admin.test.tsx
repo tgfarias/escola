@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminHome } from "./AdminHome";
@@ -121,56 +121,12 @@ describe("admin area", () => {
   it("fetches /me once for the layout and the home page, also when coming back to Início", async () => {
     const fetchMock = mockApi({ "/api/admin/v1/me": ME });
     renderAt("/admin");
-    await screen.findByLabelText("Conteúdo do CSV");
+    await screen.findByRole("heading", { name: "Escola Sol" });
     fireEvent.click(screen.getByRole("link", { name: "Alunos e responsáveis" }));
     await screen.findByText("página de alunos");
     fireEvent.click(screen.getByRole("link", { name: "Início" }));
-    await screen.findByLabelText("Conteúdo do CSV");
+    await screen.findByRole("heading", { name: "Escola Sol" });
     expect(fetchMock.mock.calls.filter((c) => c[0] === "/api/admin/v1/me")).toHaveLength(1);
-  });
-
-  it("imports a CSV and shows the totals", async () => {
-    const fetchMock = mockApi({
-      "/api/admin/v1/me": ME,
-      "/api/admin/v1/import/students": {
-        status: 200,
-        body: { applied: true, errors: [], classes: 2, students: 30, guardians: 41 },
-      },
-    });
-    renderAt("/admin");
-    fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "a,b\n1,2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
-    await waitFor(() =>
-      expect(within(document.getElementById("importar")!).getByRole("status").textContent).toBe("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis."),
-    );
-    const call = fetchMock.mock.calls.find((c) => c[0] === "/api/admin/v1/import/students")!;
-    expect(JSON.parse(call[1]!.body as string)).toEqual({ csv: "a,b\n1,2" });
-  });
-
-  it("lists the line errors when the import is refused", async () => {
-    mockApi({
-      "/api/admin/v1/me": ME,
-      "/api/admin/v1/import/students": {
-        status: 200,
-        body: { applied: false, errors: [{ line: 5, message: "telefone inválido" }], classes: 0, students: 0, guardians: 0 },
-      },
-    });
-    renderAt("/admin");
-    fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
-    await screen.findByText("Nada foi importado. Corrija as linhas abaixo e envie de novo.");
-    await screen.findByText("Linha 5: telefone inválido");
-  });
-
-  it("tells staff without permission that they have no access", async () => {
-    mockApi({
-      "/api/admin/v1/me": ME,
-      "/api/admin/v1/import/students": { status: 403, body: { error: { code: "insufficient_scope", message: "x" } } },
-    });
-    renderAt("/admin");
-    fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
-    await screen.findByText("Você não tem acesso a esta área.");
   });
 
   async function toCodeStep(verify?: Reply) {
@@ -204,17 +160,6 @@ describe("admin area", () => {
     await toCodeStep();
     fireEvent.click(screen.getByRole("button", { name: "Usar outro e-mail" }));
     expect(((await screen.findByLabelText("E-mail")) as HTMLInputElement).value).toBe("ana@escola.test");
-  });
-
-  it("sends staff to the login when the import answers 401", async () => {
-    mockApi({
-      "/api/admin/v1/me": ME,
-      "/api/admin/v1/import/students": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } },
-    });
-    renderAt("/admin");
-    fireEvent.change(await screen.findByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
-    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
-    await screen.findByLabelText("E-mail");
   });
 
   it("sends the e-mail trimmed", async () => {

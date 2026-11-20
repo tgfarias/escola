@@ -199,3 +199,62 @@ describe("students admin", () => {
     await waitFor(() => expect(bodyOf(fn, `PUT /api/admin/v1/students/${S1}/financial-guardian`)).toEqual({ guardianId: U(6) }));
   });
 });
+
+describe("import inside the students page", () => {
+  it("opens the CSV panel, imports and reloads the list", async () => {
+    const fetchMock = mockApi({
+      ...BASE,
+      "POST /api/admin/v1/import/students": { status: 200, body: { applied: true, errors: [], classes: 2, students: 30, guardians: 41 } },
+    });
+    renderPage();
+    await screen.findByText("Leonardo Souza");
+    expect(screen.queryByLabelText("Conteúdo do CSV")).toBeNull();
+    const toggle = screen.getByRole("button", { name: "Adicionar / importar" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("importar");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.change(screen.getByLabelText("Conteúdo do CSV"), { target: { value: "a,b\n1,2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
+    await screen.findByText("Importação concluída: 2 turmas, 30 alunos, 41 responsáveis.");
+    expect(bodyOf(fetchMock, "POST /api/admin/v1/import/students")).toEqual({ csv: "a,b\n1,2" });
+    await waitFor(() => expect(fetchMock.mock.calls.filter((c) => c[0] === "/api/admin/v1/students")).toHaveLength(2));
+    expect((screen.getByLabelText("Conteúdo do CSV") as HTMLTextAreaElement).value).toBe("");
+    fireEvent.click(toggle);
+    expect(screen.queryByLabelText("Conteúdo do CSV")).toBeNull();
+  });
+
+  it("lists the refused lines and imports nothing", async () => {
+    mockApi({
+      ...BASE,
+      "POST /api/admin/v1/import/students": {
+        status: 200,
+        body: { applied: false, errors: [{ line: 3, message: "telefone inválido" }], classes: 0, students: 0, guardians: 0 },
+      },
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar / importar" }));
+    fireEvent.change(screen.getByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
+    await screen.findByText("Nada foi importado. Corrija as linhas abaixo e envie de novo.");
+    expect(screen.getByText("Linha 3: telefone inválido")).toBeTruthy();
+  });
+
+  it("tells staff without permission that they have no access", async () => {
+    mockApi({ ...BASE, "POST /api/admin/v1/import/students": { status: 403, body: { error: { code: "insufficient_scope", message: "x" } } } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar / importar" }));
+    fireEvent.change(screen.getByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
+    await screen.findByText("Você não tem acesso a esta área.");
+  });
+
+  it("sends an expired session to the login from the import", async () => {
+    mockApi({ ...BASE, "POST /api/admin/v1/import/students": { status: 401, body: { error: { code: "unauthenticated", message: "x" } } } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Adicionar / importar" }));
+    fireEvent.change(screen.getByLabelText("Conteúdo do CSV"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Importar" }));
+    await screen.findByText("login");
+  });
+});
